@@ -1,0 +1,12 @@
+# Build output (generato da build.js)
+dist/
+
+# Dipendenze
+node_modules/
+
+# Config locale strumenti
+.claude/
+
+# OS / editor
+.DS_Store
+*.log

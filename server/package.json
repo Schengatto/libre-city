@@ -1,0 +1,16 @@
+{
+  "name": "libre-city-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Server multigiocatore di Libre City (Fase 1: transport WebSocket + relay + orologio autoritativo)",
+  "type": "commonjs",
+  "main": "index.js",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

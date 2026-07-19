@@ -1,0 +1,251 @@
+'use strict';
+// =============================================================================
+// LIBRE CITY · server/index.js — server multigiocatore (FASE 1)
+//
+// Sostituisce il P2P via PeerJS/WebRTC. Prima il "server" era l'host, cioè uno
+// dei telefoni: appena andava in background il browser lo sospendeva, la sua
+// registrazione al broker cadeva e l'INTERA stanza spariva (le disconnessioni
+// casuali che vediamo). Qui invece:
+//
+//   • le stanze vivono in RAM su un processo Node sempre acceso;
+//   • il server fa da RIPETITORE dei messaggi (stato/eventi) tra i giocatori,
+//     con topologia a stella ma senza un host fragile;
+//   • il server POSSIEDE l'orologio della partita (countdown + fine),
+//     così la partita non dipende più dal telefono di nessuno;
+//   • un riaggancio entro la finestra di grazia (token) recupera lo stesso
+//     giocatore senza farlo "uscire e rientrare" agli occhi degli altri.
+//
+// La SIMULAZIONE (pedoni, traffico, polizia, fisica) resta per ora su ogni
+// client, esattamente come prima: questa fase risolve disconnessioni e
+// affidabilità del transport. La FASE 2 sposterà la simulazione qui, rendendo
+// il server autoritativo sul mondo ed eliminando il disallineamento.
+//
+// Protocollo (JSON su WebSocket) — compatibile con gli handler già esistenti
+// in js/net.js:
+//   client → server: create | join | s | shot | punch | rocket | park | gone | kill | ping
+//   server → client: ok | no | join | leave | end | kill | <stato/evento ripetuto> | pong
+// =============================================================================
+
+const http = require('node:http');
+const crypto = require('node:crypto');
+const { WebSocketServer } = require('ws');
+
+const PORT = Number(process.env.PORT) || 8787;
+const HOST = process.env.HOST || '0.0.0.0';
+const GRACE_MS = 30_000;          // finestra di riaggancio dopo una caduta di rete
+const HEARTBEAT_MS = 30_000;      // ping applicativo per scovare le socket morte
+const MAX_PLAYERS_CAP = 8;        // tetto assoluto di giocatori per stanza
+const SHIRTS = 8;                 // maglie disponibili (vedi NET_SHIRTS nel client)
+const MAX_PAYLOAD = 64 * 1024;    // un messaggio di stato è ~qualche centinaio di byte
+
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const now = () => Date.now();
+const log = (...a) => console.log(new Date().toISOString(), ...a);
+
+const rooms = new Map();          // CODICE(maiuscolo) → stanza
+
+// ---------- Stanza ----------------------------------------------------------
+// Una stanza tiene i giocatori (anche quelli in "grazia", momentaneamente
+// caduti) e l'istante di avvio da cui si ricava il tempo rimasto.
+function activeCount(room) {
+  let n = 0;
+  for (const p of room.players.values()) if (!p.gone) n++;
+  return n;
+}
+// tempo rimasto in FRAME (~60/s): il client conta a frame, glielo diamo pronto
+function roomLeftFrames(room) {
+  if (!room.minutes) return 0;                       // 0 = partita senza limite di tempo
+  const remMs = room.minutes * 60_000 - (now() - room.startAt);
+  return Math.max(0, Math.round((remMs / 1000) * 60));
+}
+function roster(room, exceptId) {
+  const out = [];
+  for (const p of room.players.values()) {
+    if (p.gone || p.id === exceptId) continue;
+    out.push({ id: p.id, name: p.name, shirtIdx: p.shirtIdx });
+  }
+  return out;
+}
+function broadcast(room, msg, exceptId) {
+  const s = JSON.stringify(msg);
+  for (const p of room.players.values()) {
+    if (p.gone || p.id === exceptId || !p.ws || p.ws.readyState !== 1) continue;
+    try { p.ws.send(s); } catch {}
+  }
+}
+function sendRaw(ws, msg) {
+  if (ws && ws.readyState === 1) { try { ws.send(JSON.stringify(msg)); } catch {} }
+}
+// alla scadenza dei minuti il server avvisa TUTTI: nessuno resta indietro
+function scheduleEnd(room) {
+  clearTimeout(room.endTimer);
+  if (!room.minutes) return;
+  const ms = Math.max(0, room.minutes * 60_000 - (now() - room.startAt));
+  room.endTimer = setTimeout(() => broadcast(room, { t: 'end' }), ms);
+}
+function destroyRoom(room) {
+  clearTimeout(room.endTimer);
+  for (const p of room.players.values()) clearTimeout(p.dropTimer);
+  rooms.delete(room.code);
+  log('room destroyed', room.code);
+}
+
+// ---------- Ingresso in partita --------------------------------------------
+function addPlayer(ws, room, name) {
+  const n = ++room.idSeq;                    // 1 al creatore, poi 2, 3, …
+  const id = 'p' + n;
+  const p = {
+    id, name: String(name || 'Ospite').slice(0, 14), shirtIdx: (n - 1) % SHIRTS,  // creatore → maglia 0
+    token: crypto.randomUUID(), ws: null, gone: false, dropTimer: null,
+  };
+  room.players.set(id, p);
+  bindWs(ws, room, p);
+  sendRaw(ws, {
+    t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes,
+    left: roomLeftFrames(room), players: roster(room, p.id), token: p.token,
+  });
+  broadcast(room, { t: 'join', id: p.id, name: p.name, shirtIdx: p.shirtIdx }, p.id);
+  log('join', room.code, p.id, p.name, `(${activeCount(room)}/${room.max})`);
+}
+// aggancia una (nuova) socket a un giocatore: usata sia al primo ingresso sia
+// al riaggancio. ws._room/ws._pid identificano il mittente nei messaggi seguenti.
+function bindWs(ws, room, p) {
+  p.ws = ws;
+  ws._room = room;
+  ws._pid = p.id;
+}
+
+// crea la stanza (chi la crea è il primo giocatore, maglia 0)
+function handleCreate(ws, m) {
+  const code = String(m.code || '').toUpperCase();
+  if (!/^[A-Z0-9]{4,12}$/.test(code)) { sendRaw(ws, { t: 'no', r: 'badcode' }); return; }
+  const existing = rooms.get(code);
+  if (existing && activeCount(existing) > 0) { sendRaw(ws, { t: 'no', r: 'exists' }); return; }
+  if (existing) destroyRoom(existing);
+  const room = {
+    code, pass: String(m.pass || ''), max: clamp(+m.max || 4, 2, MAX_PLAYERS_CAP),
+    minutes: Math.max(0, +m.minutes || 0), startAt: now(),
+    idSeq: 0, players: new Map(), endTimer: null,
+  };
+  rooms.set(code, room);
+  scheduleEnd(room);
+  log('room created', code, 'by', String(m.name || '?'), `(${room.minutes}min, max ${room.max})`);
+  addPlayer(ws, room, m.name);
+}
+// entra in una stanza esistente (o riaggancia con il token)
+function handleJoin(ws, m) {
+  const code = String(m.code || '').toUpperCase();
+  const room = rooms.get(code);
+  if (!room) { sendRaw(ws, { t: 'no', r: 'notfound' }); return; }
+
+  // riaggancio: stesso token entro la grazia → stesso id/maglia, niente flicker
+  if (m.token) {
+    const p = [...room.players.values()].find(pp => pp.token === m.token);
+    if (p) {
+      clearTimeout(p.dropTimer); p.dropTimer = null;
+      const wasGone = p.gone; p.gone = false;
+      bindWs(ws, room, p);
+      sendRaw(ws, {
+        t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes,
+        left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, resumed: true,
+      });
+      // se la sua uscita era già stata annunciata, gli altri lo re-inseriscono
+      if (wasGone) broadcast(room, { t: 'join', id: p.id, name: p.name, shirtIdx: p.shirtIdx }, p.id);
+      log('resume', room.code, p.id, p.name);
+      return;
+    }
+  }
+
+  if ((room.pass || '') !== String(m.pass || '')) { sendRaw(ws, { t: 'no', r: 'pass' }); return; }
+  if (activeCount(room) >= room.max) { sendRaw(ws, { t: 'no', r: 'full' }); return; }
+  addPlayer(ws, room, m.name);
+}
+
+// ---------- Messaggi di gioco (relay) --------------------------------------
+function onGameMessage(ws, m) {
+  const room = ws._room;
+  const p = room && room.players.get(ws._pid);
+  if (!room || !p) return;
+  switch (m.t) {
+    // stato ed eventi: si ripetono agli altri firmandoli con l'id del mittente
+    case 's': case 'shot': case 'punch': case 'rocket': case 'park': case 'gone':
+      broadcast(room, { ...m, id: p.id }, p.id);
+      break;
+    // kill credit: la VITTIMA (p) segnala chi l'ha stesa (m.to); lo diciamo a lui
+    case 'kill': {
+      const target = room.players.get(m.to);
+      if (target && !target.gone) sendRaw(target.ws, { t: 'kill', id: p.id });
+      break;
+    }
+    case 'ping':
+      sendRaw(ws, { t: 'pong' });
+      break;
+  }
+}
+
+// ---------- Caduta di connessione ------------------------------------------
+// Non annunciamo subito l'uscita: diamo GRACE_MS per riagganciarsi (telefono
+// tornato in primo piano, wifi che rientra). Se scade, allora l'uscita è vera.
+function onDisconnect(ws) {
+  const room = ws._room;
+  const p = room && room.players.get(ws._pid);
+  if (!p || p.ws !== ws) return;        // socket già sostituita da un riaggancio: ignora
+  if (p.gone) return;
+  p.gone = true;
+  p.dropTimer = setTimeout(() => {
+    room.players.delete(p.id);
+    broadcast(room, { t: 'leave', id: p.id });
+    log('leave', room.code, p.id, p.name);
+    if (room.players.size === 0) destroyRoom(room);
+  }, GRACE_MS);
+}
+
+// ---------- HTTP + WebSocket ------------------------------------------------
+const server = http.createServer((req, res) => {
+  if (req.url === '/health' || req.url === '/') {
+    const players = [...rooms.values()].reduce((n, r) => n + activeCount(r), 0);
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, rooms: rooms.size, players }));
+  } else {
+    res.writeHead(404); res.end();
+  }
+});
+
+const wss = new WebSocketServer({ server, maxPayload: MAX_PAYLOAD });
+
+wss.on('connection', ws => {
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });   // risposta al ping del cuore (frame WS nativo)
+  ws.on('message', data => {
+    let m;
+    try { m = JSON.parse(data); } catch { return; }
+    if (!m || typeof m !== 'object') return;
+    if (m.t === 'ping') { sendRaw(ws, { t: 'pong' }); return; }   // keepalive applicativo
+    if (!ws._pid) {                                // non ancora in una stanza: solo create/join
+      if (m.t === 'create') handleCreate(ws, m);
+      else if (m.t === 'join') handleJoin(ws, m);
+      else ws.close();
+      return;
+    }
+    onGameMessage(ws, m);
+  });
+  ws.on('close', () => onDisconnect(ws));
+  ws.on('error', () => onDisconnect(ws));
+});
+
+// battito del cuore: chi non risponde al ping entro un giro è una socket morta
+const heartbeat = setInterval(() => {
+  for (const ws of wss.clients) {
+    if (ws.isAlive === false) { try { ws.terminate(); } catch {} continue; }
+    ws.isAlive = false;
+    try { ws.ping(); } catch {}
+  }
+}, HEARTBEAT_MS);
+wss.on('close', () => clearInterval(heartbeat));
+
+server.listen(PORT, HOST, () => log(`Libre City server in ascolto su ${HOST}:${PORT}`));
+
+// spegnimento pulito (Fly/Railway mandano SIGTERM al redeploy)
+for (const sig of ['SIGTERM', 'SIGINT']) {
+  process.on(sig, () => { log('shutdown', sig); server.close(); process.exit(0); });
+}
