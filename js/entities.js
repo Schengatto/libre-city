@@ -108,6 +108,47 @@ let player = {
   player.x = p.x; player.y = p.y;
 })();
 
+// ===== Multigiocatore autoritativo (Fase 2): helper "multi-player" =====
+// In LOCALE `MP` resta null e ogni helper ricade sul player unico ⇒ comportamento
+// IDENTICO al singolo giocatore (nessun costo, nessuna differenza). Sul SERVER la
+// glue imposta `MP = players[]` e questi rendono l'IA e i danni consapevoli di più
+// giocatori senza toccare le funzioni di gioco.
+let MP = null;
+// il giocatore attivo più vicino a (x,y) — bersaglio dell'IA (polizia, esercito, traffico)
+function nearestPlayer(x, y) {
+  if (!MP) return player;
+  let best = null, bd = Infinity;
+  for (const q of MP) { if (q.downT > 0) continue; const dx = q.x - x, dy = q.y - y, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = q; } }
+  return best || MP[0] || player;
+}
+function eachActivePlayer(fn) { if (MP) { for (const q of MP) fn(q); } else fn(player); }
+function distToNearestPlayer(x, y) {
+  if (!MP) return dist(x, y, player.x, player.y);
+  let bd = Infinity;
+  for (const q of MP) { const d = dist(x, y, q.x, q.y); if (d < bd) bd = d; }
+  return bd === Infinity ? 1e9 : bd;
+}
+// il giocatore (non a terra) che tocca il punto (x,y) entro r, o null
+function playerTouching(x, y, r) {
+  if (!MP) return dist(x, y, player.x, player.y) < r ? player : null;
+  for (const q of MP) { if (q.downT > 0) continue; if (dist(x, y, q.x, q.y) < r) return q; }
+  return null;
+}
+// un giocatore attorno a cui centrare gli spawn del popolamento (ruota tra i player)
+function spawnFocus() { return MP ? (MP[frame % MP.length] || player) : player; }
+// esegue fn con i globali del player (player, downT, downKind, cash) RILEGATI alla
+// vittima v, poi ripristina: così le funzioni di danno/morte/credito esistenti
+// (hurtPlayer, arrestPlayer, startDown, cash+=…) agiscono sul giocatore giusto.
+function asPlayer(v, fn) {
+  if (!MP) return fn();                            // locale: i globali SONO già del player unico
+  // sul server marshaliamo SEMPRE (anche se v è il player già legato): downT/downKind/
+  // cash sono globali separati dall'oggetto, e startDown/die scrivono su quelli.
+  const sp = player, sdt = downT, sdk = downKind, sc = cash;
+  player = v; downT = v.downT | 0; downKind = v.downKind; cash = v.cash | 0;
+  try { return fn(); }
+  finally { v.downT = downT; v.downKind = downKind; v.cash = cash; player = sp; downT = sdt; downKind = sdk; cash = sc; }
+}
+
 // ---------- Fabbriche di entità ----------
 let carSeq = 0;                                   // id progressivo (priorità agli incroci)
 function makeCar(x, y, role, dir) {

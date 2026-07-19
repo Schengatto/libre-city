@@ -54,10 +54,11 @@ function explodeRocket(r) {
     else if (p.role === 'soldier') armyAlertT = ARMY_ALERT_T;   // l'esercito non la prende bene
     else if (p.role !== 'robber') commitCrime(0.7, '🚨 Hai bombardato un passante!');
   }
-  if (r.fromNet && dist(player.car ? player.car.x : player.x, player.car ? player.car.y : player.y, r.x, r.y) < 85)
-    netRegisterHit(r.fromNet);                        // firma del tiratore anche sul danno al mezzo
-  if (!player.car && dist(player.x, player.y, r.x, r.y) < 72)
-    hurtPlayer(30, Math.atan2(player.y - r.y, player.x - r.x));
+  eachActivePlayer(v => {
+    const px = v.car ? v.car.x : v.x, py = v.car ? v.car.y : v.y;
+    if (r.fromNet && dist(px, py, r.x, r.y) < 85) netRegisterHit(r.fromNet);   // firma del tiratore (client)
+    if (!v.car && dist(v.x, v.y, r.x, r.y) < 72) asPlayer(v, () => hurtPlayer(30, Math.atan2(v.y - r.y, v.x - r.x)));
+  });
   for (const o of [...cars]) if (o !== r.src && dist(o.x, o.y, r.x, r.y) < 85) damageCar(o, 45);
 }
 // i cingoli non perdonano: l'auto che finisce sotto il carro esplode sul colpo
@@ -84,17 +85,19 @@ const ARMY_ALERT_T = 60 * 18;
 let armyAlertT = 0;
 const SAY_ARMY = ['Zona militare!', 'Intruso! Fuoco!', 'Fermo dove sei!', 'Allarme! Allarme!', 'Difendete la base!', 'Non è un\'esercitazione!'];
 function nearestArmyBase() {
+  const fp = spawnFocus();
   let best = null, bd = Infinity;
   for (const lm of landmarks) if (lm.type === 'army') {
-    const d = dist(lm.cx, lm.cy, player.x, player.y);
+    const d = dist(lm.cx, lm.cy, fp.x, fp.y);
     if (d < bd) { bd = d; best = lm; }
   }
   return best;
 }
-// il player è dentro il recinto della base (a piedi o su un mezzo)
-function playerInBase(lm) {
-  return player.x > lm.x0 * T && player.x < (lm.x1 + 1) * T &&
-         player.y > lm.y0 * T && player.y < (lm.y1 + 1) * T;
+// v (un giocatore) è dentro il recinto della base (a piedi o su un mezzo)
+function playerInBase(lm, v) {
+  v = v || player;
+  return v.x > lm.x0 * T && v.x < (lm.x1 + 1) * T &&
+         v.y > lm.y0 * T && v.y < (lm.y1 + 1) * T;
 }
 function triggerArmyAlert(lm) {
   if (armyAlertT === 0) {
@@ -116,10 +119,16 @@ function triggerArmyAlert(lm) {
   armyAlertT = ARMY_ALERT_T;
 }
 function updateArmy() {
-  const lm = nearestArmyBase();
-  if (lm && playerInBase(lm)) triggerArmyAlert(lm);
+  // un QUALSIASI giocatore dentro una base fa scattare l'allarme
+  let intruded = null;
+  eachActivePlayer(v => {
+    if (intruded) return;
+    for (const lm of landmarks) if (lm.type === 'army' && playerInBase(lm, v)) { intruded = lm; return; }
+  });
+  if (intruded) triggerArmyAlert(intruded);
   else if (armyAlertT > 0) armyAlertT--;
   // klaxon della base finché l'allarme è attivo
+  const lm = nearestArmyBase();
   if (armyAlertT > 0 && frame % 90 === 0 && lm) { const h = hear(lm.cx, lm.cy, 1100); if (h) sfx.alarm(h); }
 }
 // (makeSoldier e makeArmyCar stanno in js/entities.js con le altre fabbriche:
@@ -128,7 +137,8 @@ function updateArmy() {
 // Senza allarme le guardie fanno la ronda nel cortile della caserma.
 function updateSoldier(p) {
   if (armyAlertT === 0) { updateGuardIdle(p); return; }
-  const tx = player.x - p.x, ty = player.y - p.y, d = Math.hypot(tx, ty) || 1;
+  const tp = nearestPlayer(p.x, p.y);
+  const tx = tp.x - p.x, ty = tp.y - p.y, d = Math.hypot(tx, ty) || 1;
   p.dir = { x: tx / d, y: ty / d }; p.speed = 2.1;
   p.facing = Math.atan2(ty, tx);
   if (d < 460 && Math.random() < 0.02) pedSay(p, SAY_ARMY, '#3d5226');
@@ -136,8 +146,8 @@ function updateSoldier(p) {
   moveBox(p, p.dir.x * advance, p.dir.y * advance, p.r, p.r);
   p.walk += advance > 0.5 ? 0.25 : 0;
   if (p.shootCd > 0) p.shootCd--;
-  if (d < 360 && p.shootCd === 0 && lineClear(p.x, p.y, player.x, player.y)) {
-    soldierShoot(p); p.shootCd = rndi(30, 50);
+  if (d < 360 && p.shootCd === 0 && lineClear(p.x, p.y, tp.x, tp.y)) {
+    soldierShoot(p, tp); p.shootCd = rndi(30, 50);
   }
 }
 // ronda a riposo: la guardia pattuglia il piazzale; se un inseguimento l'ha
@@ -170,8 +180,9 @@ function updateGuardIdle(p) {
     p.walk += 0.2; p.facing = Math.atan2(p.dir.y, p.dir.x);
   } else p.walk = 0;
 }
-function soldierShoot(p) {
-  const a = Math.atan2(player.y - p.y, player.x - p.x) + rnd(-0.1, 0.1);
+function soldierShoot(p, tp) {
+  tp = tp || nearestPlayer(p.x, p.y);
+  const a = Math.atan2(tp.y - p.y, tp.x - p.x) + rnd(-0.1, 0.1);
   bullets.push({ x: p.x + Math.cos(a) * 12, y: p.y + Math.sin(a) * 12,
                  vx: Math.cos(a) * 12, vy: Math.sin(a) * 12, life: 58, fromPlayer: false });
   spawnMuzzle(p.x + Math.cos(a) * 12, p.y + Math.sin(a) * 12, a);
@@ -179,23 +190,24 @@ function soldierShoot(p) {
 }
 function updateArmyCar(c) {
   c.lightPhase += 0.2;
-  c.angle = steerToward(c.angle, Math.atan2(player.y - c.y, player.x - c.x), 0.06);
-  const d = dist(c.x, c.y, player.x, player.y);
+  const tp = nearestPlayer(c.x, c.y);
+  c.angle = steerToward(c.angle, Math.atan2(tp.y - c.y, tp.x - c.x), 0.06);
+  const d = dist(c.x, c.y, tp.x, tp.y);
   c.speed = d > 130 ? c.maxSpeed : c.maxSpeed * 0.35;
   moveBox(c, Math.cos(c.angle) * c.speed, Math.sin(c.angle) * c.speed, c.colH, c.colH);
   if (c.hitX || c.hitY) c.angle += rnd(-0.7, 0.7);
   applyKnockback(c);                                  // rimbalzo residuo dagli urti
   c.dir = { x: Math.cos(c.angle), y: Math.sin(c.angle) };
   if (c.shootCd > 0) c.shootCd--;
-  if (d < 380 && c.shootCd === 0 && lineClear(c.x, c.y, player.x, player.y)) {
-    const a = Math.atan2(player.y - c.y, player.x - c.x) + rnd(-0.11, 0.11);
+  if (d < 380 && c.shootCd === 0 && lineClear(c.x, c.y, tp.x, tp.y)) {
+    const a = Math.atan2(tp.y - c.y, tp.x - c.x) + rnd(-0.11, 0.11);
     bullets.push({ x: c.x + Math.cos(a) * 26, y: c.y + Math.sin(a) * 26,
                    vx: Math.cos(a) * 12, vy: Math.sin(a) * 12, life: 55, fromPlayer: false });
     spawnMuzzle(c.x + Math.cos(a) * 26, c.y + Math.sin(a) * 26, a);
     sfx.copShoot(hear(c.x, c.y, 700));
     c.shootCd = rndi(34, 58);
   }
-  if (!player.car) runOverPlayer(c, true);            // la jeep può investire il player
+  runOverPlayer(c, true);                             // la jeep può investire un player a piedi
   runOver(c, false);
 }
 

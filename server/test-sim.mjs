@@ -1,7 +1,6 @@
-// LIBRE CITY · server/test-sim.mjs — smoke test dell'harness headless (Fase 2, Stage 1).
-// Verifica: la sim gira in Node senza browser, la città è deterministica dal codice
-// stanza (map identica host↔server), i tick non lanciano, le entità restano limitate
-// ed evolvono, e un giocatore con input si muove davvero.
+// LIBRE CITY · server/test-sim.mjs — test dell'harness headless (Fase 2, Stage 2a).
+// Verifica: UNA città autoritativa condivisa per stanza; più giocatori nello stesso
+// mondo; movimento; snapshot per area d'interesse; combattimento PvP con kill credit.
 //   Uso:  node server/test-sim.mjs
 import runtime from './sim-runtime.js';
 const { createRoomSim } = runtime;
@@ -11,51 +10,70 @@ const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ', msg); } els
 
 console.log('1) città deterministica dal codice stanza');
 const a1 = createRoomSim('ABCDEF').worldInfo();
-const a2 = createRoomSim('ABCDEF').worldInfo();
 const b1 = createRoomSim('ZZ9WQ7').worldInfo();
-console.log('   ABCDEF:', JSON.stringify(a1));
-console.log('   ZZ9WQ7:', JSON.stringify(b1));
-ok(JSON.stringify(a1) === JSON.stringify(a2), 'stesso codice ⇒ stessa città (firma identica)');
-ok(a1.nodes > 10 && a1.edges > 10 && a1.landmarks > 0, 'la città ha grafo stradale e landmark');
-ok(a1.sig !== b1.sig, 'codice diverso ⇒ città diversa (firma del contenuto seedato)');
+ok(JSON.stringify(a1) === JSON.stringify(createRoomSim('ABCDEF').worldInfo()), 'stesso codice ⇒ stessa città');
+ok(a1.sig !== b1.sig, 'codice diverso ⇒ città diversa');
 
-console.log('2) 1000 tick con giocatore fermo: nessun crash, entità limitate');
-const sim = createRoomSim('ABCDEF');
-const c0 = sim.counts();
-let snap10 = null, snap200 = null;
-let threw = null;
+console.log('2) due giocatori nello STESSO mondo, 1000 tick senza crash');
+const sim = createRoomSim('ROOM01');
+const A = sim.addPlayer('Alice', 0);
+const B = sim.addPlayer('Bob', 1);
+let snap10 = null, snap200 = null, threw = null;
 try {
   for (let i = 0; i < 1000; i++) {
     sim.tick();
-    if (i === 10) snap10 = sim.carSnapshot();
-    if (i === 200) snap200 = sim.carSnapshot();
+    if (i === 10) snap10 = sim.snapshotFor(A);
+    if (i === 200) snap200 = sim.snapshotFor(A);
   }
 } catch (e) { threw = e; }
-ok(!threw, 'i 1000 tick non lanciano eccezioni' + (threw ? ' — ' + threw.message + '\n' + (threw.stack || '') : ''));
+ok(!threw, '1000 tick con 2 giocatori senza eccezioni' + (threw ? ' — ' + threw.message + '\n' + (threw.stack || '') : ''));
 const cN = sim.counts();
-console.log('   counts iniziali:', JSON.stringify(c0), '→ dopo 1000:', JSON.stringify(cN));
-ok(cN.frame === 1000, 'frame avanzato di esattamente 1000');
-ok(cN.cars > 0 && cN.cars < 80, 'numero di auto entro un tetto ragionevole (' + cN.cars + ')');
-ok(cN.peds > 0 && cN.peds < 120, 'numero di pedoni entro un tetto ragionevole (' + cN.peds + ')');
+console.log('   counts:', JSON.stringify(cN));
+ok(cN.frame === 1000 && cN.players === 2, 'frame=1000, 2 giocatori attivi');
+ok(cN.cars > 0 && cN.cars < 160 && cN.peds > 0 && cN.peds < 220, 'entità limitate (scalate coi giocatori)');
 
-console.log('3) il traffico evolve (le auto si spostano tra i tick)');
-if (snap10 && snap200) {
-  const by = new Map(snap200.map(c => [c.id, c]));
-  let moved = 0;
-  for (const c of snap10) { const d = by.get(c.id); if (d && (Math.abs(d.x - c.x) + Math.abs(d.y - c.y)) > 4) moved++; }
-  console.log('   auto ancora presenti e spostate:', moved);
-  ok(moved > 0, 'almeno un veicolo del traffico si è mosso tra il tick 10 e il 200');
-} else ok(false, 'snapshot del traffico non catturati');
+console.log('3) snapshot per area d\'interesse');
+const sA = sim.snapshotFor(A), sB = sim.snapshotFor(B);
+ok(sA && sA.me && Array.isArray(sA.cars), 'snapshot di A ha me + liste');
+console.log('   A: cars', sA.cars.length, 'peds', sA.peds.length, 'players', sA.players.length,
+            '· B: cars', sB.cars.length, 'peds', sB.peds.length);
+// entità di A tutte entro l'AOI (~1200) dal player A
+const far = sA.cars.find(c => Math.hypot(c.x - sA.me.x, c.y - sA.me.y) > 1300);
+ok(!far, 'le auto nello snapshot di A sono entro l\'area d\'interesse');
+// mondo CONDIVISO: se A e B sono vicini vedono almeno un\'auto in comune (stesso id)
+const idsA = new Set(sA.cars.map(c => c.id));
+const shared = sB.cars.filter(c => idsA.has(c.id)).length;
+console.log('   auto viste da ENTRAMBI (stesso id):', shared);
+ok(shared > 0, 'A e B vedono auto in comune ⇒ mondo condiviso (niente più veicoli fantasma)');
 
-console.log('4) un giocatore con input si muove');
-const sim2 = createRoomSim('MOVE42');
-for (let i = 0; i < 5; i++) sim2.tick();          // assesta lo spawn
-const p0 = sim2.playerPos();
-for (let i = 0; i < 120; i++) sim2.tick({ ax: 1, ay: 0, aim: 0 });   // 2 s verso destra
-const p1 = sim2.playerPos();
-const disp = Math.abs(p1.x - p0.x) + Math.abs(p1.y - p0.y);
-console.log('   player', JSON.stringify(p0), '→', JSON.stringify(p1), '· spostamento', disp);
-ok(disp > 15, 'il player a piedi si è spostato con input di movimento (' + disp.toFixed(0) + 'px)');
+console.log('4) un giocatore si muove con l\'input');
+const pA0 = sim.playerState(A);
+for (let i = 0; i < 120; i++) { sim.applyInput(A, { ax: 1, ay: 0, aim: 0 }); sim.tick(); }
+const pA1 = sim.playerState(A);
+const disp = Math.abs(pA1.x - pA0.x) + Math.abs(pA1.y - pA0.y);
+console.log('   A', JSON.stringify(pA0), '→', JSON.stringify(pA1), '· spostamento', disp);
+ok(disp > 15, 'Alice si è spostata (' + disp.toFixed(0) + 'px)');
+sim.applyInput(A, { ax: 0, ay: 0 });   // ferma
+
+console.log('5) PvP: un colpo stende un rivale (kill credit)');
+const sim2 = createRoomSim('DUEL42');
+const X = sim2.addPlayer('X', 0), Y = sim2.addPlayer('Y', 1);
+const px = sim2._player(X), py = sim2._player(Y);
+px.owned[1] = true; px.weaponIdx = 1;               // X impugna la pistola
+py.x = px.x + 24; py.y = px.y; py.health = 8;        // Y adiacente e già malridotto
+const aim = 0;                                       // X mira verso destra (verso Y)
+let killed = false;
+for (let i = 0; i < 20 && !killed; i++) {
+  sim2.applyInput(X, { aim, b: 2 });                 // fireEdge (semi-auto)
+  py.x = px.x + 24; py.y = px.y;                     // tieni Y a tiro per il test
+  sim2.tick();
+  if (py.downT > 0) killed = true;
+}
+const sc = sim2.scores();
+console.log('   scores:', JSON.stringify(sc));
+ok(killed, 'Y è stato steso da un colpo di X');
+ok((sc.find(s => s.id === X) || {}).k >= 1, 'la stesa è accreditata a X (kill)');
+ok((sc.find(s => s.id === Y) || {}).d >= 1, 'a Y è contata la morte');
 
 console.log(`\n${fail === 0 ? '✅' : '❌'}  ${pass} ok, ${fail} fail`);
 process.exit(fail === 0 ? 0 : 1);

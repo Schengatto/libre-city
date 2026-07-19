@@ -76,7 +76,7 @@ function playerShoot(w) {
     const a = player.aim + rnd(-w.spread, w.spread);
     const bx = player.x + Math.cos(a) * 14, by = player.y + Math.sin(a) * 14;
     bullets.push({ x: bx, y: by, vx: Math.cos(a) * w.spd, vy: Math.sin(a) * w.spd,
-                   life: w.life, fromPlayer: true, dmg: w.dmgCar, knock: w.knock });
+                   life: w.life, fromPlayer: true, dmg: w.dmgCar, knock: w.knock, owner: player, pvp: w.pvp || 8 });
   }
   spawnMuzzle(player.x + Math.cos(player.aim) * 14, player.y + Math.sin(player.aim) * 14, player.aim);
   shake(w.shake || 2, 3);
@@ -89,6 +89,19 @@ const PUNCH_KILL = 3;
 function playerPunch(w) {
   player.punchT = 10;                                 // fa scattare l'animazione del braccio
   netPunched();                                       // in multigiocatore anche i rivali possono prenderle
+  // PvP (server autoritativo): un pugno nel cono stende un altro giocatore a piedi
+  if (MP) { const puncher = player;
+    for (const v of MP) {
+      if (v === puncher || v.downT > 0 || v.car) continue;
+      if (dist(puncher.x, puncher.y, v.x, v.y) < w.range &&
+          Math.abs(angDiff(puncher.aim, Math.atan2(v.y - puncher.y, v.x - puncher.x))) < 1.0) {
+        const wasDown = v.downT > 0;
+        asPlayer(v, () => hurtPlayer(12, puncher.aim));
+        if (!wasDown && v.downT > 0) { puncher.kills = (puncher.kills | 0) + 1; v.deaths++; }
+        return;
+      }
+    }
+  }
   // colpisce il pedone più vicino nel cono davanti al player
   let best = null, bd = w.range;
   for (const p of peds) {
@@ -336,8 +349,9 @@ function updatePed(p) {
 // poi sbollisce e torna a passeggiare come se niente fosse
 function updateAngryDriver(p) {
   p.angryT--;
-  const tx = player.car ? player.car.x : player.x;
-  const ty = player.car ? player.car.y : player.y;
+  const tp = nearestPlayer(p.x, p.y);
+  const tx = tp.car ? tp.car.x : tp.x;
+  const ty = tp.car ? tp.car.y : tp.y;
   const d = dist(p.x, p.y, tx, ty);
   if (p.angryT <= 0 || d > 620) { p.angryT = 0; p.speed = 0; p.thinkCd = 0; return; }   // si arrende
   const a = Math.atan2(ty - p.y, tx - p.x);
@@ -365,7 +379,8 @@ function nearestThreatCar(x, y, range) {
 function updateRobber(p) {
   p.thinkCd--;
   if (p.thinkCd <= 0) {
-    const away = Math.atan2(p.y - player.y, p.x - player.x) + rnd(-0.7, 0.7);
+    const tp = nearestPlayer(p.x, p.y);
+    const away = Math.atan2(p.y - tp.y, p.x - tp.x) + rnd(-0.7, 0.7);
     p.dir = { x: Math.cos(away), y: Math.sin(away) };
     p.thinkCd = rndi(18, 42);
   }
@@ -381,17 +396,18 @@ function updateRobber(p) {
 // ---------- Poliziotto a piedi ----------
 const COP_RANGE = 330;
 function updateCop(p) {
-  const tx = player.x - p.x, ty = player.y - p.y, d = Math.hypot(tx, ty) || 1;
+  const tp = nearestPlayer(p.x, p.y);            // dà la caccia al giocatore più vicino
+  const tx = tp.x - p.x, ty = tp.y - p.y, d = Math.hypot(tx, ty) || 1;
   p.dir = { x: tx / d, y: ty / d }; p.speed = 2.0;
   p.facing = Math.atan2(ty, tx);
   if (frame % 120 === 0 && Math.random() < 0.5) sfx.whistle(hear(p.x, p.y, 900));   // fischietto d'inseguimento
   if (d < 420 && Math.random() < 0.02) pedSay(p, SAY_COP, '#20407a');   // intima l'alt mentre ti dà la caccia
 
-  // player in macchina (quasi) ferma: l'agente corre alla portiera, la apre e ti arresta
-  const canBust = player.car && Math.abs(player.car.speed) < 1.0;
+  // player in macchina (quasi) ferma: l'agente corre alla portiera, la apre e lo arresta
+  const canBust = tp.car && Math.abs(tp.car.speed) < 1.0;
   if (canBust && d < 42) {
     sfx.door();                                   // apre la portiera...
-    arrestPlayer();                               // ...e ti porta in centrale
+    asPlayer(tp, arrestPlayer);                   // ...e porta in centrale QUEL giocatore
     return;
   }
   // si ferma poco più vicino per sparare (ma per l'arresto arriva fino alla portiera)
@@ -399,12 +415,13 @@ function updateCop(p) {
   moveBox(p, p.dir.x * advance, p.dir.y * advance, p.r, p.r);
   p.walk += advance > 0.5 ? 0.25 : 0;
   if (p.shootCd > 0) p.shootCd--;
-  if (d < COP_RANGE && p.shootCd === 0 && lineClear(p.x, p.y, player.x, player.y)) {
-    copShoot(p); p.shootCd = rndi(42, 66);
+  if (d < COP_RANGE && p.shootCd === 0 && lineClear(p.x, p.y, tp.x, tp.y)) {
+    copShoot(p, tp); p.shootCd = rndi(42, 66);
   }
 }
-function copShoot(p) {
-  const a = Math.atan2(player.y - p.y, player.x - p.x) + rnd(-0.13, 0.13);
+function copShoot(p, tp) {
+  tp = tp || nearestPlayer(p.x, p.y);
+  const a = Math.atan2(tp.y - p.y, tp.x - p.x) + rnd(-0.13, 0.13);
   const bx = p.x + Math.cos(a) * 12, by = p.y + Math.sin(a) * 12;
   bullets.push({ x: bx, y: by, vx: Math.cos(a) * 11, vy: Math.sin(a) * 11, life: 60, fromPlayer: false });
   spawnMuzzle(bx, by, a);
@@ -546,24 +563,25 @@ function updateCar(c) {
     moveBox(c, c.kox, c.koy, c.colH, c.colH);
     c.kox = c.x - rx; c.koy = c.y - ry;       // l'offset si ferma dove si è fermata l'auto
   }
-  if (!player.car) runOverPlayer(c, false);             // il traffico può urtare il pedone
+  runOverPlayer(c, false);                              // il traffico può urtare un player a piedi
   runOver(c, false);
 }
 function updatePoliceCar(c) {
   c.lightPhase += 0.2;
-  const target = Math.atan2(player.y - c.y, player.x - c.x);
+  const tp = nearestPlayer(c.x, c.y);
+  const target = Math.atan2(tp.y - c.y, tp.x - c.x);
   c.angle = steerToward(c.angle, target, 0.07);
-  const d = dist(c.x, c.y, player.x, player.y);
+  const d = dist(c.x, c.y, tp.x, tp.y);
   // bersaglio a tiro (a piedi, o fermo in macchina): la volante accosta
   // e l'agente scende a piedi per sparare o venirti ad arrestare
-  const playerStopped = !player.car || Math.abs(player.car.speed) < 1.2;
+  const playerStopped = !tp.car || Math.abs(tp.car.speed) < 1.2;
   if (d < 150 && playerStopped && wanted > 0) { copStepsOut(c); return; }
   c.speed = d > 90 ? c.maxSpeed : c.maxSpeed * 0.4;
   moveBox(c, Math.cos(c.angle) * c.speed, Math.sin(c.angle) * c.speed, c.colH, c.colH);
   if (c.hitX || c.hitY) c.angle += rnd(-0.7, 0.7);
   applyKnockback(c);                                    // rimbalzo residuo dagli urti
   c.dir = { x: Math.cos(c.angle), y: Math.sin(c.angle) };
-  if (!player.car) runOverPlayer(c, true);              // la volante può investire (e uccidere) il player
+  runOverPlayer(c, true);                               // la volante può investire (e uccidere) un player a piedi
   runOver(c, false);
 }
 // l'agente scende dalla volante: la macchina resta lì, lui prosegue a piedi
@@ -585,15 +603,19 @@ function runOverPlayer(c, strong) {
   const sp = Math.abs(c.speed);
   if (sp < (strong ? 2.4 : 3)) return;
   const ca = Math.cos(c.angle), sa = Math.sin(c.angle);
-  const dx = player.x - c.x, dy = player.y - c.y;
-  const lx = dx * ca + dy * sa, ly = -dx * sa + dy * ca;
-  if (Math.abs(lx) < c.w / 2 + player.r && Math.abs(ly) < c.h / 2 + player.r) {
-    if (strong) {
-      hurtPlayer(18 + sp * 3, c.angle);                 // può portare a 0 la salute
-      moveBox(player, ca * sp * 1.4, sa * sp * 1.4, player.r, player.r);
-      shake(6, 7);
-    } else hurtPlayer(6, c.angle);                      // urto del traffico: meno grave
-  }
+  eachActivePlayer(v => {
+    if (v.car || v.downT > 0) return;                   // in auto/a terra non lo si investe a piedi
+    const dx = v.x - c.x, dy = v.y - c.y;
+    const lx = dx * ca + dy * sa, ly = -dx * sa + dy * ca;
+    if (Math.abs(lx) >= c.w / 2 + v.r || Math.abs(ly) >= c.h / 2 + v.r) return;
+    asPlayer(v, () => {
+      if (strong) {
+        hurtPlayer(18 + sp * 3, c.angle);               // può portare a 0 la salute
+        moveBox(player, ca * sp * 1.4, sa * sp * 1.4, player.r, player.r);
+        shake(6, 7);
+      } else hurtPlayer(6, c.angle);                    // urto del traffico: meno grave
+    });
+  });
 }
 
 // ---------- Collisioni auto ↔ auto ----------
@@ -742,7 +764,25 @@ function updateBullets() {
           knockPed(p, Math.atan2(b.vy, b.vx), b.knock || 4);
           if (p.role === 'cop') commitCrime(1.2, '🚨 Hai sparato a un poliziotto!');
           else if (p.role === 'soldier') armyAlertT = ARMY_ALERT_T;   // sparare ai soldati li scatena
-          else if (p.role !== 'robber') { cash += 3; commitCrime(0.6, '🚨 Hai sparato a un passante!'); }
+          else if (p.role !== 'robber') { asPlayer(b.owner || player, () => { cash += 3; }); commitCrime(0.6, '🚨 Hai sparato a un passante!'); }
+          hit = true; break;
+        }
+      }
+      // PvP (solo server autoritativo): il colpo può stendere un ALTRO giocatore
+      if (!hit && MP) for (const v of MP) {
+        if (v === b.owner || v.downT > 0) continue;
+        if (v.car) {
+          const c = v.car;
+          if (Math.abs(b.x - c.x) < c.w / 2 && Math.abs(b.y - c.y) < c.h / 2 + 4) {
+            const wasDown = v.downT > 0;
+            asPlayer(v, () => { damageCar(c, b.dmg || 10, Math.atan2(b.vy, b.vx)); hurtPlayer(3); });
+            if (!wasDown && v.downT > 0 && b.owner) { b.owner.kills = (b.owner.kills | 0) + 1; v.deaths++; }
+            spawnSparks(b.x, b.y, 2); hit = true; break;
+          }
+        } else if (dist(b.x, b.y, v.x, v.y) < v.r + 3) {
+          const wasDown = v.downT > 0;
+          asPlayer(v, () => hurtPlayer(b.pvp || 8, Math.atan2(b.vy, b.vx)));
+          if (!wasDown && v.downT > 0 && b.owner) { b.owner.kills = (b.owner.kills | 0) + 1; v.deaths++; }
           hit = true; break;
         }
       }
@@ -755,19 +795,23 @@ function updateBullets() {
     } else if (!hit && !b.fromPlayer) {
       // proiettile ostile: di un poliziotto/soldato oppure di un RIVALE in
       // multigiocatore (fromNet): in quel caso il danno è quello dell'arma
-      // e il colpo resta "firmato" per l'eventuale kill credit (vittima autoritativa)
-      if (player.car) {
-        const c = player.car;
-        if (Math.abs(b.x - c.x) < c.w / 2 + 2 && Math.abs(b.y - c.y) < c.h / 2 + 4) {
+      // e il colpo resta "firmato" per l'eventuale kill credit (vittima autoritativa).
+      // Può colpire QUALSIASI giocatore (in autoritativo il primo raggiunto).
+      eachActivePlayer(v => {
+        if (hit || v.downT > 0) return;
+        if (v.car) {
+          const c = v.car;
+          if (Math.abs(b.x - c.x) < c.w / 2 + 2 && Math.abs(b.y - c.y) < c.h / 2 + 4) {
+            if (b.fromNet) netRegisterHit(b.fromNet);
+            if (c.isTank) { damageCar(c, 1); sfx.ricochet(hear(b.x, b.y, 620)); }   // la corazza ride dei proiettili
+            else asPlayer(v, () => { damageCar(c, b.fromNet ? (b.dmg || 4) : 4); hurtPlayer(3); });
+            spawnSparks(b.x, b.y, 2); hit = true;
+          }
+        } else if (dist(b.x, b.y, v.x, v.y) < v.r + 3) {
           if (b.fromNet) netRegisterHit(b.fromNet);
-          if (c.isTank) { damageCar(c, 1); sfx.ricochet(hear(b.x, b.y, 620)); }   // la corazza ride dei proiettili
-          else { damageCar(c, b.fromNet ? (b.dmg || 4) : 4); hurtPlayer(3); }
-          spawnSparks(b.x, b.y, 2); hit = true;
+          asPlayer(v, () => hurtPlayer(b.fromNet ? (b.pdmg || 8) : 8, Math.atan2(b.vy, b.vx))); hit = true;
         }
-      } else if (dist(b.x, b.y, player.x, player.y) < player.r + 3) {
-        if (b.fromNet) netRegisterHit(b.fromNet);
-        hurtPlayer(b.fromNet ? (b.pdmg || 8) : 8, Math.atan2(b.vy, b.vx)); hit = true;
-      }
+      });
     }
     if (hit || b.life <= 0 || b.x < 0 || b.y < 0 || b.x > WORLD_W || b.y > WORLD_H) bullets.splice(i, 1);
   }
@@ -819,9 +863,11 @@ function explodeCar(c) {
   shake(9, 12); sfx.boom();
   // onda d'urto: sbalza pedoni e player vicini
   for (const p of peds) if (!p.ko && dist(p.x, p.y, c.x, c.y) < 90) knockPed(p, Math.atan2(p.y - c.y, p.x - c.x), 7);
-  // dentro il carro armato sei al riparo dall'onda d'urto (se a scoppiare non è lui)
-  if (!(player.car && player.car.isTank && player.car !== c) && dist(player.x, player.y, c.x, c.y) < 90)
-    hurtPlayer(28, Math.atan2(player.y - c.y, player.x - c.x));
+  // dentro il carro armato si è al riparo dall'onda d'urto (se a scoppiare non è lui)
+  eachActivePlayer(v => {
+    if (v.car && v.car.isTank && v.car !== c) return;
+    if (dist(v.x, v.y, c.x, c.y) < 90) asPlayer(v, () => hurtPlayer(28, Math.atan2(v.y - c.y, v.x - c.x)));
+  });
   // ...e scheggia le auto accanto, che a loro volta possono incendiarsi: reazione a catena!
   for (const o of [...cars]) if (dist(o.x, o.y, c.x, c.y) < 95) damageCar(o, 26);
   if (player.car === c) { player.car = null; engineGain(0); }
@@ -897,46 +943,52 @@ function respawnPlayer() {
 // ---------- Popolamento dinamico (spawn/despawn attorno al player) ----------
 function managePopulation() {
   const despawnR = Math.max(vw, vh) * 1.3 + 300;
-  // rimuove entità morte o troppo lontane
+  const nP = MP ? Math.max(1, MP.length) : 1;    // scala la densità col numero di giocatori
+  const fp = spawnFocus();                        // giocatore attorno a cui spawnare (a rotazione)
+  // rimuove entità morte o troppo lontane da OGNI giocatore
   for (let i = peds.length - 1; i >= 0; i--) {
     const p = peds[i];
-    if (p.dead || (p.role !== 'cop' && p.role !== 'fare' && p.role !== 'hungry' && p.role !== 'injured' && p.role !== 'robber' && dist(p.x, p.y, player.x, player.y) > despawnR)) peds.splice(i, 1);
-    else if (p.role === 'cop' && (wanted === 0 || dist(p.x, p.y, player.x, player.y) > despawnR * 1.4)) peds.splice(i, 1);
-    else if (p.role === 'soldier' && !p.guard && (armyAlertT === 0 || dist(p.x, p.y, player.x, player.y) > despawnR * 1.4)) peds.splice(i, 1);
+    if (p.dead || (p.role !== 'cop' && p.role !== 'fare' && p.role !== 'hungry' && p.role !== 'injured' && p.role !== 'robber' && distToNearestPlayer(p.x, p.y) > despawnR)) peds.splice(i, 1);
+    else if (p.role === 'cop' && (wanted === 0 || distToNearestPlayer(p.x, p.y) > despawnR * 1.4)) peds.splice(i, 1);
+    else if (p.role === 'soldier' && !p.guard && (armyAlertT === 0 || distToNearestPlayer(p.x, p.y) > despawnR * 1.4)) peds.splice(i, 1);
   }
   for (let i = cars.length - 1; i >= 0; i--) {
     const c = cars[i];
     if (c.driver === 'player') continue;
-    if (c.role === 'police' && (wanted < 2 || dist(c.x, c.y, player.x, player.y) > despawnR * 1.5)) cars.splice(i, 1);
+    if (c.role === 'police' && (wanted < 2 || distToNearestPlayer(c.x, c.y) > despawnR * 1.5)) cars.splice(i, 1);
     else if (c.role === 'armycar' && armyAlertT === 0) cars.splice(i, 1);
-    else if (c.role !== 'police' && dist(c.x, c.y, player.x, player.y) > despawnR) cars.splice(i, 1);
+    else if (c.role !== 'police' && distToNearestPlayer(c.x, c.y) > despawnR) cars.splice(i, 1);
   }
-  for (let i = coins.length - 1; i >= 0; i--) if (dist(coins[i].x, coins[i].y, player.x, player.y) > despawnR) coins.splice(i, 1);
+  for (let i = coins.length - 1; i >= 0; i--) if (distToNearestPlayer(coins[i].x, coins[i].y) > despawnR) coins.splice(i, 1);
+  // conteggi per ruolo in UN passaggio (niente .filter che alloca ogni frame)
+  let nCiv = 0, nCop = 0, nSoldier = 0;
+  for (const p of peds) { if (p.role === 'civ') nCiv++; else if (p.role === 'cop') nCop++; else if (p.role === 'soldier') nSoldier++; }
+  let nTraf = 0, nPark = 0, nTaxi = 0, nDeliv = 0, nArmy = 0, nPolice = 0;
+  for (const c of cars) {
+    if (c.role === 'traffic') nTraf++; else if (c.role === 'armycar') nArmy++; else if (c.role === 'police') nPolice++;
+    if (c.parkedDecor && c.role === 'parked') nPark++;
+    if (c.isTaxi) nTaxi++;
+    if (c.isDelivery) nDeliv++;
+  }
   // civili
-  const wantCiv = 26;
-  let civ = peds.filter(p => p.role === 'civ').length;
-  if (civ < wantCiv && frame % 8 === 0) { const p = randomWalkNear(player.x, player.y, vw * 0.55, vw * 0.8); if (p) peds.push(makePed(p.x, p.y, 'civ')); }
+  if (nCiv < 26 * nP && frame % 8 === 0) { const p = randomWalkNear(fp.x, fp.y, vw * 0.55, vw * 0.8); if (p) peds.push(makePed(p.x, p.y, 'civ')); }
   // traffico in movimento
-  const wantTraffic = 14;
-  let traf = cars.filter(c => c.role === 'traffic').length;
-  if (traf < wantTraffic && frame % 12 === 0) { const c = spawnTrafficNear(player.x, player.y, vw * 0.55, vw * 0.9); if (c) cars.push(c); }
+  if (nTraf < 14 * nP && frame % 12 === 0) { const c = spawnTrafficNear(fp.x, fp.y, vw * 0.55, vw * 0.9); if (c) cars.push(c); }
   // auto parcheggiate
-  const wantParked = 14;
-  let park = cars.filter(c => c.parkedDecor && c.role === 'parked').length;
-  if (park < wantParked && frame % 16 === 0) { const p = randomParkingNear(player.x, player.y, vw * 0.5, vw * 0.9); if (p) cars.push(makeParked(p.x, p.y, p.angle)); }
+  if (nPark < 14 * nP && frame % 16 === 0) { const p = randomParkingNear(fp.x, fp.y, vw * 0.5, vw * 0.9); if (p) cars.push(makeParked(p.x, p.y, p.angle)); }
   // qualche taxi in giro per la città, sempre
-  if (frame % 40 === 0 && cars.filter(c => c.isTaxi).length < 3) {
-    const c = spawnTrafficNear(player.x, player.y, vw * 0.55, vw * 0.9);
+  if (frame % 40 === 0 && nTaxi < 3 * nP) {
+    const c = spawnTrafficNear(fp.x, fp.y, vw * 0.55, vw * 0.9);
     if (c) { makeTaxi(c); cars.push(c); }
   }
   // ...e almeno un paio di moto delle consegne
-  if (frame % 40 === 20 && cars.filter(c => c.isDelivery).length < 2) {
-    const c = spawnTrafficNear(player.x, player.y, vw * 0.55, vw * 0.9);
+  if (frame % 40 === 20 && nDeliv < 2 * nP) {
+    const c = spawnTrafficNear(fp.x, fp.y, vw * 0.55, vw * 0.9);
     if (c) { makeDeliveryMoto(c); cars.push(c); }
   }
   // rimpiazza (fuori campo) i mezzi di servizio davanti a ogni struttura speciale
   if (frame % 120 === 0) for (const lm of landmarks) {
-    const d = dist(lm.cx, lm.cy, player.x, player.y);
+    const d = distToNearestPlayer(lm.cx, lm.cy);
     if (d < 600 || d > despawnR) continue;
     if (lm.type === 'army') {                          // ripristina il presidio della base
       const tanks = cars.filter(c => c.role === 'parked' && c.serviceType === 'army' && dist(c.x, c.y, lm.cx, lm.cy) < 600).length;
@@ -952,23 +1004,19 @@ function managePopulation() {
     if (!has) parkServiceCar(lm);
   }
   // monetine sparse + qualche monetina nascosta nei vicoli
-  const wantCoins = 22;
-  if (coins.length < wantCoins && frame % 14 === 0) spawnCoinNear(player.x, player.y, vw * 0.35, vw * 0.9);
-  if (coins.length < wantCoins && frame % 45 === 0) spawnAlleyCoin(player.x, player.y, vw * 0.9);
+  const wantCoins = 22 * nP;
+  if (coins.length < wantCoins && frame % 14 === 0) spawnCoinNear(fp.x, fp.y, vw * 0.35, vw * 0.9);
+  if (coins.length < wantCoins && frame % 45 === 0) spawnAlleyCoin(fp.x, fp.y, vw * 0.9);
   // ALLARME MILITARE: finché è attivo, soldati e jeep armate danno la caccia
   if (armyAlertT > 0) {
-    const soldiers = peds.filter(p => p.role === 'soldier').length;
-    const jeeps = cars.filter(c => c.role === 'armycar').length;
-    if (soldiers < 3 && frame % 40 === 0) { const p = randomWalkNear(player.x, player.y, vw * 0.5, vw * 0.75); if (p) peds.push(makeSoldier(p.x, p.y)); }
-    if (jeeps < 2 && frame % 60 === 0) { const p = randomRoadNear(player.x, player.y, vw * 0.55, vw * 0.9); if (p) cars.push(makeArmyCar(p.x, p.y)); }
+    if (nSoldier < 3 * nP && frame % 40 === 0) { const p = randomWalkNear(fp.x, fp.y, vw * 0.5, vw * 0.75); if (p) peds.push(makeSoldier(p.x, p.y)); }
+    if (nArmy < 2 * nP && frame % 60 === 0) { const p = randomRoadNear(fp.x, fp.y, vw * 0.55, vw * 0.9); if (p) cars.push(makeArmyCar(p.x, p.y)); }
   }
-  // POLIZIA in base al livello ricercato
-  const wantCops = wanted;                       // poliziotti a piedi
-  const wantCopCars = Math.max(0, wanted - 1);   // volanti
-  let cops = peds.filter(p => p.role === 'cop').length;
-  let copCars = cars.filter(c => c.role === 'police').length;
-  if (wanted > 0 && cops < wantCops && frame % 30 === 0) { const p = randomWalkNear(player.x, player.y, vw * 0.5, vw * 0.75); if (p) peds.push(makePed(p.x, p.y, 'cop')); }
-  if (wanted >= 2 && copCars < wantCopCars && frame % 50 === 0) { const p = randomRoadNear(player.x, player.y, vw * 0.55, vw * 0.9); if (p) { const c = makeCar(p.x, p.y, 'police'); c.wasPolice = true; cars.push(c); } }
+  // POLIZIA in base al livello ricercato (heat di stanza condiviso in multigiocatore)
+  const wantCops = wanted * nP;                  // poliziotti a piedi
+  const wantCopCars = Math.max(0, wanted - 1) * nP;   // volanti
+  if (wanted > 0 && nCop < wantCops && frame % 30 === 0) { const p = randomWalkNear(fp.x, fp.y, vw * 0.5, vw * 0.75); if (p) peds.push(makePed(p.x, p.y, 'cop')); }
+  if (wanted >= 2 && nPolice < wantCopCars && frame % 50 === 0) { const p = randomRoadNear(fp.x, fp.y, vw * 0.55, vw * 0.9); if (p) { const c = makeCar(p.x, p.y, 'police'); c.wasPolice = true; cars.push(c); } }
 }
 
 // ---------- Particelle / effetti ----------
@@ -987,7 +1035,8 @@ function updateParts() {
   for (let i = decals.length - 1; i >= 0; i--) if (--decals[i].life <= 0) decals.splice(i, 1);
   for (let i = pickups.length - 1; i >= 0; i--) {
     const k = pickups[i]; k.t += 0.12; k.life--;
-    if (dist(k.x, k.y, player.x, player.y) < 22) { cash += k.v; sfx.coin(); pickups.splice(i, 1); updateCash(); }
+    const got = playerTouching(k.x, k.y, 22);
+    if (got) { asPlayer(got, () => { cash += k.v; updateCash(); }); sfx.coin(); pickups.splice(i, 1); }
     else if (k.life <= 0) pickups.splice(i, 1);
   }
 }
@@ -996,8 +1045,9 @@ function updateCoins() {
   for (let i = coins.length - 1; i >= 0; i--) {
     const k = coins[i];
     k.spin += 0.13; k.bob += 0.08;
-    if (dist(k.x, k.y, player.x, player.y) < 24) {
-      cash += k.val; sfx.coin(); updateCash();
+    const got = playerTouching(k.x, k.y, 24);
+    if (got) {
+      asPlayer(got, () => { cash += k.val; updateCash(); }); sfx.coin();
       for (let j = 0; j < 7; j++) { const a = rnd(0, TAU), s = rnd(1, 3); parts.push({ x: k.x, y: k.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 1, life: rndi(10, 20), color: Math.random() < .5 ? '#ffe14a' : '#fff2a0', size: rnd(2, 4), kind: 'spark' }); }
       coins.splice(i, 1);
     }

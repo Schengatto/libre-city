@@ -3,23 +3,27 @@
 // NON è incluso in index.html: viene concatenato IN CODA al bundle della sim solo
 // da server/sim-runtime.js (Node + vm), così condivide lo scope globale dei
 // <script> classici del gioco e può leggere/scrivere player/cars/peds e chiamare
-// update(). Qui vivono:
-//   1) gli SHIM DI INPUT che nel browser stanno in input.js (assente sul server):
-//      held/mouseWX/mouseWY/mDownL/mClicked/keys/touchDrive/… alimentati dal comando
-//      di rete del giocatore attualmente in simulazione;
-//   2) l'API di controllo `__sim` che l'harness Node richiama oltre il confine vm.
+// le funzioni della sim. Qui vivono:
+//   1) gli SHIM DI INPUT che nel browser stanno in input.js (assente sul server);
+//   2) lo stato MULTI-GIOCATORE (players[]) e l'orchestrazione del tick;
+//   3) enter/exit auto e clacson (compatti, da input.js);
+//   4) l'API di controllo `__sim` che l'harness Node richiama oltre il confine vm.
 //
-// (Stage 1: un solo giocatore, fermo al centro città; Stage 2 introdurrà players[].)
+// Modello: UNA sola città autoritativa per stanza. L'IA e i danni sono resi
+// multi-player dagli helper in entities.js (nearestPlayer/eachActivePlayer/asPlayer),
+// attivati impostando MP = players. Il livello "ricercato" è di STANZA (heat
+// condiviso) in questa prima versione; cash/morte/respawn sono per-giocatore.
 
-// ---- comando del giocatore attualmente simulato ----
+started = true;                          // abilita weaponKey ecc. (nessun rendering sul server)
+
+// ---- shim di input: leggono il comando del giocatore attualmente in simulazione ----
 var __curInput = { ax: 0, ay: 0, aim: 0, fireHeld: false, fireEdge: false };
-var keys = {};                          // compat: alcune funzioni azzerano keys[...]
+var keys = {};
 var touchDrive = { active: false, angle: 0 };
 var usingTouch = false;
-var missionsOn = false;                 // sul server autoritativo non ci sono missioni
+var missionsOn = false;                  // niente missioni in autoritativo
 var mDownL = false, mClicked = false;
 
-// nel browser `held(...codes)` legge la tastiera; qui traduce gli assi del comando
 function held(...codes) {
   const i = __curInput;
   for (const c of codes) {
@@ -30,41 +34,177 @@ function held(...codes) {
   }
   return false;
 }
-// il mouse non esiste sul server: ricostruiamo un punto davanti al player a partire
-// dall'angolo di mira trasmesso, così `atan2(mouseWY-y, mouseWX-x)` torna quell'angolo
+// niente mouse sul server: ricostruiamo un punto davanti al player dall'angolo di
+// mira trasmesso, così atan2(mouseWY-y, mouseWX-x) torna quell'angolo (armi/torretta/idrante)
 function mouseWX() { return player.x + Math.cos(__curInput.aim) * 130; }
 function mouseWY() { return player.y + Math.sin(__curInput.aim) * 130; }
-function applyTouchInput() {}           // il tick lo guida la glue: nessun input touch da leggere
+function applyTouchInput() {}            // il tick lo guida la glue
 
-// ---- API di controllo (var top-level ⇒ diventa proprietà del global del contesto,
-//      quindi leggibile da Node come ctx.__sim) ----
+// ===== stato multi-giocatore =====
+var players = [];
+MP = players;                            // attiva il percorso multi-player negli helper della sim
+var __playerSeq = 0;
+
+function makeSimPlayer(name, shirtIdx) {
+  const sp = randomRoadNear(WORLD_W / 2, WORLD_H / 2, 0, 500) || nodes[Math.floor(nodes.length / 2)];
+  return {
+    id: 'p' + (++__playerSeq), name: String(name || 'Ospite').slice(0, 14), shirtIdx: shirtIdx | 0,
+    x: sp.x, y: sp.y, r: 8, health: 100, aim: 0, walk: 0, moving: false,
+    car: null, shootCd: 0, hurtCd: 0, punchT: 0,
+    weaponIdx: 0, owned: WEAPONS.map(w => !w.price),
+    shirt: '#e0533a', skin: '#f6c79a', hair: '#5a3a1a',
+    cash: 0, downT: 0, downKind: null, kills: 0, deaths: 0,
+    input: { ax: 0, ay: 0, aim: 0, fireHeld: false, fireEdge: false, enterExit: false, horn: false, weapon: null },
+  };
+}
+function playerById(id) { for (const p of players) if (p.id === id) return p; return null; }
+// marshalling dei globali per-giocatore (downT/downKind/cash) attorno alla sua fase
+function loadP(pl) { player = pl; downT = pl.downT | 0; downKind = pl.downKind; cash = pl.cash | 0; }
+function saveP(pl) { pl.downT = downT; pl.downKind = downKind; pl.cash = cash; }
+
+// ---- sali / scendi (compatto, da input.js:toggleCar, senza toast/missioni/net) ----
+function simEnterExit(pl) {
+  if (pl.downT > 0) return;
+  if (pl.car) {                          // scendi accanto all'auto, in un punto libero
+    const c = pl.car;
+    const nx = Math.cos(c.angle + Math.PI / 2), ny = Math.sin(c.angle + Math.PI / 2);
+    let ex = c.x + nx * 34, ey = c.y + ny * 34;
+    if (boxHits(ex, ey, pl.r, pl.r)) { ex = c.x - nx * 34; ey = c.y - ny * 34; }
+    if (boxHits(ex, ey, pl.r, pl.r)) { ex = c.x; ey = c.y; }
+    pl.x = ex; pl.y = ey;
+    c.driver = null; c.speed = 0; c.role = 'parked'; c.edge = null;   // resta ferma: la vedono tutti
+    pl.car = null;
+    return;
+  }
+  let best = null, bd = 52;
+  for (const c of cars) { if (c.driver) continue; const d = dist(c.x, c.y, pl.x, pl.y); if (d < bd) { bd = d; best = c; } }
+  if (!best) return;
+  if (best.role === 'traffic' || best.role === 'police' || best.role === 'armycar') { player = pl; tossDriver(best); }
+  pl.car = best; best.driver = 'player'; best.owner = pl.id;
+  if (best.role === 'traffic' || best.role === 'parked') best.role = 'player';
+  if (best.isTank) {                     // rubare un carro armato scatena l'esercito
+    let lm = null, bdl = Infinity;
+    for (const l of landmarks) if (l.type === 'army') { const d = dist(l.cx, l.cy, pl.x, pl.y); if (d < bdl) { bdl = d; lm = l; } }
+    if (lm) { player = pl; triggerArmyAlert(lm); }
+  }
+}
+function simHorn(pl) {
+  const c = pl.car; if (!c) return;
+  if (c.wasPolice || c.livery === 'ambulance' || c.livery === 'fire') c.sirenOn = !c.sirenOn;
+}
+
+// ===== il tick del mondo autoritativo (rimpiazza update() di gameplay.js) =====
+function tickWorld() {
+  updateLights();
+  // --- FASE PER-GIOCATORE: ognuno agisce con i propri globali marshalati ---
+  for (const pl of players) {
+    loadP(pl);
+    __curInput = pl.input;
+    mDownL = pl.input.fireHeld; mClicked = pl.input.fireEdge;
+    if (pl.hurtCd > 0) pl.hurtCd--;
+    if (downT > 0) updateDown();
+    else {
+      if (pl.input.weapon != null) { weaponKey(pl.input.weapon); pl.input.weapon = null; }
+      if (pl.input.enterExit) { simEnterExit(pl); pl.input.enterExit = false; }
+      if (pl.input.horn)      { simHorn(pl);      pl.input.horn = false; }
+      if (pl.car) updateDrive(pl.car); else updatePlayerFoot();
+      updateHealPads();
+    }
+    pl.input.fireEdge = false;
+    saveP(pl);
+  }
+  // --- FASE MONDO CONDIVISA (funzioni della sim invariate) ---
+  for (const c of cars) updateCar(c);
+  resolveCarCollisions();
+  for (const pl of players) if (pl.car) { pl.x = pl.car.x; pl.y = pl.car.y; }   // ri-sincronizza chi guida
+  for (const p of peds) updatePed(p);
+  updateBullets();
+  updateRockets();
+  updateParts();
+  updateCoins();
+  updateArmy();
+  updateFires();
+  updateBurningCars();
+  updateWater();
+  managePopulation();
+  // decadimento del livello ricercato (heat di stanza)
+  if (crimeCd > 0) crimeCd--;
+  else if (wantedHeat > 0) { wantedHeat = Math.max(0, wantedHeat - 0.0016); wanted = Math.floor(wantedHeat); }
+  frame++;
+}
+
+// ===== payload di rete (stesse forme che il client sa già decodificare) =====
+const R2 = v => Math.round(v);
+function carPayload(c) {
+  return { id: c.id, x: R2(c.x), y: R2(c.y), an: c.angle, sp: Math.round(c.speed * 100) / 100,
+           w: c.w, h: c.h, col: c.color, role: c.role,
+           bike: !!c.isBike, tank: !!c.isTank, taxi: !!c.isTaxi, del: !!c.isDelivery,
+           liv: c.livery || null, pol: !!c.wasPolice, hel: c.helmet || null,
+           tur: c.isTank ? c.turretA : null, siren: !!c.sirenOn, lp: c.lightPhase || 0,
+           burn: !!c.burning, smk: !!c.smoking };
+}
+function pedPayload(p) {
+  return { id: p.id, x: R2(p.x), y: R2(p.y), f: p.facing || 0, wk: Math.round((p.walk || 0) * 100) / 100,
+           role: p.role, ko: !!p.ko, sh: p.shirt, sk: p.skin, ha: p.hair, dr: p.copDress ? 1 : p.soldierDress ? 2 : 0 };
+}
+function playerView(p) {
+  return { id: p.id, name: p.name, sh: p.shirtIdx, x: R2(p.x), y: R2(p.y), aim: p.aim,
+           wk: Math.round((p.walk || 0) * 100) / 100, mov: !!p.moving,
+           gun: !WEAPONS[p.weaponIdx].melee, hp: R2(p.health), down: p.downT > 0,
+           punch: p.punchT > 0, car: p.car ? carPayload(p.car) : null };
+}
+const AOI_R = 1200;                       // raggio di interesse attorno a ciascun giocatore
+
+// snapshot del mondo per il giocatore `id`: solo entità entro AOI_R da lui
+function snapshotFor(id) {
+  const me = playerById(id); if (!me) return null;
+  const mx = me.x, my = me.y, R = AOI_R, R2q = R * R;
+  const near = (x, y) => { const dx = x - mx, dy = y - my; return dx * dx + dy * dy <= R2q; };
+  const out = {
+    t: 'w', tick: frame, ack: me.input.seq || 0,
+    me: { x: R2(me.x), y: R2(me.y), aim: me.aim, hp: R2(me.health), cash: me.cash,
+          wanted, down: me.downT > 0, car: me.car ? carPayload(me.car) : null },
+    players: [], cars: [], peds: [], bul: [], rkt: [], coins: [], fires: [],
+  };
+  for (const p of players) if (p !== me && near(p.x, p.y)) out.players.push(playerView(p));
+  for (const c of cars) if (c.driver !== 'player' && near(c.x, c.y)) out.cars.push(carPayload(c));
+  for (const p of peds) if (near(p.x, p.y)) out.peds.push(pedPayload(p));
+  for (const b of bullets) if (near(b.x, b.y)) out.bul.push({ x: R2(b.x), y: R2(b.y), a: Math.atan2(b.vy, b.vx), hostile: !b.fromPlayer });
+  for (const r of rockets) if (near(r.x, r.y)) out.rkt.push({ x: R2(r.x), y: R2(r.y), a: Math.atan2(r.vy, r.vx) });
+  for (const k of coins) if (near(k.x, k.y)) out.coins.push({ x: R2(k.x), y: R2(k.y), v: k.val });
+  for (const f of fires) if (near(f.x, f.y)) out.fires.push({ x: R2(f.x), y: R2(f.y) });
+  return out;
+}
+
+// ===== API di controllo esposta all'harness Node (var top-level ⇒ prop del global) =====
 var __sim = {
-  // avanza la simulazione di un tick per il giocatore singolo (Stage 1)
-  tick(input) {
-    if (input) __curInput = Object.assign(__curInput, input);
-    mDownL = __curInput.fireHeld; mClicked = __curInput.fireEdge;
-    update();
-    __curInput.fireEdge = false;        // gli edge valgono un tick solo
+  addPlayer(name, shirtIdx) { const pl = makeSimPlayer(name, shirtIdx); players.push(pl); return pl.id; },
+  removePlayer(id) {
+    const pl = playerById(id); if (!pl) return;
+    if (pl.car) { pl.car.driver = null; pl.car.role = 'parked'; pl.car.edge = null; pl.car = null; }
+    players.splice(players.indexOf(pl), 1);
   },
-  setInput(input) { __curInput = Object.assign(__curInput, input || {}); },
-  // la città generata dal seme: serve a verificare il determinismo host↔server
+  applyInput(id, cmd) {
+    const pl = playerById(id); if (!pl || !cmd) return;
+    const i = pl.input;
+    if (cmd.ax != null) i.ax = cmd.ax; if (cmd.ay != null) i.ay = cmd.ay;
+    if (cmd.aim != null) i.aim = cmd.aim; if (cmd.seq != null) i.seq = cmd.seq;
+    if (cmd.b != null) { i.fireHeld = !!(cmd.b & 1); if (cmd.b & 2) i.fireEdge = true; if (cmd.b & 4) i.enterExit = true; if (cmd.b & 8) i.horn = true; }
+    if (cmd.drive) { touchDrive.active = !!cmd.drive.active; touchDrive.angle = cmd.drive.angle || 0; }
+    if (cmd.w != null) i.weapon = cmd.w;
+  },
+  tick() { tickWorld(); },
+  snapshotFor,
+  playerState(id) { const p = playerById(id); return p ? { id: p.id, x: R2(p.x), y: R2(p.y), hp: R2(p.health), cash: p.cash, down: p.downT > 0, inCar: !!p.car, wanted } : null; },
+  scores() { return players.map(p => ({ id: p.id, name: p.name, k: p.kills, d: p.deaths, c: p.cash })); },
+  playerCount() { return players.length; },
+  _player(id) { return playerById(id); },   // solo per i test: riferimento diretto all'oggetto player
+  // --- diagnostica per i test ---
   worldInfo() {
-    // il grafo stradale è una griglia a topologia fissa (nodes/edges costanti tra i
-    // semi): per confrontare la mappa serve una firma del CONTENUTO seedato (grid +
-    // tipi/posizioni dei landmark), identica solo a parità di codice stanza.
     let sig = 0;
     for (let i = 0; i < grid.length; i++) sig = (sig * 31 + grid[i]) | 0;
     for (const l of landmarks) sig = (sig * 31 + l.x0 * 7 + l.y0 * 13 + l.type.charCodeAt(0)) | 0;
-    return { room: ROOM_CODE, worldW: WORLD_W, worldH: WORLD_H,
-             nodes: nodes.length, edges: edges.length, landmarks: landmarks.length, sig };
+    return { room: ROOM_CODE, worldW: WORLD_W, worldH: WORLD_H, nodes: nodes.length, edges: edges.length, landmarks: landmarks.length, sig };
   },
-  counts() {
-    return { frame, cars: cars.length, peds: peds.length, coins: coins.length,
-             bullets: bullets.length, parts: parts.length };
-  },
-  playerPos() { return { x: Math.round(player.x), y: Math.round(player.y), health: player.health, inCar: !!player.car }; },
-  carSnapshot() {
-    return cars.map(c => ({ id: c.id, x: Math.round(c.x), y: Math.round(c.y),
-                            role: c.role, sp: Math.round(c.speed * 100) / 100 }));
-  },
+  counts() { return { frame, cars: cars.length, peds: peds.length, coins: coins.length, bullets: bullets.length, players: players.length }; },
 };
