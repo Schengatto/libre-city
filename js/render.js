@@ -4,7 +4,61 @@
 // =========================================================
 //  RENDER
 // =========================================================
+// =============================================================================
+//  CACHE DEL MONDO STATICO (bake su canvas offscreen a chunk)
+//  La città è generata una volta sola dal seme ROOM_CODE e non cambia più: strade,
+//  edifici, tile, marciapiedi, landmark. Prima `drawWorldStatic()` ridisegnava
+//  tutto questo A OGNI FRAME (di gran lunga il costo maggiore, specie su mobile).
+//  Ora lo disegniamo una volta per "chunk" 1024×1024 in un canvas offscreen e poi
+//  ci limitiamo a blittare i chunk visibili. Il disegno riusa le stesse funzioni:
+//  reindirizziamo `ctx` sul canvas del chunk e fingiamo una camera al suo origine.
+//  (Restano "congelati" nel bake due dettagli animati minori: i riflessi
+//  dell'acqua e il lampeggìo rosso in cima alle torri — scambio accettabile.)
+// =============================================================================
+const WORLD_CHUNK = 1024;
+const WORLD_CHUNKS_X = Math.ceil(WORLD_W / WORLD_CHUNK);
+const WORLD_CHUNKS_Y = Math.ceil(WORLD_H / WORLD_CHUNK);
+const worldChunks = new Map();                   // "cx,cy" → canvas del chunk
+
+function bakeWorldChunk(cx, cy) {
+  const cv = document.createElement('canvas');
+  cv.width = WORLD_CHUNK; cv.height = WORLD_CHUNK;
+  const cctx = cv.getContext('2d');
+  // reindirizza il disegno del mondo su questo chunk (camera all'origine del chunk)
+  const _ctx = ctx, _camX = camX, _camY = camY, _vw = vw, _vh = vh;
+  ctx = cctx; camX = cx * WORLD_CHUNK; camY = cy * WORLD_CHUNK; vw = WORLD_CHUNK; vh = WORLD_CHUNK;
+  drawWorldStatic();
+  ctx = _ctx; camX = _camX; camY = _camY; vw = _vw; vh = _vh;
+  return cv;
+}
+function worldChunkAt(cx, cy) {
+  const key = cx + ',' + cy;
+  let cv = worldChunks.get(key);
+  if (!cv) { cv = bakeWorldChunk(cx, cy); worldChunks.set(key, cv); }
+  return cv;
+}
 function drawWorld() {
+  const cx0 = Math.max(0, Math.floor(camX / WORLD_CHUNK));
+  const cy0 = Math.max(0, Math.floor(camY / WORLD_CHUNK));
+  const cx1 = Math.min(WORLD_CHUNKS_X - 1, Math.floor((camX + vw) / WORLD_CHUNK));
+  const cy1 = Math.min(WORLD_CHUNKS_Y - 1, Math.floor((camY + vh) / WORLD_CHUNK));
+  // blitta i chunk visibili (bake al volo se assenti)
+  for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++)
+    ctx.drawImage(worldChunkAt(cx, cy), Math.floor(cx * WORLD_CHUNK - camX), Math.floor(cy * WORLD_CHUNK - camY));
+  // prefetch: prepara UN chunk non ancora pronto nell'anello attorno alla vista,
+  // così lo scorrimento trova i chunk già pronti e non produce scatti ai bordi
+  prefetch: for (let cy = cy0 - 1; cy <= cy1 + 1; cy++)
+    for (let cx = cx0 - 1; cx <= cx1 + 1; cx++) {
+      if (cx < 0 || cy < 0 || cx >= WORLD_CHUNKS_X || cy >= WORLD_CHUNKS_Y) continue;
+      if (!worldChunks.has(cx + ',' + cy)) { worldChunkAt(cx, cy); break prefetch; }
+    }
+  // eviction: scarta i chunk fuori dall'anello per limitare la memoria (mobile)
+  if (worldChunks.size > 24) for (const key of [...worldChunks.keys()]) {
+    const i = key.indexOf(','), kx = +key.slice(0, i), ky = +key.slice(i + 1);
+    if (kx < cx0 - 1 || kx > cx1 + 1 || ky < cy0 - 1 || ky > cy1 + 1) worldChunks.delete(key);
+  }
+}
+function drawWorldStatic() {
   const x0 = Math.max(0, Math.floor(camX / T)), y0 = Math.max(0, Math.floor(camY / T));
   const x1 = Math.min(MAP_W - 1, Math.ceil((camX + vw) / T)), y1 = Math.min(MAP_H - 1, Math.ceil((camY + vh) / T));
   // 1) sfondo: tutto tranne la carreggiata (asfalto + marciapiede lungo strada),
@@ -1014,6 +1068,7 @@ function roundRect(x, y, w, h, r) {
   ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
 }
 
+const renderEnts = [];                            // buffer riusato dall'ordinamento in render()
 function render() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = '#26282e'; ctx.fillRect(0, 0, vw, vh);
@@ -1025,7 +1080,8 @@ function render() {
   drawCoins();
   drawFires();
   // ordina le entità per Y così quelle più in basso stanno davanti
-  const ents = [];
+  // (array riusato tra i frame: niente allocazione nel loop di rendering)
+  const ents = renderEnts; ents.length = 0;
   for (const c of cars) ents.push(c);
   for (const p of peds) ents.push(p);
   if (!player.car) ents.push(player);          // a piedi disegna Federico; in auto lo copre l'auto
@@ -1077,6 +1133,7 @@ const miniEl = document.getElementById('mini');
 const mctx = miniEl ? miniEl.getContext('2d') : null;
 function drawMinimap() {
   if (!mctx) return;
+  if (frame % 3 !== 0) return;                    // ~20 Hz: la minimappa non serve a 60 fps, resta l'ultimo disegno
   const S = miniEl.width, sc = S / MAP_W;
   mctx.clearRect(0, 0, S, S);
   mctx.drawImage(cityMini, 0, 0, MAP_W, MAP_H, 0, 0, S, S);

@@ -18,7 +18,10 @@
    file; l'ordine conta solo per il codice eseguito subito al caricamento. */
 // ---------- Canvas ----------
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
+// `ctx` è quasi sempre il contesto del canvas a schermo, ma il rendering del
+// mondo statico lo reindirizza temporaneamente su un canvas offscreen (bake dei
+// chunk, vedi render.js): per questo è `let` e non `const`.
+let ctx = canvas.getContext('2d');
 let vw = 0, vh = 0;
 function resize() { vw = canvas.width = innerWidth; vh = canvas.height = innerHeight; }
 addEventListener('resize', resize);
