@@ -26,6 +26,7 @@ function nearGunshop() {
 }
 function weaponKey(i) {
   if (!started) return;
+  if (authClient()) { net.weaponReq = i; return; }   // equipaggia/compra: lo fa il server
   const w = WEAPONS[i];
   if (player.owned[i]) {                              // già tua: la impugni
     if (player.weaponIdx !== i) { player.weaponIdx = i; updateWeapon(); toast(`${w.icon} ${w.name} equipaggiata`); sfx.door(); }
@@ -68,7 +69,8 @@ function updatePlayerFoot() {
   if (player.shootCd > 0) player.shootCd--;
   if (player.punchT > 0) player.punchT--;
   const w = WEAPONS[player.weaponIdx];
-  if ((w.auto ? mDownL : mClicked) && player.shootCd === 0) { (w.melee ? playerPunch : playerShoot)(w); player.shootCd = w.cd; }
+  // su un client autoritativo lo sparo lo decide il server (predizione senza proiettili locali)
+  if (!authClient() && (w.auto ? mDownL : mClicked) && player.shootCd === 0) { (w.melee ? playerPunch : playerShoot)(w); player.shootCd = w.cd; }
   mClicked = false;
 }
 function playerShoot(w) {
@@ -184,11 +186,13 @@ function updateDrive(c) {
   moveBox(c, Math.cos(c.angle) * c.speed, Math.sin(c.angle) * c.speed, c.colH, c.colH);
   if ((c.hitX || c.hitY) && Math.abs(c.speed) > 2.6) { crashCar(c); c.speed *= 0.28; }
   applyKnockback(c);                                    // rimbalzo residuo dagli urti
-  runOver(c, true);
-  // autopompa: tieni premuto il mouse per sparare acqua con l'idrante
-  if (c.livery === 'fire' && mDownL) sprayWater(c);
-  // carro armato: la torretta insegue il mirino, i cingoli schiacciano le auto
-  if (c.isTank) { updateTankGun(c); tankCrush(c); }
+  // effetti autoritativi (investimenti, idrante, cannone/cingoli): sul client
+  // autoritativo li fa il server — qui predìco solo il MOTO del mezzo
+  if (!authClient()) {
+    runOver(c, true);
+    if (c.livery === 'fire' && mDownL) sprayWater(c);   // autopompa: idrante col mouse
+    if (c.isTank) { updateTankGun(c); tankCrush(c); }   // carro: torretta + cingoli
+  }
   // il player segue l'auto
   player.x = c.x; player.y = c.y;
   // audio motore: i giri salgono dentro la marcia e ricadono alla cambiata
@@ -1067,6 +1071,9 @@ function updateCamera() {
 
 // ---------- Update principale ----------
 function update() {
+  // Fase 2: su un server autoritativo il client non simula il mondo, lo RENDE
+  // (predizione del proprio player + interpolazione degli snapshot). Vedi net.js.
+  if (authClient()) { updateNetClient(); return; }
   // partita a tempo: il cronometro scorre sempre, anche da morto/arrestato
   if (gameMinutes > 0) {
     timeLeft--;

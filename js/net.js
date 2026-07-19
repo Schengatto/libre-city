@@ -34,6 +34,13 @@ const net = {
   carSeq: 0,              // id progressivo dei mezzi che il player locale guida
   remoteCops: new Map(),  // netId → volante di un rivale ricercato (condivisa, disegnata e solida)
   copSeq: 0,              // id progressivo delle volanti che trasmetto quando sono ricercato
+  // ---- Fase 2: client di un SERVER AUTORITATIVO ----
+  authoritative: false,   // true = il mondo lo possiede il server; qui si rende soltanto
+  snap: null,             // ultimo snapshot 'w' ricevuto
+  inSeq: 0,               // id progressivo dell'input inviato
+  firePending: false, enterEdge: false, hornEdge: false, weaponReq: null,  // azioni one-shot → server
+  wcars: new Map(), wpeds: new Map(),   // id → entità del mondo (interpolate)
+  wbullets: [], wrockets: [],           // proiettili/razzi (estrapolati tra gli snapshot)
 };
 const netActive = () => net.mode !== null;
 
@@ -153,13 +160,15 @@ function netOnJoined(m) {
   const resumed = !!m.resumed;
   net.myId = m.id;
   if (m.token) net.token = m.token;
+  net.authoritative = !!m.sim;                       // Fase 2: il server simula il mondo
   player.shirt = NET_SHIRTS[m.shirtIdx % NET_SHIRTS.length];
   if (m.minutes != null) gameMinutes = m.minutes;   // il ritmo della partita lo detta il server
   net.clockLeft = m.left;
   // sincronizza il roster senza azzerare i ghost già presenti (importante al riaggancio)
   for (const p of (m.players || [])) if (!net.players.has(p.id)) net.players.set(p.id, makeGhost(p.id, p.name, p.shirtIdx));
-  if (!resumed) {
-    // primo ingresso: sfalsa la posizione così i giocatori non partono impilati
+  if (!resumed && !net.authoritative) {
+    // primo ingresso (solo Fase 1): sfalsa la posizione così i giocatori non partono impilati
+    // (in autoritativo la posizione la decide il server)
     player.x += 26 * m.shirtIdx;
     unstick(player, player.r, player.r);
   } else if (net.dropped) {
@@ -184,6 +193,7 @@ function onServerMessage(m) {
     }
     case 'end': if (started) endGame('time'); break;
     case 'kill': netScoreKill(m.id); break;
+    case 'w': netOnSnapshot(m); break;             // Fase 2: snapshot del mondo autoritativo
     case 'pong': break;
     default: if (m.id && m.id !== net.myId) netApplyRemote(m.id, m);
   }
@@ -453,11 +463,200 @@ function netTick() {
   if (frame % 30 === 0 && ladderEl && !ladderEl.classList.contains('hidden')) renderLadder();
 }
 
+// =============================================================================
+//  FASE 2 · CLIENT DI UN SERVER AUTORITATIVO
+//  Il mondo (traffico, pedoni, polizia, proiettili) lo simula il server e lo manda
+//  a snapshot ('w') per area d'interesse. Qui NON si simula: si PREDICE solo il
+//  proprio player (per la reattività) e si interpolano gli snapshot verso i target.
+//  update() (gameplay.js) devia qui quando net.authoritative è vero.
+// =============================================================================
+
+// applica i campi di un'auto dallo snapshot a un oggetto locale (target d'interp.)
+function netApplyCar(c, cp) {
+  c.tx = cp.x; c.ty = cp.y; c.ta = cp.an; c.speed = cp.sp;
+  c.w = cp.w; c.h = cp.h; c.color = cp.col; c.role = cp.role;
+  c.isBike = cp.bike; c.isTank = cp.tank; c.isTaxi = cp.taxi; c.isDelivery = cp.del;
+  c.livery = cp.liv || null; c.wasPolice = cp.pol; c.helmet = cp.hel || '#2a2a2e';
+  if (cp.tur != null) c.turretA = cp.tur;
+  c.sirenOn = cp.siren; c.lightPhase = cp.lp || 0; c.burning = cp.burn; c.smoking = cp.smk;
+}
+function netMakeWorldCar(cp) {
+  const c = { netId: cp.id, driver: 'net', colH: cp.tank ? 16 : cp.bike ? 8 : 13, gear: 1,
+              kvx: 0, kvy: 0, x: cp.x, y: cp.y, angle: cp.an };
+  netApplyCar(c, cp); c.x = cp.x; c.y = cp.y; c.angle = cp.an;
+  return c;
+}
+// crea l'auto GUIDATA dal player locale a partire dallo snapshot (con la fisica di
+// guida, che il payload trasporta: top/accel/mass/gears — servono alla predizione)
+function netMakePlayerCar(cp) {
+  const c = netMakeWorldCar(cp);
+  c.driver = 'player'; c.speed = 0; c.gear = 1;
+  c.top = cp.top || 4; c.accel = cp.acc || 0.08; c.mass = cp.mass || 1; c.gears = cp.gears || 4;
+  return c;
+}
+
+// arriva uno snapshot: aggiorna i target di interpolazione di mondo e ghost
+function netOnSnapshot(m) {
+  net.snap = m;
+  // --- auto del mondo (traffico/polizia/parcheggiate/abbandonate) ---
+  const seen = new Set();
+  for (const cp of m.cars) {
+    seen.add(cp.id);
+    let c = net.wcars.get(cp.id);
+    if (!c) { c = netMakeWorldCar(cp); net.wcars.set(cp.id, c); }
+    else { netApplyCar(c, cp); if (dist(c.x, c.y, cp.x, cp.y) > 280) { c.x = cp.x; c.y = cp.y; c.angle = cp.an; } }
+  }
+  for (const id of net.wcars.keys()) if (!seen.has(id)) net.wcars.delete(id);
+  // --- pedoni ---
+  const seenP = new Set();
+  for (const pp of m.peds) {
+    seenP.add(pp.id);
+    let p = net.wpeds.get(pp.id);
+    if (!p) { p = { netId: pp.id, x: pp.x, y: pp.y, walk: pp.wk, facing: pp.f }; net.wpeds.set(pp.id, p); }
+    p.tx = pp.x; p.ty = pp.y; p.tf = pp.f; p.walk = pp.wk; p.role = pp.role; p.ko = pp.ko;
+    p.shirt = pp.sh; p.skin = pp.sk; p.hair = pp.ha;
+    p.copDress = pp.dr === 1; p.soldierDress = pp.dr === 2;
+    if (dist(p.x, p.y, pp.x, pp.y) > 280) { p.x = pp.x; p.y = pp.y; }
+  }
+  for (const id of net.wpeds.keys()) if (!seenP.has(id)) net.wpeds.delete(id);
+  // --- proiettili e razzi (estrapolati localmente tra gli snapshot) ---
+  net.wbullets = m.bul.map(b => ({ x: b.x, y: b.y, vx: Math.cos(b.a) * 12, vy: Math.sin(b.a) * 12, hostile: b.hostile }));
+  net.wrockets = m.rkt.map(r => ({ x: r.x, y: r.y, vx: Math.cos(r.a) * 6.5, vy: Math.sin(r.a) * 6.5 }));
+  // --- monete e incendi (statici: ricostruiti a ogni snapshot) ---
+  coins.length = 0; for (const k of m.coins) coins.push({ x: k.x, y: k.y, val: k.v, spin: rnd(0, TAU), bob: rnd(0, TAU) });
+  fires.length = 0; for (const f of m.fires) fires.push({ x: f.x, y: f.y, r: 20, hp: 100 });
+  // --- ghost dei giocatori remoti (posizioni AOI; il roster resta da join/leave) ---
+  for (const pv of m.players) {
+    let g = net.players.get(pv.id);
+    if (!g) { g = makeGhost(pv.id, pv.name, pv.sh); net.players.set(pv.id, g); }
+    g.seen = true; g.name = pv.name; g.shirtIdx = pv.sh; g.shirt = NET_SHIRTS[pv.sh % NET_SHIRTS.length];
+    g.tx = pv.x; g.ty = pv.y; g.aim = pv.aim; g.walk = pv.wk; g.moving = pv.mov;
+    g.gun = pv.gun; g.hp = pv.hp; g.down = pv.down; if (pv.punch) g.punchT = 10;
+    if (pv.car) {
+      if (!g.car) { g.car = netMakeWorldCar(pv.car); } else netApplyCar(g.car, pv.car);
+      g.car.riderShirt = g.shirt;
+    } else g.car = null;
+  }
+  // --- classifica dallo snapshot (stats autoritative) ---
+  if (Array.isArray(m.sc)) for (const s of m.sc) {
+    if (s.id === net.myId) { net.kills = s.k; net.deaths = s.d; }
+    else { const g = net.players.get(s.id); if (g) g.stats = { k: s.k, d: s.d, c: s.c }; }
+  }
+}
+
+// interpola mondo e ghost verso i target ricevuti + estrapola i proiettili
+function netInterpWorld() {
+  const lerpCar = (c, k) => {
+    if (c.tx == null) return;
+    c.x += (c.tx - c.x) * k; c.y += (c.ty - c.y) * k;
+    c.angle += angDiff(c.angle, c.ta != null ? c.ta : c.angle) * 0.4;
+  };
+  for (const c of net.wcars.values()) lerpCar(c, 0.35);
+  for (const p of net.wpeds.values()) {
+    p.x += (p.tx - p.x) * 0.35; p.y += (p.ty - p.y) * 0.35;
+    if (p.tf != null) p.facing = p.tf;
+  }
+  for (const g of net.players.values()) {
+    if (g.punchT > 0) g.punchT--;
+    if (g.car) { lerpCar(g.car, 0.3); g.x = g.car.x; g.y = g.car.y; }
+    else if (g.tx != null) {
+      g.x += (g.tx - g.x) * 0.3; g.y += (g.ty - g.y) * 0.3;
+      if (dist(g.x, g.y, g.tx, g.ty) > 280) { g.x = g.tx; g.y = g.ty; }
+      if (g.moving) g.walk += 0.3;
+    }
+  }
+  for (const k of coins) { k.spin += 0.13; k.bob += 0.08; }
+  for (const b of net.wbullets) { b.x += b.vx; b.y += b.vy; }
+  for (const r of net.wrockets) { r.x += r.vx; r.y += r.vy; }
+}
+
+// ricostruisce gli array globali che render.js disegna (dai target interpolati)
+function netRebuildArrays() {
+  cars.length = 0;
+  for (const c of net.wcars.values()) cars.push(c);
+  if (player.car) cars.push(player.car);
+  peds.length = 0;
+  for (const p of net.wpeds.values()) peds.push(p);
+  bullets.length = 0; for (const b of net.wbullets) bullets.push(b);
+  rockets.length = 0; for (const r of net.wrockets) rockets.push(r);
+}
+
+// riconcilia il proprio player con lo stato autoritativo (salute, soldi, arma, auto,
+// posizione con dead-reckoning: si corregge solo la deriva evidente, non la latenza)
+function netReconcileMe() {
+  const me = net.snap && net.snap.me;
+  if (!me) return;
+  if (player.health !== me.hp) { player.health = me.hp; updateHealth(); }
+  if (cash !== me.cash) { cash = me.cash; updateCash(); }
+  if (me.wp != null && player.weaponIdx !== me.wp) { player.weaponIdx = me.wp; updateWeapon(); }
+  if (me.own) player.owned = me.own;
+  if (me.wanted != null && me.wanted !== wanted) { wanted = me.wanted; updateStars(); }
+  if (me.k != null) net.kills = me.k;
+  if (me.d != null) net.deaths = me.d;
+  // auto: crea/rimuovi seguendo l'autorità
+  if (me.car && !player.car) { player.car = netMakePlayerCar(me.car); }
+  else if (!me.car && player.car) { player.car = null; engineGain(0); }
+  // fuori gioco (morto/arrestato): overlay col conto alla rovescia del server
+  const bm = $('#bigMsg');
+  if (me.down) {
+    downT = me.dt || 1;
+    if (bm) {
+      bm.classList.remove('hidden'); bm.classList.toggle('busted', me.dk === 'busted');
+      const t = $('#bigTitle'); if (t) t.textContent = me.dk === 'busted' ? 'Arrestato' : 'Ti hanno ucciso';
+      const c = $('#bigCount'); if (c) c.textContent = Math.max(1, Math.ceil(downT / 60));
+    }
+  } else {
+    if (downT > 0 && bm) bm.classList.add('hidden');
+    downT = 0;
+  }
+  // posizione: correggi solo derive evidenti (fidati della predizione entro ~45px)
+  const tx = me.car ? me.car.x : me.x, ty = me.car ? me.car.y : me.y;
+  const d = dist(player.x, player.y, tx, ty);
+  if (d > 140) { player.x = tx; player.y = ty; if (player.car) { player.car.x = tx; player.car.y = ty; } }
+  else if (d > 45) {
+    player.x += (tx - player.x) * 0.25; player.y += (ty - player.y) * 0.25;
+    if (player.car) { player.car.x = player.x; player.car.y = player.y; }
+  }
+}
+
+// comando compatto verso il server (assi, mira, pulsanti one-shot, cambio arma)
+function netSendInput() {
+  const ax = (held('KeyD', 'ArrowRight') ? 1 : 0) - (held('KeyA', 'ArrowLeft') ? 1 : 0);
+  const ay = (held('KeyS', 'ArrowDown') ? 1 : 0) - (held('KeyW', 'ArrowUp') ? 1 : 0);
+  const aim = Math.atan2(mouseWY() - player.y, mouseWX() - player.x);
+  let b = 0;
+  if (mDownL) b |= 1;
+  if (net.firePending) { b |= 2; net.firePending = false; }
+  if (net.enterEdge) { b |= 4; net.enterEdge = false; }
+  if (net.hornEdge) { b |= 8; net.hornEdge = false; }
+  const cmd = { t: 'i', seq: ++net.inSeq, ax, ay, aim: Math.round(aim * 256) / 256, b };
+  if (typeof touchDrive !== 'undefined' && touchDrive.active) cmd.drive = { active: true, angle: touchDrive.angle };
+  if (net.weaponReq != null) { cmd.w = net.weaponReq; net.weaponReq = null; }
+  netSend(cmd);
+}
+
+// il loop del client autoritativo (chiamato da update() al posto della simulazione)
+function updateNetClient() {
+  if (mClicked) net.firePending = true;                // ricorda il click (lo sparo lo fa il server)
+  // predizione del proprio player (movimento/mira); a terra resta fermo
+  if (downT === 0) { player.aim = Math.atan2(mouseWY() - player.y, mouseWX() - player.x);
+                     if (player.car) updateDrive(player.car); else updatePlayerFoot(); }
+  if (frame % 2 === 0) netSendInput();                 // ~30 comandi/s
+  netInterpWorld();
+  netRebuildArrays();
+  netReconcileMe();
+  updateParts();                                       // decadimento particelle cosmetiche locali
+  updateCamera();
+  frame++;
+  if (frame % 30 === 0 && ladderEl && !ladderEl.classList.contains('hidden')) renderLadder();
+}
+
 // ---------- Disegno dei ghost (chiamato da render.js) ----------
 function netPushEnts(ents) {
-  for (const g of net.players.values()) if (!g.down) ents.push({ netG: g, y: g.y });
-  for (const c of net.looseCars.values()) ents.push(c);   // mezzi abbandonati dai rivali (role 'parked' → drawCar)
-  for (const c of net.remoteCops.values()) ents.push(c);  // volanti dei rivali ricercati (role 'police' → drawCar con sirena)
+  // in autoritativo mostra i ghost solo dopo che uno snapshot li ha posizionati
+  for (const g of net.players.values()) if (!g.down && (!net.authoritative || g.seen)) ents.push({ netG: g, y: g.y });
+  for (const c of net.looseCars.values()) ents.push(c);   // (Fase 1) mezzi abbandonati dai rivali
+  for (const c of net.remoteCops.values()) ents.push(c);  // (Fase 1) volanti dei rivali ricercati
 }
 function drawNetPlayer(g) {
   if (g.car) { drawCar(g.car); netTag(g, g.car.x - camX, g.car.y - camY - g.car.h / 2 - 6); return; }

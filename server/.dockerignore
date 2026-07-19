@@ -1,6 +1,8 @@
 node_modules
 npm-debug.log
 test.mjs
+test-sim.mjs
+test-server-sim.mjs
 docker-compose.yml
 public
 fly.toml

@@ -114,6 +114,10 @@ let player = {
 // glue imposta `MP = players[]` e questi rendono l'IA e i danni consapevoli di più
 // giocatori senza toccare le funzioni di gioco.
 let MP = null;
+// true SOLO su un client che sta rendendo un server autoritativo (Fase 2): lì il
+// player si PREDICE localmente e non deve creare proiettili/effetti autoritativi
+// (li fa il server). `typeof net` è safe anche headless, dove `net` non esiste.
+function authClient() { return typeof net !== 'undefined' && net && !!net.authoritative; }
 // il giocatore attivo più vicino a (x,y) — bersaglio dell'IA (polizia, esercito, traffico)
 function nearestPlayer(x, y) {
   if (!MP) return player;
@@ -173,9 +177,11 @@ function makeCar(x, y, role, dir) {
     hornF: pick([285, 310, 335, 360, 385]) + rndi(-8, 8), hornKind: 'car',
   };
 }
+let pedSeq = 0;                                   // id progressivo dei pedoni (per gli snapshot di rete)
 function makePed(x, y, role) {
   const cop = role === 'cop';
   return {
+    id: pedSeq++,
     x, y, r: 7, role, ko: false, koT: 0, dead: false,
     dir: pick(DIRS), speed: rnd(0.8, 1.4), thinkCd: rndi(30, 120),
     walk: 0, facing: 0, shootCd: rndi(20, 60),

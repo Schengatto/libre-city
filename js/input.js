@@ -158,6 +158,7 @@ updateWpnBar();
 // ---------- Sali / scendi dall'auto ----------
 function toggleCar() {
   if (!started || downT > 0) return;
+  if (net.authoritative) { net.enterEdge = true; return; }   // sali/scendi lo decide il server
   if (player.car) {
     const c = player.car;
     // scendi accanto al lato dell'auto, in un punto libero
@@ -273,6 +274,7 @@ function toggleMissions() {
 // accende/spegne la sirena. Con una missione attiva la sirena parte da sola.
 function hornOrSiren() {
   if (!started || !player.car) return;
+  if (net.authoritative) { net.hornEdge = true; return; }    // clacson/sirena: al server
   const c = player.car;
   if (c.wasPolice || c.livery === 'ambulance' || c.livery === 'fire') {
     c.sirenOn = !c.sirenOn;

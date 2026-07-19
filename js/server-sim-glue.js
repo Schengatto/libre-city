@@ -141,7 +141,9 @@ function carPayload(c) {
            bike: !!c.isBike, tank: !!c.isTank, taxi: !!c.isTaxi, del: !!c.isDelivery,
            liv: c.livery || null, pol: !!c.wasPolice, hel: c.helmet || null,
            tur: c.isTank ? c.turretA : null, siren: !!c.sirenOn, lp: c.lightPhase || 0,
-           burn: !!c.burning, smk: !!c.smoking };
+           burn: !!c.burning, smk: !!c.smoking,
+           // fisica di guida: serve al client per PREDIRE il moto del proprio mezzo
+           top: c.top, acc: c.accel, mass: c.mass, gears: c.gears };
 }
 function pedPayload(p) {
   return { id: p.id, x: R2(p.x), y: R2(p.y), f: p.facing || 0, wk: Math.round((p.walk || 0) * 100) / 100,
@@ -163,7 +165,8 @@ function snapshotFor(id) {
   const out = {
     t: 'w', tick: frame, ack: me.input.seq || 0,
     me: { x: R2(me.x), y: R2(me.y), aim: me.aim, hp: R2(me.health), cash: me.cash,
-          wanted, down: me.downT > 0, car: me.car ? carPayload(me.car) : null },
+          wanted, down: me.downT > 0, dt: me.downT, dk: me.downKind, wp: me.weaponIdx, own: me.owned,
+          k: me.kills, d: me.deaths, car: me.car ? carPayload(me.car) : null },
     players: [], cars: [], peds: [], bul: [], rkt: [], coins: [], fires: [],
   };
   for (const p of players) if (p !== me && near(p.x, p.y)) out.players.push(playerView(p));

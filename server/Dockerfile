@@ -8,8 +8,10 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install --omit=dev
 
-# poi il codice
-COPY index.js ./
+# poi il codice: il server + l'harness della simulazione autoritativa (Fase 2) e i
+# sorgenti della sim (staging in sim/, preparati da deploy-vps.sh copiando js/*.js)
+COPY index.js sim-runtime.js ./
+COPY sim ./sim
 
 # la piattaforma inietta PORT; in locale il server ripiega su 8787
 ENV PORT=8080
