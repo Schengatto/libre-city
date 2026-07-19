@@ -31,6 +31,14 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { WebSocketServer } = require('ws');
+// Fase 2: simulazione autoritativa del mondo (una città per stanza). Se il modulo
+// non è disponibile (o fallisce), il server ricade sul solo relay della Fase 1.
+let createRoomSim = null;
+try { ({ createRoomSim } = require('./sim-runtime')); }
+catch (e) { console.error('sim-runtime non caricato, resto in modalità relay (Fase 1):', e.message); }
+// scalda il JIT: la PRIMISSIMA generazione della città è ~2-3× più lenta (cold).
+// La facciamo ora, a vuoto, così la prima stanza reale parte già veloce (~90ms).
+if (createRoomSim) { try { createRoomSim('WARMUP'); } catch (e) { console.error('warmup sim fallito:', e.message); createRoomSim = null; } }
 
 const PORT = Number(process.env.PORT) || 8787;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -40,6 +48,8 @@ const HOST = process.env.HOST || '0.0.0.0';
 const STATIC_DIR = process.env.STATIC_DIR ? path.resolve(process.env.STATIC_DIR) : '';
 const GRACE_MS = 30_000;          // finestra di riaggancio dopo una caduta di rete
 const HEARTBEAT_MS = 30_000;      // ping applicativo per scovare le socket morte
+const SIM_HZ = 30;                // frequenza del loop di simulazione autoritativa
+const SNAP_EVERY = 2;             // uno snapshot ogni N tick (~15/s)
 const MAX_PLAYERS_CAP = 8;        // tetto assoluto di giocatori per stanza
 const SHIRTS = 8;                 // maglie disponibili (vedi NET_SHIRTS nel client)
 const MAX_PAYLOAD = 64 * 1024;    // un messaggio di stato è ~qualche centinaio di byte
@@ -91,9 +101,35 @@ function scheduleEnd(room) {
 }
 function destroyRoom(room) {
   clearTimeout(room.endTimer);
+  stopSim(room);
   for (const p of room.players.values()) clearTimeout(p.dropTimer);
   rooms.delete(room.code);
   log('room destroyed', room.code);
+}
+
+// ---------- Simulazione autoritativa del mondo (Fase 2) -------------------
+// Ogni stanza simula UNA città (traffico, pedoni, polizia, fisica) e ne diffonde
+// snapshot per area d'interesse. I client mandano solo INPUT ('i') e disegnano.
+function startSim(room) {
+  if (!createRoomSim) return;                 // modulo assente: resta relay Fase 1
+  try { room.sim = createRoomSim(room.code); }
+  catch (e) { console.error('sim non avviata per', room.code, '—', e.message); room.sim = null; return; }
+  room.simTick = 0;
+  room.simTimer = setInterval(() => {
+    try {
+      room.sim.tick();
+      if (++room.simTick % SNAP_EVERY === 0) {
+        for (const p of room.players.values()) {
+          if (p.gone || !p.ws || p.ws.readyState !== 1) continue;
+          const snap = room.sim.snapshotFor(p.id);
+          if (snap) { snap.sc = room.sim.scores(); try { p.ws.send(JSON.stringify(snap)); } catch {} }
+        }
+      }
+    } catch (e) { console.error('tick error', room.code, e.message); }
+  }, Math.round(1000 / SIM_HZ));
+}
+function stopSim(room) {
+  clearInterval(room.simTimer); room.simTimer = null; room.sim = null;
 }
 
 // ---------- Ingresso in partita --------------------------------------------
@@ -106,9 +142,10 @@ function addPlayer(ws, room, name) {
   };
   room.players.set(id, p);
   bindWs(ws, room, p);
+  if (room.sim) room.sim.addPlayer(p.name, p.shirtIdx, p.id);   // Fase 2: entra nella città autoritativa
   sendRaw(ws, {
     t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes,
-    left: roomLeftFrames(room), players: roster(room, p.id), token: p.token,
+    left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, sim: !!room.sim,
   });
   broadcast(room, { t: 'join', id: p.id, name: p.name, shirtIdx: p.shirtIdx }, p.id);
   log('join', room.code, p.id, p.name, `(${activeCount(room)}/${room.max})`);
@@ -135,7 +172,8 @@ function handleCreate(ws, m) {
   };
   rooms.set(code, room);
   scheduleEnd(room);
-  log('room created', code, 'by', String(m.name || '?'), `(${room.minutes}min, max ${room.max})`);
+  startSim(room);                            // Fase 2: avvia la città autoritativa della stanza
+  log('room created', code, 'by', String(m.name || '?'), `(${room.minutes}min, max ${room.max}, sim ${room.sim ? 'on' : 'off'})`);
   addPlayer(ws, room, m.name);
 }
 // entra in una stanza esistente (o riaggancia con il token)
@@ -153,7 +191,7 @@ function handleJoin(ws, m) {
       bindWs(ws, room, p);
       sendRaw(ws, {
         t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes,
-        left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, resumed: true,
+        left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, resumed: true, sim: !!room.sim,
       });
       // se la sua uscita era già stata annunciata, gli altri lo re-inseriscono
       if (wasGone) broadcast(room, { t: 'join', id: p.id, name: p.name, shirtIdx: p.shirtIdx }, p.id);
@@ -173,7 +211,12 @@ function onGameMessage(ws, m) {
   const p = room && room.players.get(ws._pid);
   if (!room || !p) return;
   switch (m.t) {
-    // stato ed eventi: si ripetono agli altri firmandoli con l'id del mittente
+    // Fase 2: input del giocatore → città autoritativa (nessun relay: il mondo lo
+    // possiede il server, che risponde con gli snapshot 'w')
+    case 'i':
+      if (room.sim) room.sim.applyInput(p.id, m);
+      break;
+    // Fase 1 (compat): stato ed eventi ripetuti agli altri firmati con l'id del mittente
     case 's': case 'shot': case 'punch': case 'rocket': case 'park': case 'gone':
       broadcast(room, { ...m, id: p.id }, p.id);
       break;
@@ -200,6 +243,7 @@ function onDisconnect(ws) {
   p.gone = true;
   p.dropTimer = setTimeout(() => {
     room.players.delete(p.id);
+    if (room.sim) room.sim.removePlayer(p.id);   // uscita vera: via anche dalla città autoritativa
     broadcast(room, { t: 'leave', id: p.id });
     log('leave', room.code, p.id, p.name);
     if (room.players.size === 0) destroyRoom(room);

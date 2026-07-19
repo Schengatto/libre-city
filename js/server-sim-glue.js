@@ -178,7 +178,7 @@ function snapshotFor(id) {
 
 // ===== API di controllo esposta all'harness Node (var top-level ⇒ prop del global) =====
 var __sim = {
-  addPlayer(name, shirtIdx) { const pl = makeSimPlayer(name, shirtIdx); players.push(pl); return pl.id; },
+  addPlayer(name, shirtIdx, id) { const pl = makeSimPlayer(name, shirtIdx); if (id) pl.id = id; players.push(pl); return pl.id; },
   removePlayer(id) {
     const pl = playerById(id); if (!pl) return;
     if (pl.car) { pl.car.driver = null; pl.car.role = 'parked'; pl.car.edge = null; pl.car = null; }

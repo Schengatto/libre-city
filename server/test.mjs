@@ -29,12 +29,12 @@ const send = (ws, m) => ws.send(JSON.stringify(m));
 const findT = (ws, t) => ws.inbox.find(m => m.t === t);
 
 try {
-  await wait(600);
+  await wait(1000);   // avvio server + warmup della simulazione (prima città ~200ms)
 
   // create
   const a = await open();
   send(a, { t: 'create', code: 'TEST01', name: 'Alice', pass: '', max: 4, minutes: 2 });
-  await wait(200);
+  await wait(400);    // la create genera la città autoritativa della stanza (~90ms)
   const aok = findT(a, 'ok');
   ok(aok && aok.id === 'p1', 'A: create → ok, id ' + (aok && aok.id));
   ok(aok && aok.shirtIdx === 0, 'A: maglia 0 (creatore)');
