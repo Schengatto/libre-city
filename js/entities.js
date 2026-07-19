@@ -93,7 +93,11 @@ const WEAPONS = [
   { name: 'Magnum',         icon: '🎯', price: 900, cd: 34, auto: false, spd: 18, life: 60, spread: 0.012, knock: 9, dmgCar: 34, pvp: 24, shake: 3, sfx: 'magnum' },
 ];
 
-const player = {
+// `let` (non `const`): sul server autoritativo la glue rilega `player` al
+// giocatore attualmente in simulazione, così le funzioni della sim (che leggono
+// il global `player`) operano di volta in volta sul player giusto. In locale
+// resta sempre questo oggetto.
+let player = {
   x: 0, y: 0, r: 8, health: 100, aim: 0, walk: 0, moving: false,
   car: null, shootCd: 0, hurtCd: 0, punchT: 0,
   weaponIdx: 0, owned: WEAPONS.map(w => !w.price),
