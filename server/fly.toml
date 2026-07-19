@@ -1,0 +1,32 @@
+# Configurazione Fly.io per il server multigiocatore di Libre City.
+# Deploy:  cd server && fly launch --no-deploy   (la prima volta, per creare l'app)
+#          fly deploy
+# Poi metti l'URL pubblico (wss://<app>.fly.dev) nel <meta name="lc-server"> di index.html.
+
+app = "libre-city"          # ← cambia con il nome della TUA app Fly
+primary_region = "cdg"      # ← una regione vicina ai giocatori (cdg=Parigi, iad=USA-est…)
+
+[build]
+
+[http_service]
+  internal_port = 8080      # deve combaciare con ENV PORT del Dockerfile
+  force_https = true        # http→https e, di conseguenza, ws→wss
+  auto_start_machines = true
+  auto_stop_machines = "suspend"   # a stanza vuota la macchina si sospende (costo ~0)
+  min_machines_running = 0         # metti 1 per evitare il "cold start" al primo ingresso
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 150
+    hard_limit = 200
+
+  # controllo di salute sull'endpoint /health del server
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"          # basta e avanza: le stanze stanno in RAM e sono leggere

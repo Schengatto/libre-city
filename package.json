@@ -1,0 +1,12 @@
+{
+  "name": "libre-city",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Libre City — gioco arcade di città con multigiocatore su server WebSocket.",
+  "scripts": {
+    "build": "node build.js",
+    "server": "node server/index.js",
+    "server:dev": "node --watch server/index.js",
+    "test": "node server/test.mjs"
+  }
+}

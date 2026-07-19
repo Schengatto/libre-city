@@ -1,0 +1,8 @@
+node_modules
+npm-debug.log
+test.mjs
+docker-compose.yml
+public
+fly.toml
+.dockerignore
+.DS_Store

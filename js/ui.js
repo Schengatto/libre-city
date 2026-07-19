@@ -135,8 +135,8 @@ function endGame(reason) {
   const r = $('#goRank');
   const glw = $('#goLadderWrap');
   if (netActive()) {
-    // multigiocatore: l'host avvisa gli ospiti e il riepilogo mostra la ladder
-    if (net.mode === 'host') netBroadcast({ t: 'end' });
+    // multigiocatore: la fine la scandisce il server (messaggio 'end'); qui
+    // mostriamo solo il riepilogo con la ladder
     renderLadder();
     if (glw) glw.classList.remove('hidden');
     const rows = ladderRows(), my = rows.findIndex(x => x.me) + 1;
@@ -156,7 +156,7 @@ function startMatch() {
   $('#start').style.display = 'none';
   started = true;
   timeLeft = gameMinutes * 60 * 60;              // minuti → frame (~60 fps)
-  if (netActive() && net.mode === 'client' && net.clockLeft != null) timeLeft = net.clockLeft;   // orologio dell'host
+  if (netActive() && net.clockLeft != null) timeLeft = net.clockLeft;   // orologio autoritativo del server
   updateStars(); updateHealth(); updateCash(); updateWeapon(); updateTimer();
   const hi = usingTouch ? 'Avvicinati a un\'auto e tocca 🚗' : 'Ruba un\'auto con E';
   const mp = netActive() ? (usingTouch ? ' · 🏆 per la classifica' : ' · Tab per la classifica') : '';
@@ -196,7 +196,7 @@ bindBtn('btnPause', togglePause);
 //  MULTIGIOCATORE: crea/entra, invito, avvio (la rete è in js/net.js)
 // =========================================================
 onClick('mpBtn', () => {
-  if (typeof Peer === 'undefined') { toast('🌐 Il multigiocatore ha bisogno di internet — riprova più tardi'); return; }
+  if (!netServerUrl()) { toast('🌐 Server multigiocatore non configurato'); return; }
   showPanel('mpPanel');
 });
 onClick('mpBack', showMenu);
@@ -207,13 +207,14 @@ onClick('joinBack', () => showPanel('mpPanel'));
 
 // messaggi d'errore della rete in italiano
 function netErrText(err) {
-  return { offline: 'Serve una connessione internet',
+  return { offline: 'Impossibile raggiungere il server — controlla la connessione',
+           noserver: 'Server multigiocatore non configurato',
            pass: 'Password sbagliata',
            full: 'La partita è al completo',
-           'peer-unavailable': 'Partita non trovata — controlla il codice e chiedi all\'host di tenere il gioco aperto sullo schermo',
-           'unavailable-id': 'Codice stanza già in uso: ricarica la pagina e riprova',
-           timeout: 'Nessuna risposta dall\'host — il suo telefono deve avere il gioco aperto',
-           host: 'L\'host ha rifiutato la connessione' }[err] || ('Errore di rete: ' + err);
+           notfound: 'Partita non trovata — controlla il codice stanza',
+           exists: 'Esiste già una partita con questo codice: ricarica la pagina',
+           badcode: 'Codice stanza non valido',
+           timeout: 'Nessuna risposta dal server — riprova tra poco' }[err] || ('Errore di rete: ' + err);
 }
 
 // ---- ospita: crea la stanza e mostra il pannello d'invito ----

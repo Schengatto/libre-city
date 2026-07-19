@@ -10,3 +10,7 @@ node_modules/
 # OS / editor
 .DS_Store
 *.log
+
+# Note operative e deploy locale (non condivisi)
+CLAUDE.md
+deploy-vps.sh

@@ -28,11 +28,42 @@ const DIST = path.join(ROOT, 'dist');
 
 const hash = (buf) => crypto.createHash('sha256').update(buf).digest('hex').slice(0, 10);
 
+// --- 0. URL del server multigiocatore da iniettare nel <meta name="lc-server"> --
+// Integra la configurazione nel build: niente più modifiche a mano a index.html.
+//   node build.js --server=wss://libre-city.fly.dev
+//   node build.js wss://libre-city.fly.dev
+//   LC_SERVER=wss://libre-city.fly.dev node build.js
+// Vuoto = solo sviluppo locale (il client ripiega su ws://localhost:8787).
+function resolveServerUrl() {
+  const args = process.argv.slice(2);
+  const flag = args.find(a => a.startsWith('--server='));
+  if (flag) return flag.slice('--server='.length).trim();
+  const pos = args.find(a => /^wss?:\/\//i.test(a));
+  if (pos) return pos.trim();
+  return (process.env.LC_SERVER || process.env.LIBRE_CITY_SERVER || '').trim();
+}
+const SERVER_URL = resolveServerUrl();
+if (SERVER_URL && !/^wss?:\/\//i.test(SERVER_URL)) {
+  console.error(`URL server non valido: "${SERVER_URL}" (atteso ws:// o wss://) — build annullata.`);
+  process.exit(1);
+}
+if (SERVER_URL.startsWith('ws://')) {
+  console.warn('⚠  Server in ws:// (non cifrato): un sito https lo bloccherà. In produzione usa wss://.');
+}
+
 // --- 1. dist/ pulita -------------------------------------------------------
 fs.rmSync(DIST, { recursive: true, force: true });
 fs.mkdirSync(path.join(DIST, 'js'), { recursive: true });
 
 let html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+
+// inietta l'URL del server nel meta (o lo aggiunge se assente). Cambiare l'URL
+// cambia il contenuto → nuovo BUILD_ID → i client si aggiornano da soli.
+const metaRe = /<meta name="lc-server" content="[^"]*">/;
+if (metaRe.test(html)) html = html.replace(metaRe, `<meta name="lc-server" content="${SERVER_URL}">`);
+else if (SERVER_URL) html = html.replace('</head>', `  <meta name="lc-server" content="${SERVER_URL}">\n</head>`);
+console.log(SERVER_URL ? `  server multigiocatore: ${SERVER_URL}`
+                       : '  server multigiocatore: (non impostato → solo sviluppo locale)');
 
 // --- 2. hash + copia degli script locali (quelli esterni restano intatti) --
 const localScripts = [...html.matchAll(/<script src="(js\/[^"]+\.js)"><\/script>/g)].map(m => m[1]);
@@ -140,8 +171,9 @@ fs.writeFileSync(path.join(DIST, '.htaccess'), `AddType application/manifest+jso
 // L'app è installabile dal browser: index.html linka manifest.webmanifest e
 // registra sw.js. Il service worker pre-cacha l'app-shell (index + JS con hash
 // + icone + manifest) così il gioco parte anche offline; version.json resta
-// sempre dalla rete e le risorse cross-origin (PeerJS, font) sono in cache
-// runtime "stale-while-revalidate".
+// sempre dalla rete e le risorse cross-origin (font) sono in cache runtime
+// "stale-while-revalidate". Il multigiocatore usa una WebSocket verso il server
+// (vedi server/): non passa dal service worker e richiede la rete.
 fs.copyFileSync(path.join(ROOT, 'manifest.webmanifest'), path.join(DIST, 'manifest.webmanifest'));
 
 const iconsDir = path.join(ROOT, 'icons');
@@ -204,7 +236,7 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Cross-origin (PeerJS CDN, Google Fonts): stale-while-revalidate.
+  // Cross-origin (Google Fonts, ecc.): stale-while-revalidate.
   e.respondWith((async () => {
     const c = await caches.open(RUNTIME);
     const cached = await c.match(req);

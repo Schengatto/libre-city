@@ -1,28 +1,32 @@
-// LIBRE CITY · js/net.js — multigiocatore: ospita/entra via PeerJS (WebRTC),
-// stanza con codice + password facoltativa + numero massimo di giocatori,
-// ghost dei giocatori remoti, danni PvP e classifica della partita (ladder).
+// LIBRE CITY · js/net.js — multigiocatore: crea/entra in una stanza su un vero
+// SERVER (WebSocket), ghost dei giocatori remoti, danni PvP e classifica (ladder).
 //
-// MODELLO. Ogni client simula la PROPRIA città: pedoni, traffico e polizia sono
-// locali (la mappa però è identica per tutti grazie al seme ROOM_CODE, vedi
-// core.js). Degli altri giocatori viaggiano solo posizione/mezzo/spari (~15
-// messaggi al secondo) con topologia a stella: tutti parlano con l'host, che fa
-// da ripetitore. I danni PvP li decide CHI LI SUBISCE (vittima autoritativa):
-// il colpito si toglie la vita da solo e, se muore, accredita l'uccisione al
-// tiratore con un messaggio 'kill' — niente conflitti fra simulazioni.
-// Ogni giocatore possiede le proprie statistiche (uccisioni/morti/soldi) e le
-// allega allo stato: la ladder è la vista locale dei numeri dichiarati da tutti.
+// FASE 1. Il transport non è più P2P via PeerJS/WebRTC ma un server Node sempre
+// acceso (vedi server/): niente più host-telefono che, andando in background,
+// fa sparire l'intera stanza (era la causa delle disconnessioni casuali). Il
+// server tiene le stanze, fa da ripetitore dei messaggi e possiede l'orologio
+// della partita. Un riaggancio col token recupera lo stesso giocatore.
+//
+// MODELLO (invariato in Fase 1). Ogni client simula ancora la PROPRIA città:
+// pedoni, traffico e polizia sono locali (la mappa è identica per tutti grazie
+// al seme ROOM_CODE, vedi core.js). Degli altri giocatori viaggiano solo
+// posizione/mezzo/spari (~15 messaggi al secondo). I danni PvP li decide CHI LI
+// SUBISCE (vittima autoritativa): il colpito si toglie la vita da solo e, se
+// muore, accredita l'uccisione al tiratore con un messaggio 'kill'. La FASE 2
+// sposterà la simulazione sul server, eliminando il disallineamento.
 
 const NET_SHIRTS = ['#e0533a', '#3a72d2', '#37a05a', '#c9a227', '#8a3ad2', '#e06a2a', '#2ab0b0', '#d94a90'];
 
 const net = {
-  mode: null,            // null = in solitaria · 'host' · 'client'
-  peer: null,            // oggetto Peer (PeerJS) — creato solo quando serve
-  conns: [],             // host: connessioni verso gli ospiti
-  hostConn: null,        // client: connessione verso l'host
+  mode: null,            // null = in solitaria · 'host' (ha creato la stanza) · 'client'
+  sock: null,            // WebSocket verso il server
+  url: null,             // URL del server risolto (vedi netServerUrl)
   players: new Map(),    // id → ghost del giocatore remoto
-  myId: null, pass: '', maxPlayers: 4, seq: 0,
-  clockLeft: null,       // client: frame di partita rimasti comunicati dall'host
-  reconnT: null,         // timer dei tentativi di riaggancio al broker PeerJS
+  myId: null, token: null,           // token: chiave per riagganciarsi come lo stesso giocatore
+  pass: '', maxPlayers: 4,
+  hello: null, rejoin: null, _open: null,   // dati per (ri)aprire la connessione
+  clockLeft: null,       // frame di partita rimasti, comunicati dal server
+  reconnT: null, reconnDelay: 0, wantOpen: false, dropped: false,  // riaggancio automatico
   wake: null,            // wake lock: schermo acceso finché si è in multigiocatore
   kills: 0, deaths: 0,
   lastHitBy: null, lastHitT: -9999,   // ultimo rivale che ci ha colpito (per il kill credit)
@@ -30,6 +34,23 @@ const net = {
   carSeq: 0,              // id progressivo dei mezzi che il player locale guida
 };
 const netActive = () => net.mode !== null;
+
+// ---------- URL del server -------------------------------------------------
+// In sviluppo (localhost / file://) punta al server locale sulla 8787. In
+// produzione l'URL arriva da <meta name="lc-server" content="wss://…"> in
+// index.html (oppure window.LIBRE_CITY_SERVER o ?server=…). Così net.js resta
+// generico e l'indirizzo del server si configura senza toccare il codice.
+const NET_PROD_SERVER = '';       // fallback se non c'è meta/override (da riempire dopo il deploy)
+function netServerUrl() {
+  const q = new URLSearchParams(location.search).get('server');
+  if (q) return q;
+  const meta = document.querySelector('meta[name="lc-server"]');
+  if (meta && meta.content.trim()) return meta.content.trim();
+  if (window.LIBRE_CITY_SERVER) return window.LIBRE_CITY_SERVER;
+  const h = location.hostname;
+  if (!h || h === 'localhost' || h === '127.0.0.1') return 'ws://' + (h || 'localhost') + ':8787';
+  return NET_PROD_SERVER || null;
+}
 
 // ---------- Ghost: la sagoma di un giocatore remoto ----------
 function makeGhost(id, name, shirtIdx) {
@@ -44,199 +65,165 @@ function makeGhost(id, name, shirtIdx) {
   };
 }
 
-// ---------- Host: crea la stanza ----------
+// ---------- Connessione al server (host = crea, client = entra) ----------
+// L'host CREA la stanza sul server; il client vi ENTRA. Dopo il primo ingresso
+// sono simmetrici: mandano stato/eventi al server, che li firma col loro id e
+// li ripete agli altri. Un token permette di riagganciarsi come lo stesso
+// giocatore dopo una caduta di rete.
+
+// host: crea la stanza e ne detta i parametri (durata, max giocatori, password)
 function netStartHost(pass, maxPlayers, done) {
-  if (typeof Peer === 'undefined') { done('offline'); return; }
-  net.mode = 'host'; net.myId = 'h';
+  const url = netServerUrl();
+  if (!url) { done('noserver'); return; }
+  net.mode = 'host'; net.url = url;
   net.pass = pass || ''; net.maxPlayers = clamp(maxPlayers || 4, 2, 8);
   player.shirt = NET_SHIRTS[0];                 // in multigiocatore ognuno ha la sua maglia
   document.body.classList.add('mp');
-  let opened = false;
-  net.peer = new Peer('librecity-' + ROOM_CODE.toLowerCase());
-  net.peer.on('open', () => {
-    if (opened) { netRefreshBadge(); return; }   // ri-registrazione dopo un riaggancio
-    opened = true; netWakeLock(); netRefreshBadge(); done(null);
-  });
-  net.peer.on('connection', conn => netWireHostConn(conn));
-  net.peer.on('disconnected', () => netPlanReconnect(1000));
-  net.peer.on('error', err => {
-    // prima dell'apertura è un errore di creazione stanza; dopo, 'peer-unavailable'
-    // e simili riguardano un singolo ospite sparito: si ignorano
-    if (!opened) { netShutdown(); done((err && err.type) || 'error'); }
-  });
+  net.rejoin = { code: ROOM_CODE, name: playerName, pass: net.pass };
+  net.hello  = { t: 'create', code: ROOM_CODE, name: playerName, pass: net.pass,
+                 max: net.maxPlayers, minutes: gameMinutes };
+  netDial(done);
 }
-function netWireHostConn(conn) {
-  conn.on('data', m => {
-    if (!m || typeof m !== 'object') return;
-    if (!conn._ocId) {                          // primo messaggio: deve presentarsi ('hi')
-      if (m.t !== 'hi') { conn.close(); return; }
-      if ((net.pass || '') !== (m.pass || '')) { conn.send({ t: 'no', r: 'pass' }); setTimeout(() => conn.close(), 400); return; }
-      if (net.players.size + 1 >= net.maxPlayers) { conn.send({ t: 'no', r: 'full' }); setTimeout(() => conn.close(), 400); return; }
-      const id = 'p' + (++net.seq), shirtIdx = net.seq % NET_SHIRTS.length;
-      conn._ocId = id;
-      net.conns.push(conn);
-      const g = makeGhost(id, m.name, shirtIdx);
-      net.players.set(id, g);
-      const roster = [{ id: 'h', name: playerName, shirtIdx: 0 }];
-      for (const [pid, pg] of net.players) if (pid !== id) roster.push({ id: pid, name: pg.name, shirtIdx: pg.shirtIdx });
-      conn.send({ t: 'ok', id, shirtIdx, minutes: gameMinutes, left: timeLeft, players: roster });
-      netBroadcast({ t: 'join', id, name: g.name, shirtIdx }, conn);
-      toast(`🌐 ${g.name} è entrato in partita!`); sfx.coin();
-      netRefreshBadge();
-      return;
-    }
-    netFromGuest(conn._ocId, m, conn);
-  });
-  const drop = () => netHostDrop(conn);
-  conn.on('close', drop);
-  conn.on('error', drop);
-}
-// un ospite se n'è andato (o è caduta la connessione)
-function netHostDrop(conn) {
-  net.conns = net.conns.filter(c => c !== conn);
-  const id = conn._ocId;
-  conn._ocId = null;
-  if (!id || !net.players.has(id)) return;
-  const g = net.players.get(id);
-  net.players.delete(id); netDropCarsOf(id);
-  netBroadcast({ t: 'leave', id });
-  toast(`🌐 ${g.name} ha lasciato la partita`);
-  netRefreshBadge();
-}
-// l'host smista i messaggi di un ospite: li applica e li ripete agli altri
-function netFromGuest(id, m, srcConn) {
-  if (m.t === 'kill') {                         // instradato solo al tiratore da accreditare
-    if (m.to === 'h') netScoreKill(id);
-    else { const c = net.conns.find(c => c._ocId === m.to); if (c && c.open) c.send({ t: 'kill', id }); }
-    return;
-  }
-  netApplyRemote(id, m);
-  netBroadcast({ ...m, id }, srcConn);
+// client: entra in una stanza già creata
+function netJoin(code, pass, done) {
+  const url = netServerUrl();
+  if (!url) { done('noserver'); return; }
+  net.mode = 'client'; net.url = url;
+  net.pass = pass || '';
+  document.body.classList.add('mp');
+  net.rejoin = { code, name: playerName, pass: net.pass };
+  net.hello  = { t: 'join', code, name: playerName, pass: net.pass };
+  netDial(done);
 }
 
-// ---------- Client: entra in una stanza ----------
-// 'peer-unavailable' NON significa per forza che la stanza non esiste: spesso
-// l'host ha solo il telefono in background (sta condividendo il link!) e la sua
-// registrazione al broker è momentaneamente caduta. Perciò si riprova ogni
-// pochi secondi finché la stanza non ricompare, prima di arrendersi.
-function netJoin(code, pass, done) {
-  if (typeof Peer === 'undefined') { done('offline'); return; }
-  net.mode = 'client';
-  document.body.classList.add('mp');
-  let settled = false, lastErr = null, retryT = null;
-  const fail = err => { if (!settled) { settled = true; clearTimeout(timer); clearTimeout(retryT); netShutdown(); done(err); } };
-  const timer = setTimeout(() => fail(lastErr || 'timeout'), 20000);
+// apre la WebSocket, gestisce l'ingresso iniziale e prepara il riaggancio
+// automatico. done(null) alla riuscita, done(codiceErrore) al fallimento.
+function netDial(done) {
+  net.wantOpen = true; net.dropped = false; net.reconnDelay = 0;
+  let settled = false;
   const status = txt => { const el = document.getElementById('joinStatus'); if (el && !settled) el.textContent = txt; };
-  const tryConnect = () => {
-    if (settled || !net.peer || net.peer.destroyed) return;
-    const conn = net.peer.connect('librecity-' + code.toLowerCase(), { reliable: true, serialization: 'json' });
-    net.hostConn = conn;
-    conn.on('open', () => conn.send({ t: 'hi', name: playerName, pass: pass || '' }));
-    conn.on('data', m => {
-      if (net.hostConn !== conn || !m || typeof m !== 'object') return;
-      if (m.t === 'ok') {
-        clearTimeout(timer);
-        net.myId = m.id;
-        player.shirt = NET_SHIRTS[m.shirtIdx % NET_SHIRTS.length];
-        // niente giocatori impilati: ognuno parte qualche passo più in là
-        player.x += 26 * m.shirtIdx;
-        unstick(player, player.r, player.r);
-        for (const p of m.players) net.players.set(p.id, makeGhost(p.id, p.name, p.shirtIdx));
-        gameMinutes = m.minutes;                // il ritmo della partita lo detta l'host
-        net.clockLeft = m.left;
-        netWakeLock(); netRefreshBadge();
-        settled = true; done(null);
+  const timer = setTimeout(() => { if (!settled) { settled = true; netShutdown(); done('timeout'); } }, 15000);
+
+  const open = () => {
+    if (!net.wantOpen) return;
+    let ws;
+    try { ws = new WebSocket(net.url); }
+    catch (e) { if (!settled) { settled = true; clearTimeout(timer); netShutdown(); done('offline'); } return; }
+    net.sock = ws;
+    ws.onopen = () => {
+      net.reconnDelay = 0;
+      // primo ingresso: create/join iniziale · riaggancio: join col token
+      ws.send(JSON.stringify(net.token ? { ...net.rejoin, t: 'join', token: net.token } : net.hello));
+    };
+    ws.onmessage = ev => {
+      let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      if (!m || typeof m !== 'object') return;
+      if (!settled) {                            // in attesa dell'esito del primo ingresso
+        if (m.t === 'ok') { settled = true; clearTimeout(timer); netOnJoined(m); netWakeLock(); done(null); return; }
+        if (m.t === 'no') { settled = true; clearTimeout(timer); netShutdown(); done(m.r); return; }
+        return;                                  // altri messaggi prima dell'ok: si ignorano
       }
-      else if (m.t === 'no') { clearTimeout(timer); fail(m.r); }
-      else if (m.t === 'join') { net.players.set(m.id, makeGhost(m.id, m.name, m.shirtIdx)); toast(`🌐 ${m.name} è entrato in partita!`); sfx.coin(); netRefreshBadge(); }
-      else if (m.t === 'leave') { const g = net.players.get(m.id); if (g) { net.players.delete(m.id); netDropCarsOf(m.id); toast(`🌐 ${g.name} ha lasciato la partita`); } netRefreshBadge(); }
-      else if (m.t === 'end') { if (started) endGame('time'); }
-      else if (m.t === 'kill') netScoreKill(m.id);
-      else if (m.id && m.id !== net.myId) netApplyRemote(m.id, m);
-    });
-    // gli handler contano solo per la connessione corrente: i tentativi
-    // scartati dal retry vengono chiusi e non devono far fallire il join
-    const bye = () => { if (net.hostConn !== conn) return; if (settled) netHostGone(); else fail('host'); };
-    conn.on('close', bye);
-    conn.on('error', bye);
+      onServerMessage(m);
+    };
+    ws.onclose = () => {
+      if (ws !== net.sock) return;               // socket già sostituita da un riaggancio
+      if (!settled) { status('🔌 Connessione al server… riprovo'); netScheduleReconnect(); return; }
+      if (net.wantOpen) {                         // caduta dopo l'ingresso: riaggancio silenzioso
+        if (!net.dropped) { net.dropped = true; toast('🌐 Connessione persa, riaggancio…'); netRefreshBadge(); }
+        netScheduleReconnect();
+      }
+    };
+    ws.onerror = () => { try { ws.close(); } catch (e) {} };
   };
-  net.peer = new Peer();
-  net.peer.on('open', tryConnect);
-  net.peer.on('disconnected', () => netPlanReconnect(1000));
-  net.peer.on('error', err => {
-    const t = (err && err.type) || 'error';
-    if (t === 'peer-unavailable' && !settled) {
-      lastErr = t;
-      const dead = net.hostConn; net.hostConn = null;
-      if (dead) { try { dead.close(); } catch (e) {} }
-      status('🔎 Partita non trovata, riprovo… (l\'host deve avere il gioco aperto)');
-      clearTimeout(retryT);
-      retryT = setTimeout(tryConnect, 2500);
-      return;
+  net._open = open;
+  open();
+}
+// riaggancio con backoff crescente (fino a ~8s); `immediate` riparte subito
+function netScheduleReconnect(immediate) {
+  if (!net.wantOpen || !net._open) return;
+  clearTimeout(net.reconnT);
+  net.reconnDelay = immediate ? 0 : Math.min((net.reconnDelay || 400) * 1.6, 8000);
+  net.reconnT = setTimeout(() => { if (net.wantOpen) net._open(); }, net.reconnDelay);
+}
+
+// applica l'ingresso riuscito (o il riaggancio): id, maglia, roster, orologio
+function netOnJoined(m) {
+  const resumed = !!m.resumed;
+  net.myId = m.id;
+  if (m.token) net.token = m.token;
+  player.shirt = NET_SHIRTS[m.shirtIdx % NET_SHIRTS.length];
+  if (m.minutes != null) gameMinutes = m.minutes;   // il ritmo della partita lo detta il server
+  net.clockLeft = m.left;
+  // sincronizza il roster senza azzerare i ghost già presenti (importante al riaggancio)
+  for (const p of (m.players || [])) if (!net.players.has(p.id)) net.players.set(p.id, makeGhost(p.id, p.name, p.shirtIdx));
+  if (!resumed) {
+    // primo ingresso: sfalsa la posizione così i giocatori non partono impilati
+    player.x += 26 * m.shirtIdx;
+    unstick(player, player.r, player.r);
+  } else if (net.dropped) {
+    net.dropped = false; toast('🌐 Riconnesso alla partita');
+  }
+  netRefreshBadge();
+}
+
+// smista i messaggi del server dopo l'ingresso
+function onServerMessage(m) {
+  switch (m.t) {
+    case 'ok': netOnJoined(m); break;             // riaggancio riuscito
+    case 'join':
+      net.players.set(m.id, makeGhost(m.id, m.name, m.shirtIdx));
+      toast(`🌐 ${m.name} è entrato in partita!`); sfx.coin(); netRefreshBadge();
+      break;
+    case 'leave': {
+      const g = net.players.get(m.id);
+      if (g) { net.players.delete(m.id); netDropCarsOf(m.id); toast(`🌐 ${g.name} ha lasciato la partita`); }
+      netRefreshBadge();
+      break;
     }
-    fail(t);
-  });
+    case 'end': if (started) endGame('time'); break;
+    case 'kill': netScoreKill(m.id); break;
+    case 'pong': break;
+    default: if (m.id && m.id !== net.myId) netApplyRemote(m.id, m);
+  }
 }
-function netHostGone() {
-  if (!netActive()) return;
-  toast('🌐 L\'host ha chiuso la partita — continui in solitaria');
-  netShutdown();
-}
+
 // chiude tutto e torna alla modalità in solitaria (ghost compresi)
 function netShutdown() {
+  net.wantOpen = false; net.dropped = false;
   clearTimeout(net.reconnT); net.reconnT = null;
   try { if (net.wake) net.wake.release(); } catch (e) {}
   net.wake = null;
-  try { if (net.peer) net.peer.destroy(); } catch (e) {}
-  net.peer = null; net.hostConn = null; net.conns = [];
+  if (net.sock) { try { net.sock.onclose = null; net.sock.onerror = null; net.sock.close(); } catch (e) {} }
+  net.sock = null; net._open = null; net.hello = null; net.rejoin = null;
   net.players.clear(); net.looseCars.clear();
-  net.mode = null; net.myId = null; net.clockLeft = null;
+  net.mode = null; net.myId = null; net.token = null; net.clockLeft = null;
   document.body.classList.remove('mp');
   netRefreshBadge();
 }
 
 // ---------- Sopravvivere al telefono in background ----------
-// Quando la pagina finisce in background (l'host passa a WhatsApp per
-// condividere il link, o lo schermo si blocca) il browser la sospende: il
-// collegamento col broker PeerJS cade e la stanza sparisce dall'elenco — chi
-// prova a entrare trova 'peer-unavailable'. PeerJS NON si ricollega da solo:
-// qui ci ri-registriamo con lo stesso id appena possibile (subito al ritorno
-// in primo piano, altrimenti a tentativi).
-function netPlanReconnect(delay) {
-  clearTimeout(net.reconnT);
-  net.reconnT = setTimeout(() => {
-    if (!netActive() || !net.peer || net.peer.destroyed) return;
-    if (net.peer.disconnected) {
-      try { net.peer.reconnect(); } catch (e) {}
-      netPlanReconnect(3000);                    // finché non riesce, si riprova
-    }
-  }, delay);
-}
-// schermo acceso finché si è in multigiocatore: da spento la pagina viene
-// sospesa e la stanza sparirebbe (il blocco decade da solo in background,
-// perciò lo si richiede di nuovo a ogni ritorno in primo piano)
+// Da spento/in background il browser sospende la pagina e la WebSocket cade.
+// Con un vero server la stanza però NON sparisce: al ritorno in primo piano ci
+// si riaggancia col token e si riprende lo stesso giocatore (entro la grazia).
 function netWakeLock() {
   if (!netActive() || !navigator.wakeLock) return;
   navigator.wakeLock.request('screen').then(w => { net.wake = w; }, () => {});
 }
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) { netPlanReconnect(150); netWakeLock(); }
-});
-addEventListener('pageshow', () => netPlanReconnect(150));
+function netWakeIfNeeded() {
+  if (!netActive()) return;
+  netWakeLock();
+  if (!net.sock || net.sock.readyState > 1) netScheduleReconnect(true);   // CLOSING/CLOSED → riaggancia subito
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) netWakeIfNeeded(); });
+addEventListener('pageshow', netWakeIfNeeded);
 
 // ---------- Invio ----------
-function netBroadcast(m, exceptConn) {
-  for (const c of net.conns) if (c !== exceptConn && c.open) c.send(m);
+// un evento del giocatore locale: lo si manda al server, che lo firma col
+// nostro id e lo ripete agli altri
+function netSend(m) {
+  if (net.sock && net.sock.readyState === 1) { try { net.sock.send(JSON.stringify(m)); } catch (e) {} }
 }
-function netSendToHost(m) {
-  if (net.hostConn && net.hostConn.open) net.hostConn.send(m);
-}
-// un evento del giocatore locale: l'host lo diffonde, l'ospite lo affida all'host
-function netSendEvt(m) {
-  if (!netActive()) return;
-  if (net.mode === 'host') netBroadcast({ ...m, id: 'h' });
-  else netSendToHost(m);
-}
+function netSendEvt(m) { if (netActive()) netSend(m); }
 // descrizione di rete di un mezzo: la stessa sia per il mezzo guidato (dentro lo
 // stato) sia per quello abbandonato (evento 'park'). `cid` è l'id stabile del mezzo
 function carNetPayload(c) {
@@ -361,10 +348,8 @@ function netReportDown(kind) {
   if (!netActive() || kind !== 'dead') return;
   net.deaths++;
   if (net.lastHitBy != null && frame - net.lastHitT < 60 * 6) {
-    const killer = net.lastHitBy;
-    if (net.mode === 'host') { const c = net.conns.find(c => c._ocId === killer); if (c && c.open) c.send({ t: 'kill', id: 'h' }); }
-    else netSendToHost({ t: 'kill', to: killer });
-    const g = net.players.get(killer);
+    netSend({ t: 'kill', to: net.lastHitBy });    // il server recapita il punto al tiratore
+    const g = net.players.get(net.lastHitBy);
     if (g) toast(`☠️ ${g.name} ti ha steso!`);
   }
   net.lastHitBy = null;

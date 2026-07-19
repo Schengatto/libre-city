@@ -28,10 +28,16 @@
 
 const http = require('node:http');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 const { WebSocketServer } = require('ws');
 
 const PORT = Number(process.env.PORT) || 8787;
 const HOST = process.env.HOST || '0.0.0.0';
+// cartella dei file statici del gioco (build in dist/). Se impostata, il server
+// serve ANCHE il sito sulla stessa origin: così il client parla in wss:// verso
+// lo stesso host, senza CORS. Vuota = solo WebSocket (deploy separato del sito).
+const STATIC_DIR = process.env.STATIC_DIR ? path.resolve(process.env.STATIC_DIR) : '';
 const GRACE_MS = 30_000;          // finestra di riaggancio dopo una caduta di rete
 const HEARTBEAT_MS = 30_000;      // ping applicativo per scovare le socket morte
 const MAX_PLAYERS_CAP = 8;        // tetto assoluto di giocatori per stanza
@@ -200,15 +206,57 @@ function onDisconnect(ws) {
   }, GRACE_MS);
 }
 
+// ---------- File statici del gioco -----------------------------------------
+const MIME = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8', '.webmanifest': 'application/manifest+json',
+  '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon', '.webp': 'image/webp', '.map': 'application/json',
+};
+// header di cache coerenti con build.js: asset con hash immutabili, HTML/SW/
+// version sempre freschi, icone cache breve.
+function cacheControl(rel) {
+  if (/\.[0-9a-f]{10}\.js$/.test(rel)) return 'public, max-age=31536000, immutable';
+  if (rel === 'version.json') return 'no-store';
+  if (rel === 'index.html' || rel === '' || rel === 'sw.js' || rel === 'manifest.webmanifest')
+    return 'no-cache, must-revalidate';
+  if (rel.startsWith('icons/')) return 'public, max-age=86400';
+  return 'public, max-age=3600';
+}
+function serveStatic(req, res) {
+  // solo GET/HEAD; niente query/hash; blocca il path traversal
+  let rel = decodeURIComponent((req.url.split('?')[0] || '/')).replace(/^\/+/, '');
+  if (rel === '') rel = 'index.html';
+  const full = path.join(STATIC_DIR, rel);
+  if (!full.startsWith(STATIC_DIR + path.sep) && full !== STATIC_DIR) { res.writeHead(403); res.end(); return; }
+  fs.stat(full, (err, st) => {
+    if (err || !st.isFile()) {
+      // navigazione verso una rotta senza file → l'app-shell (index.html)
+      if (rel !== 'index.html' && !path.extname(rel)) return sendFile(res, path.join(STATIC_DIR, 'index.html'), 'index.html', req.method);
+      res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }); res.end('Not found'); return;
+    }
+    sendFile(res, full, rel, req.method);
+  });
+}
+function sendFile(res, full, rel, method) {
+  const headers = { 'content-type': MIME[path.extname(full)] || 'application/octet-stream',
+                    'cache-control': cacheControl(rel) };
+  if (method === 'HEAD') { res.writeHead(200, headers); res.end(); return; }
+  const stream = fs.createReadStream(full);
+  stream.on('open', () => { res.writeHead(200, headers); stream.pipe(res); });
+  stream.on('error', () => { if (!res.headersSent) res.writeHead(500); res.end(); });
+}
+
 // ---------- HTTP + WebSocket ------------------------------------------------
 const server = http.createServer((req, res) => {
-  if (req.url === '/health' || req.url === '/') {
+  if (req.url === '/health' || (req.url.split('?')[0] === '/health')) {
     const players = [...rooms.values()].reduce((n, r) => n + activeCount(r), 0);
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ ok: true, rooms: rooms.size, players }));
-  } else {
-    res.writeHead(404); res.end();
+    return;
   }
+  if (STATIC_DIR && (req.method === 'GET' || req.method === 'HEAD')) { serveStatic(req, res); return; }
+  res.writeHead(404); res.end();
 });
 
 const wss = new WebSocketServer({ server, maxPayload: MAX_PAYLOAD });
@@ -243,7 +291,8 @@ const heartbeat = setInterval(() => {
 }, HEARTBEAT_MS);
 wss.on('close', () => clearInterval(heartbeat));
 
-server.listen(PORT, HOST, () => log(`Libre City server in ascolto su ${HOST}:${PORT}`));
+server.listen(PORT, HOST, () => log(`Libre City server in ascolto su ${HOST}:${PORT}`
+  + (STATIC_DIR ? ` · serve i file statici da ${STATIC_DIR}` : ' · solo WebSocket')));
 
 // spegnimento pulito (Fly/Railway mandano SIGTERM al redeploy)
 for (const sig of ['SIGTERM', 'SIGINT']) {

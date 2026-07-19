@@ -1,0 +1,33 @@
+# Deploy su VPS: server multigiocatore + sito statico, dietro il reverse proxy
+# nginx condiviso (container gazette-nginx-1). Il nostro container si aggancia
+# alla rete che nginx già usa, così nginx lo raggiunge PER NOME
+# (proxy_pass http://libre-city:8080). Progetto isolato: non tocca gli altri.
+#
+#   cd /root/libre-city
+#   docker compose up -d --build
+name: libre-city
+
+services:
+  server:
+    build: .
+    image: libre-city-server:latest
+    container_name: libre-city
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+      STATIC_DIR: /app/public          # i file del gioco (build di dist/, montati sotto)
+    volumes:
+      - ./public:/app/public:ro
+    networks:
+      - edge
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  edge:
+    external: true
+    name: gazette_gazette-net           # la rete su cui vive gazette-nginx-1

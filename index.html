@@ -705,9 +705,11 @@
       rel="noopener">Enrico Schintu</a> · © 2026</div>
   </div>
 
-  <!-- PeerJS (WebRTC) per il multigiocatore: se manca la rete il gioco resta
-       giocabile in singolo (net.js controlla `typeof Peer === 'undefined'`) -->
-  <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+  <!-- Multigiocatore: indirizzo del server WebSocket (vedi server/). Lascialo
+       vuoto in sviluppo (net.js usa ws://localhost:8787); DOPO IL DEPLOY metti
+       qui l'URL pubblico, es. content="wss://libre-city.fly.dev". Il singolo
+       giocatore funziona anche senza server. -->
+  <meta name="lc-server" content="">
   <!-- Il gioco è diviso in 11 script che condividono lo scope globale: l'ordine conta! -->
   <script src="js/core.js"></script>
   <script src="js/city.js"></script>
