@@ -32,6 +32,8 @@ const net = {
   lastHitBy: null, lastHitT: -9999,   // ultimo rivale che ci ha colpito (per il kill credit)
   looseCars: new Map(),   // netId → mezzo abbandonato da un rivale (sagoma parcheggiata, condivisa)
   carSeq: 0,              // id progressivo dei mezzi che il player locale guida
+  remoteCops: new Map(),  // netId → volante di un rivale ricercato (condivisa, disegnata e solida)
+  copSeq: 0,              // id progressivo delle volanti che trasmetto quando sono ricercato
 };
 const netActive = () => net.mode !== null;
 
@@ -195,7 +197,7 @@ function netShutdown() {
   net.wake = null;
   if (net.sock) { try { net.sock.onclose = null; net.sock.onerror = null; net.sock.close(); } catch (e) {} }
   net.sock = null; net._open = null; net.hello = null; net.rejoin = null;
-  net.players.clear(); net.looseCars.clear();
+  net.players.clear(); net.looseCars.clear(); net.remoteCops.clear();
   net.mode = null; net.myId = null; net.token = null; net.clockLeft = null;
   document.body.classList.remove('mp');
   netRefreshBadge();
@@ -242,7 +244,21 @@ function netMyState() {
     g: !WEAPONS[player.weaponIdx].melee, hp: player.health, dn: downT > 0,
     st: { k: net.kills, d: net.deaths, c: cash },
     c: c ? carNetPayload(c) : null,
+    pol: netCopPayloads(),                        // volanti al mio inseguimento (se ricercato)
   };
+}
+// le volanti che mi inseguono le simulo solo io: le trasmetto così TUTTI le
+// vedono (prima erano visibili al solo giocatore ricercato). netId stabile per
+// riconoscerle lato ricevente; omesse se non ne ho.
+function netCopPayloads() {
+  let out = null;
+  for (const c of cars) {
+    if (c.role !== 'police') continue;
+    if (!c.netId) c.netId = net.myId + '#c' + (net.copSeq++);
+    (out || (out = [])).push({ cid: c.netId, x: Math.round(c.x), y: Math.round(c.y),
+      an: c.angle, sp: c.speed, w: c.w, h: c.h, col: c.color, lp: c.lightPhase || 0 });
+  }
+  return out;   // null se nessuna: il ricevente rimuove quelle mie
 }
 // ---------- Mezzi che il player locale guida/abbandona (condivisi con gli altri) ----------
 // salendo a bordo: id di rete stabile, così i rivali lo riconoscono quando lo
@@ -282,6 +298,7 @@ function netApplyRemote(id, m) {
       if (m.c.tur != null) c.turretA = m.c.tur;
       if (m.c.cid != null) { c.netId = m.c.cid; net.looseCars.delete(m.c.cid); }  // lo sta guidando: via la sagoma ferma
     } else g.car = null;
+    netApplyCops(id, m.pol);                       // volanti al suo inseguimento (o le rimuove se non è più ricercato)
   }
   else if (m.t === 'park') netParkCar(id, m.car);
   else if (m.t === 'gone') net.looseCars.delete(m.cid);
@@ -305,8 +322,37 @@ function netParkCar(owner, p) {
   c.helmet = p.hel || '#2a2a2e';
   if (p.tur != null) c.turretA = p.tur;
 }
-// un rivale ha lasciato la partita: via anche i mezzi che aveva abbandonato
-function netDropCarsOf(id) { for (const [cid, c] of net.looseCars) if (c.owner === id) net.looseCars.delete(cid); }
+// volanti trasmesse da un rivale ricercato: le teniamo aggiornate (una copia per
+// netId, con owner) e rimuoviamo quelle non più presenti nell'ultimo elenco —
+// così spariscono da sole quando lui perde il livello ricercato o le semina.
+function netApplyCops(owner, list) {
+  const seen = list ? new Set(list.map(p => p.cid)) : null;
+  if (list) for (const p of list) {
+    let c = net.remoteCops.get(p.cid);
+    if (!c) {
+      c = { netId: p.cid, owner, role: 'police', driver: 'net', wasPolice: true, mass: 1.6,
+            colH: 13, gear: 1, kvx: 0, kvy: 0, lightPhase: p.lp || 0,
+            x: p.x, y: p.y, angle: p.an, tx: p.x, ty: p.y, ta: p.an };
+      net.remoteCops.set(p.cid, c);
+    } else if (dist(c.x, c.y, p.x, p.y) > 280) { c.x = p.x; c.y = p.y; c.angle = p.an; }  // teletrasporto
+    c.tx = p.x; c.ty = p.y; c.ta = p.an; c.speed = p.sp;
+    c.w = p.w; c.h = p.h; c.color = p.col;
+  }
+  for (const [cid, c] of net.remoteCops) if (c.owner === owner && (!seen || !seen.has(cid))) net.remoteCops.delete(cid);
+}
+// tutte le auto remote SOLIDE con cui la mia auto può scontrarsi (giocatori,
+// mezzi abbandonati, volanti). Usata dalla risoluzione collisioni in gameplay.js.
+function netSolidCars(out) {
+  for (const g of net.players.values()) if (g.car && !g.down) out.push(g.car);
+  for (const c of net.looseCars.values()) out.push(c);
+  for (const c of net.remoteCops.values()) out.push(c);
+  return out;
+}
+// un rivale ha lasciato la partita: via anche i mezzi che aveva abbandonato e le sue volanti
+function netDropCarsOf(id) {
+  for (const [cid, c] of net.looseCars) if (c.owner === id) net.looseCars.delete(cid);
+  for (const [cid, c] of net.remoteCops) if (c.owner === id) net.remoteCops.delete(cid);
+}
 // proiettili "fantasma" di un rivale: ostili come quelli dei poliziotti, ma
 // firmati (fromNet) così un'eventuale morte viene accreditata al tiratore
 function netSpawnShot(id, m) {
@@ -391,9 +437,18 @@ function netTick() {
       if (g.moving) g.walk += 0.3; else g.walk = 0;
     }
   }
-  // le sagome dei mezzi abbandonati si diradano quando ti allontani (come il traffico)
+  // volanti remote: interpolate verso il bersaglio + sirena che lampeggia
+  for (const c of net.remoteCops.values()) {
+    if (c.tx != null) {
+      c.x += (c.tx - c.x) * 0.28; c.y += (c.ty - c.y) * 0.28;
+      c.angle += angDiff(c.angle, c.ta != null ? c.ta : c.angle) * 0.35;
+    }
+    c.lightPhase = (c.lightPhase || 0) + 0.5;
+  }
+  // le sagome dei mezzi abbandonati e le volanti remote si diradano quando ti allontani (come il traffico)
   const far = Math.max(vw, vh) * 1.3 + 300;
   for (const [cid, c] of net.looseCars) if (dist(c.x, c.y, player.x, player.y) > far) net.looseCars.delete(cid);
+  for (const [cid, c] of net.remoteCops) if (dist(c.x, c.y, player.x, player.y) > far) net.remoteCops.delete(cid);
   if (frame % 4 === 0) netSendEvt(netMyState());                 // ~15 volte al secondo
   if (frame % 30 === 0 && ladderEl && !ladderEl.classList.contains('hidden')) renderLadder();
 }
@@ -402,6 +457,7 @@ function netTick() {
 function netPushEnts(ents) {
   for (const g of net.players.values()) if (!g.down) ents.push({ netG: g, y: g.y });
   for (const c of net.looseCars.values()) ents.push(c);   // mezzi abbandonati dai rivali (role 'parked' → drawCar)
+  for (const c of net.remoteCops.values()) ents.push(c);  // volanti dei rivali ricercati (role 'police' → drawCar con sirena)
 }
 function drawNetPlayer(g) {
   if (g.car) { drawCar(g.car); netTag(g, g.car.x - camX, g.car.y - camY - g.car.h / 2 - 6); return; }

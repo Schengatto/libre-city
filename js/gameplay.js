@@ -689,6 +689,44 @@ function resolveCarCollisions() {
   }
   if (player.car) { player.x = player.car.x; player.y = player.car.y; }
 }
+// Collisioni della MIA auto contro le auto REMOTE (giocatori, mezzi abbandonati,
+// volanti dei rivali ricercati). Sono interpolate e "di proprietà" di un altro
+// client: qui NON le muoviamo, spostiamo e facciamo rimbalzare solo la nostra
+// auto (l'altro fa lo stesso dalla sua parte). Prima si attraversavano; ora si
+// scontrano davvero. Ogni veicolo è due cerchi, come in resolveCarCollisions.
+function resolveRemoteCarCollisions() {
+  if (!netActive() || !player.car) return;
+  const a = player.car;
+  if (a.isTank && Math.abs(a.speed) >= 1.2) return;   // il carro lanciato ci passa sopra
+  const remotes = netSolidCars([]);
+  for (const b of remotes) {
+    const ddx = b.x - a.x, ddy = b.y - a.y;
+    if (ddx * ddx + ddy * ddy > 60 * 60) continue;     // broad-phase
+    const ac = carCircles(a), bc = carCircles(b), rr = carRadius(a) + carRadius(b);
+    let pen = 0, nx = 0, ny = 0;
+    for (const p of ac) for (const q of bc) {
+      const dx = q[0] - p[0], dy = q[1] - p[1], d = Math.hypot(dx, dy) || 0.001, pp = rr - d;
+      if (pp > pen) { pen = pp; nx = dx / d; ny = dy / d; }
+    }
+    if (pen <= 0) continue;
+    if (nx * ddx + ny * ddy < 0) { nx = -nx; ny = -ny; }
+    shoveCar(a, -nx * pen, -ny * pen);                 // la remota è immobile per noi: ci scostiamo tutto noi
+    const va = carVel(a), vb = carVel(b);
+    const vn = (vb.x - va.x) * nx + (vb.y - va.y) * ny; // velocità di avvicinamento
+    if (vn < 0) {
+      const ma = a.mass || 1, mb = (b.mass || 1) * 8;   // le remote pesano molto: ci respingono
+      const jn = -(1 + 0.4) * vn / (1 / ma + 1 / mb);
+      applyImpulse(a, -nx * jn / ma, -ny * jn / ma);
+      const imp = -vn;
+      if (imp > 1.6) {                                  // botta vera: scintille, scossone, danno
+        spawnSparks((a.x + b.x) / 2, (a.y + b.y) / 2, Math.min(10, Math.round(2 + imp * 1.4)));
+        shake(Math.min(8, 2 + imp * 0.8), Math.min(9, 3 + imp * 0.7)); sfx.crash();
+        damageCar(a, Math.min(16, 2 + imp * 2.2));
+      }
+    }
+  }
+  player.x = a.x; player.y = a.y;
+}
 
 // ---------- Proiettili ----------
 function updateBullets() {
@@ -995,6 +1033,7 @@ function update() {
   if (player.car) updateDrive(player.car); else updatePlayerFoot();
   for (const c of cars) updateCar(c);
   resolveCarCollisions();
+  resolveRemoteCarCollisions();                  // urti con le auto degli altri giocatori/volanti
   for (const p of peds) updatePed(p);
   updateBullets();
   updateRockets();
