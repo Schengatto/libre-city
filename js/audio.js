@@ -45,14 +45,37 @@ function hear(x, y, range) {
 }
 // anti-spam: cooldown (in frame, decrementati in update) per i suoni che scatterebbero a raffica
 const sfxCd = { scream: 0, yell: 0, chat: 0, horn: 0, skid: 0, rico: 0, clank: 0, whistle: 0 };
-// motore continuo
+// motore continuo — modello a più voci per un suono di combustione realistico
+// invece del singolo sawtooth "sega": una fondamentale + una sub-ottava di corpo,
+// entrambe filtrate da un lowpass risonante che si apre con i giri (sordo al minimo,
+// più "aperto" e ringhioso in accelerazione).
+function makeEngine(out) {
+  const o1 = AC.createOscillator();          // fondamentale (i "colpi" del motore)
+  const o2 = AC.createOscillator();          // sub-ottava: dà corpo e profondità
+  o1.type = 'sawtooth'; o2.type = 'triangle';
+  o1.frequency.value = 55; o2.frequency.value = 27.5;
+  const lp = AC.createBiquadFilter();        // toglie la durezza acuta del sawtooth
+  lp.type = 'lowpass'; lp.frequency.value = 200; lp.Q.value = 7;   // Q → "growl"
+  const g = AC.createGain(); g.gain.value = 0;
+  o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(out);
+  o1.start(); o2.start();
+  return { o1, o2, lp, g };
+}
+// aggiorna una voce motore: freq della fondamentale, sub un'ottava sotto,
+// cutoff del filtro proporzionale ai giri (bright = più giri)
+function driveEngine(e, vol, freq, smooth) {
+  const t = AC.currentTime, f = freq || 55, s = smooth || 0.08;
+  e.g.gain.setTargetAtTime(vol || 0, t, s);
+  e.o1.frequency.setTargetAtTime(f, t, s * 0.75);
+  e.o2.frequency.setTargetAtTime(f * 0.5, t, s * 0.75);
+  e.lp.frequency.setTargetAtTime(clamp(f * 3.4 + 110, 110, 1500), t, s * 0.75);
+}
 function engineGain(vol, freq) {
   if (!AC) return;
-  if (!engine) { const o = AC.createOscillator(), g = AC.createGain(); o.type = 'sawtooth'; o.frequency.value = 60; g.gain.value = 0; o.connect(g).connect(AC.destination); o.start(); engine = { o, g }; }
-  engine.g.gain.setTargetAtTime(vol || 0, AC.currentTime, 0.08);
-  if (freq) engine.o.frequency.setTargetAtTime(freq, AC.currentTime, 0.08);
+  if (!engine) engine = makeEngine(AC.destination);
+  driveEngine(engine, vol, freq, 0.08);
 }
-// brusio dei motori del traffico: un oscillatore persistente che segue
+// brusio dei motori del traffico: una voce persistente che segue
 // l'auto in movimento più "udibile" (vicina e veloce) attorno al player
 let trafEng = null;
 function updateTrafficEngine() {
@@ -62,16 +85,11 @@ function updateTrafficEngine() {
     if (c.driver === 'player' || Math.abs(c.speed) < 0.8) continue;
     const h = hear(c.x, c.y, 640);
     if (!h) continue;
-    const v = h.v * 0.05 * clamp(Math.abs(c.speed) / 4, 0.35, 1);
-    if (v > vol) { vol = v; freq = 48 + Math.abs(c.speed) * 13; }
+    const v = h.v * 0.045 * clamp(Math.abs(c.speed) / 4, 0.35, 1);
+    if (v > vol) { vol = v; freq = 44 + Math.abs(c.speed) * 11; }
   }
-  if (!trafEng) {
-    const o = AC.createOscillator(), g = AC.createGain();
-    o.type = 'sawtooth'; o.frequency.value = 55; g.gain.value = 0;
-    o.connect(g).connect(AC.destination); o.start(); trafEng = { o, g };
-  }
-  trafEng.g.gain.setTargetAtTime(vol, AC.currentTime, 0.2);
-  trafEng.o.frequency.setTargetAtTime(freq, AC.currentTime, 0.2);
+  if (!trafEng) trafEng = makeEngine(AC.destination);
+  driveEngine(trafEng, vol, freq, 0.2);
 }
 const sfx = {
   shoot()    { noise(0.05, 0.25, 1600); tone(420, 0.08, 'square', 0.14, 120); },
