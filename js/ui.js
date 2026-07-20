@@ -49,17 +49,30 @@ if (hintBox) hintBox.onclick = toggleHelp;
 // =========================================================
 //  LOOP
 // =========================================================
-function loop() {
+// TIMESTEP FISSO. La sim è tarata su 60 passi/secondo (movimento, fisica, countdown
+// in frame). Prima si avanzava di UN passo per frame renderizzato: su un device a
+// 30fps TUTTO andava a metà velocità (lo "slow" del multigiocatore). Ora un
+// accumulatore scala la logica al tempo REALE — 60 update/s a qualsiasi frame-rate —
+// e si disegna una volta per frame. Il mondo autoritativo (interpolato sul tempo
+// reale) e il player predetto restano così a velocità corretta anche a 30/40 fps.
+const LOGIC_STEP = 1000 / 60;          // durata di un passo logico (ms)
+const LOGIC_MAX = 5;                    // max recuperi per frame (freno alla "spirale della morte")
+let _loopLast = 0, _loopAcc = 0;
+function loop(nowT) {
   if (!started) return;
-  // in pausa la catena RAF resta viva (evita doppi loop alla ripresa), ma il gioco è fermo
-  if (!paused) {
-    update();
-    render();
-    if ((frame & 7) === 0) updateCash();
-    if ((frame & 3) === 0) updateGear();
-    updateToast();
-  }
   requestAnimationFrame(loop);
+  const t = nowT || performance.now();
+  // in pausa la catena RAF resta viva, ma non si accumula tempo (niente scatto alla ripresa)
+  if (paused) { _loopLast = t; return; }
+  if (!_loopLast) _loopLast = t;
+  _loopAcc += Math.min(t - _loopLast, LOGIC_STEP * LOGIC_MAX);   // clamp: dopo un blocco (tab in background) non esplodere
+  _loopLast = t;
+  let n = 0;
+  while (_loopAcc >= LOGIC_STEP && n < LOGIC_MAX) { update(); _loopAcc -= LOGIC_STEP; n++; }
+  render();                             // un disegno per frame, a QUALSIASI fps
+  if ((frame & 7) === 0) updateCash();
+  if ((frame & 3) === 0) updateGear();
+  updateToast();
 }
 
 // =========================================================
@@ -161,6 +174,7 @@ function startMatch() {
   const hi = usingTouch ? 'Avvicinati a un\'auto e tocca 🚗' : 'Ruba un\'auto con E';
   const mp = netActive() ? (usingTouch ? ' · 🏆 per la classifica' : ' · Tab per la classifica') : '';
   toast(`Benvenuto a Libre City, ${playerName}! 🏙️  ${hi}${mp}`);
+  _loopLast = 0; _loopAcc = 0;                    // riparti puliti (niente recupero dal match precedente)
   loop();
 }
 const playBtn = $('#playBtn');
