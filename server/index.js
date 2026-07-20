@@ -124,6 +124,7 @@ function startSim(room) {
           const snap = room.sim.snapshotFor(p.id);
           if (snap) { snap.sc = room.sim.scores(); try { p.ws.send(JSON.stringify(snap)); } catch {} }
         }
+        room.sim.clearFx();                     // gli fx del giro sono stati spediti: svuota
       }
     } catch (e) { console.error('tick error', room.code, e.message); }
   }, Math.round(1000 / SIM_HZ));

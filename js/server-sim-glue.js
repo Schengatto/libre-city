@@ -155,6 +155,17 @@ function playerView(p) {
            gun: !WEAPONS[p.weaponIdx].melee, hp: R2(p.health), down: p.downT > 0,
            punch: p.punchT > 0, car: p.car ? carPayload(p.car) : null };
 }
+// ---- effetti cosmetici → eventi 'fx' per il client ----
+// Sul server le particelle non servono: intercettiamo gli spawn* di gameplay.js e li
+// trasformiamo in eventi leggeri (posizione + tipo), inviati negli snapshot. Il client
+// li ricrea (particelle + audio via hear). Così muzzle/sangue/scintille/esplosioni si
+// vedono e si sentono anche in multigiocatore, senza far crescere `parts` sul server.
+var __fx = [];
+spawnMuzzle = (x, y, a) => { __fx.push({ k: 0, x: R2(x), y: R2(y), a }); };
+spawnBlood = (x, y) => { __fx.push({ k: 1, x: R2(x), y: R2(y) }); };
+spawnSparks = (x, y, n) => { __fx.push({ k: 2, x: R2(x), y: R2(y), n: n | 0 }); };
+spawnExplosion = (x, y) => { __fx.push({ k: 3, x: R2(x), y: R2(y) }); };
+
 const AOI_R = 1200;                       // raggio di interesse attorno a ciascun giocatore
 
 // snapshot del mondo per il giocatore `id`: solo entità entro AOI_R da lui
@@ -167,8 +178,9 @@ function snapshotFor(id) {
     me: { x: R2(me.x), y: R2(me.y), aim: me.aim, hp: R2(me.health), cash: me.cash,
           wanted, down: me.downT > 0, dt: me.downT, dk: me.downKind, wp: me.weaponIdx, own: me.owned,
           k: me.kills, d: me.deaths, car: me.car ? carPayload(me.car) : null },
-    players: [], cars: [], peds: [], bul: [], rkt: [], coins: [], fires: [],
+    players: [], cars: [], peds: [], bul: [], rkt: [], coins: [], fires: [], fx: [],
   };
+  for (const e of __fx) if (near(e.x, e.y)) out.fx.push(e);
   for (const p of players) if (p !== me && near(p.x, p.y)) out.players.push(playerView(p));
   for (const c of cars) if (c.driver !== 'player' && near(c.x, c.y)) out.cars.push(carPayload(c));
   for (const p of peds) if (near(p.x, p.y)) out.peds.push(pedPayload(p));
@@ -198,6 +210,7 @@ var __sim = {
   },
   tick() { tickWorld(); },
   snapshotFor,
+  clearFx() { __fx.length = 0; },        // il server svuota gli fx dopo ogni giro di snapshot
   playerState(id) { const p = playerById(id); return p ? { id: p.id, x: R2(p.x), y: R2(p.y), hp: R2(p.health), cash: p.cash, down: p.downT > 0, inCar: !!p.car, wanted } : null; },
   scores() { return players.map(p => ({ id: p.id, name: p.name, k: p.kills, d: p.deaths, c: p.cash })); },
   playerCount() { return players.length; },

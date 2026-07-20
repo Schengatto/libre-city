@@ -525,6 +525,8 @@ function netOnSnapshot(m) {
   // --- monete e incendi (statici: ricostruiti a ogni snapshot) ---
   coins.length = 0; for (const k of m.coins) coins.push({ x: k.x, y: k.y, val: k.v, spin: rnd(0, TAU), bob: rnd(0, TAU) });
   fires.length = 0; for (const f of m.fires) fires.push({ x: f.x, y: f.y, r: 20, hp: 100 });
+  // --- effetti cosmetici del server: particelle + audio posizionale ---
+  if (m.fx) for (const e of m.fx) netApplyFx(e);
   // --- ghost dei giocatori remoti (posizioni AOI; il roster resta da join/leave) ---
   for (const pv of m.players) {
     let g = net.players.get(pv.id);
@@ -542,6 +544,14 @@ function netOnSnapshot(m) {
     if (s.id === net.myId) { net.kills = s.k; net.deaths = s.d; }
     else { const g = net.players.get(s.id); if (g) g.stats = { k: s.k, d: s.d, c: s.c }; }
   }
+}
+
+// ricrea un effetto cosmetico ricevuto dal server (particelle esistenti + audio)
+function netApplyFx(e) {
+  if (e.k === 0) { spawnMuzzle(e.x, e.y, e.a); const h = hear(e.x, e.y, 850); if (h) sfx.copShoot(h); }   // sparo
+  else if (e.k === 1) spawnBlood(e.x, e.y);
+  else if (e.k === 2) spawnSparks(e.x, e.y, e.n || 3);
+  else if (e.k === 3) { spawnExplosion(e.x, e.y); const h = hear(e.x, e.y, 1100); if (h) sfx.boom(); }     // esplosione
 }
 
 // interpola mondo e ghost verso i target ricevuti + estrapola i proiettili
@@ -596,6 +606,7 @@ function netReconcileMe() {
   // auto: crea/rimuovi seguendo l'autorità
   if (me.car && !player.car) { player.car = netMakePlayerCar(me.car); }
   else if (!me.car && player.car) { player.car = null; engineGain(0); }
+  else if (me.car && player.car) { player.car.sirenOn = me.car.siren; if (me.car.tur != null) player.car.turretA = me.car.tur; }
   // fuori gioco (morto/arrestato): overlay col conto alla rovescia del server
   const bm = $('#bigMsg');
   if (me.down) {
@@ -646,6 +657,9 @@ function updateNetClient() {
   netRebuildArrays();
   netReconcileMe();
   updateParts();                                       // decadimento particelle cosmetiche locali
+  // audio d'ambiente derivato dallo stato autoritativo (il motore lo fa già updateDrive)
+  if (wanted > 0 && frame % 26 === 0) sfx.siren((frame / 26) % 2 < 1);
+  if (playerSirenOn(player.car) && frame % 24 === 0) sfx.emergency(player.car.livery === 'ambulance', (frame / 24) % 2 < 1);
   updateCamera();
   frame++;
   if (frame % 30 === 0 && ladderEl && !ladderEl.classList.contains('hidden')) renderLadder();
