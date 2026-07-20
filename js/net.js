@@ -357,6 +357,11 @@ function netSolidCars(out) {
   for (const g of net.players.values()) if (g.car && !g.down) out.push(g.car);
   for (const c of net.looseCars.values()) out.push(c);
   for (const c of net.remoteCops.values()) out.push(c);
+  // Fase 2: anche il traffico del mondo autoritativo è solido per la mia auto, ma
+  // NON lo muoviamo noi (lo possiede/spinge il server): la mia auto ci rimbalza e
+  // basta. Così la collisione col traffico è O(n) sulla sola auto del player, non
+  // O(n²) su tutte le coppie, e non litiga con l'interpolazione del traffico.
+  if (net.authoritative) for (const c of net.wcars.values()) out.push(c);
   return out;
 }
 // un rivale ha lasciato la partita: via anche i mezzi che aveva abbandonato e le sue volanti
@@ -706,8 +711,10 @@ function updateNetClient() {
   if (downT === 0) {
     player.aim = Math.atan2(mouseWY() - player.y, mouseWX() - player.x);
     if (player.car) updateDrive(player.car); else updatePlayerFoot();
-    resolveCarCollisions();                            // il tuo mezzo urta il traffico, localmente → fluido
-    resolveRemoteCarCollisions();                      // …e le auto degli altri giocatori
+    // il traffico è del server (immobile per noi): risolviamo SOLO la nostra auto contro
+    // mondo+rivali (O(n)). Niente resolveCarCollisions O(n²) su tutto il traffico — era
+    // la causa degli scatti con molti veicoli vicini e litigava con l'interpolazione.
+    resolveRemoteCarCollisions();
   }
   if (frame % 2 === 0) netSendInput();                 // ~30 comandi/s (assi, mira, pulsanti + posizione)
   updateParts();                                       // decadimento particelle cosmetiche locali
