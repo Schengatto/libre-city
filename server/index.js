@@ -49,8 +49,12 @@ const HOST = process.env.HOST || '0.0.0.0';
 const STATIC_DIR = process.env.STATIC_DIR ? path.resolve(process.env.STATIC_DIR) : '';
 const GRACE_MS = 30_000;          // finestra di riaggancio dopo una caduta di rete
 const HEARTBEAT_MS = 30_000;      // ping applicativo per scovare le socket morte
-const SIM_HZ = 30;                // frequenza del loop di simulazione autoritativa
-const SNAP_EVERY = 2;             // uno snapshot ogni N tick (~15/s)
+// La sim (movimento/fisica) è a PASSO FISSO tarato su 60Hz, come il single-player e
+// come la predizione del client: simulare a 30Hz faceva girare TUTTO il mondo
+// autoritativo a metà velocità (74 px/s invece di 148) e, con il client che predice
+// a 60Hz, lo faceva sbattere indietro a ogni snapshot (rubber-band). Deve stare a 60.
+const SIM_HZ = 60;                // = rate del movimento/SP/predizione client (NON toccare senza rifare la fisica in dt)
+const SNAP_EVERY = 4;             // uno snapshot ogni N tick → ~15/s (banda invariata)
 const MAX_PLAYERS_CAP = 8;        // tetto assoluto di giocatori per stanza
 const SHIRTS = 8;                 // maglie disponibili (vedi NET_SHIRTS nel client)
 const MAX_PAYLOAD = 64 * 1024;    // un messaggio di stato è ~qualche centinaio di byte
