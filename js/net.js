@@ -711,6 +711,11 @@ function updateNetClient() {
   netInterpWorld();                                    // mondo (traffico/pedoni) dagli snapshot
   netRebuildArrays();                                  // popola cars[]/peds[] (mondo + il tuo mezzo)
   netReconcileMe();                                    // salute/soldi/arma/auto/morte dal server (NON la posizione)
+  // render interpolation: memorizzo la posizione LOGICA prima del passo (dopo l'eventuale
+  // snap di respawn), così il loop (ui.js) può disegnare il player interpolato tra due passi
+  // → niente micro-scatti quando un frame esegue 0 o 2 update (fps non allineati a 60).
+  player._prevX = player.x; player._prevY = player.y;
+  if (player.car) { player.car._prevX = player.car.x; player.car._prevY = player.car.y; }
   // il player è CLIENT-AUTHORITATIVE: simulazione locale completa (movimento + collisioni
   // col traffico) per la massima fluidità. La posizione risultante va al server (netSendInput),
   // che la propaga agli altri. A terra resta fermo (respawn deciso dal server).
@@ -727,7 +732,8 @@ function updateNetClient() {
   // audio d'ambiente derivato dallo stato autoritativo (il motore lo fa già updateDrive)
   if (wanted > 0 && frame % 26 === 0) sfx.siren((frame / 26) % 2 < 1);
   if (playerSirenOn(player.car) && frame % 24 === 0) sfx.emergency(player.car.livery === 'ambulance', (frame / 24) % 2 < 1);
-  updateCamera();
+  // NB: updateCamera() NON qui — la camera segue la posizione INTERPOLATA al momento del
+  // render (vedi loop in ui.js), altrimenti seguirebbe i passi logici discreti e sobbalzerebbe.
   frame++;
   if (frame % 30 === 0 && ladderEl && !ladderEl.classList.contains('hidden')) renderLadder();
 }
