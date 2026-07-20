@@ -30,6 +30,7 @@ const http = require('node:http');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { performance } = require('node:perf_hooks');
 const { WebSocketServer } = require('ws');
 // Fase 2: simulazione autoritativa del mondo (una città per stanza). Se il modulo
 // non è disponibile (o fallisce), il server ricade sul solo relay della Fase 1.
@@ -57,6 +58,26 @@ const MAX_PAYLOAD = 64 * 1024;    // un messaggio di stato è ~qualche centinaio
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const now = () => Date.now();
 const log = (...a) => console.log(new Date().toISOString(), ...a);
+
+// ---------- Profilazione opzionale (SIM_PROFILE=1) --------------------------
+// A costo ZERO quando spenta. Misura i tre numeri che decidono se/quando passare
+// ai worker thread: durata della gen-città (spike una tantum), durata del giro di
+// tick()+snapshot (costo sostenuto), e LAG dell'event loop (di quanto le stanze si
+// bloccano a vicenda). `cpu%` = frazione di un core spesa nella sim: vicino al
+// 100% con lag che sale = tetto raggiunto, è ora dei worker. SIM_PROFILE_MS regola
+// il periodo del report (default 10s).
+const PROFILE = !!process.env.SIM_PROFILE;
+const PROFILE_MS = Number(process.env.SIM_PROFILE_MS) || 10_000;
+const prof = { tickN: 0, tickSum: 0, tickMax: 0, genN: 0, genSum: 0, genMax: 0, lagN: 0, lagSum: 0, lagMax: 0 };
+function profAdd(k, ms) { prof[k + 'N']++; prof[k + 'Sum'] += ms; if (ms > prof[k + 'Max']) prof[k + 'Max'] = ms; }
+// crea una sim misurando (se richiesto) il tempo di generazione della città
+function makeSim(code) {
+  if (!PROFILE) return createRoomSim(code);
+  const t0 = performance.now();
+  const sim = createRoomSim(code);
+  profAdd('gen', performance.now() - t0);
+  return sim;
+}
 
 const rooms = new Map();          // CODICE(maiuscolo) → stanza
 
@@ -112,10 +133,11 @@ function destroyRoom(room) {
 // snapshot per area d'interesse. I client mandano solo INPUT ('i') e disegnano.
 function startSim(room) {
   if (!createRoomSim) return;                 // modulo assente: resta relay Fase 1
-  try { room.sim = createRoomSim(room.code); }
+  try { room.sim = makeSim(room.code); }
   catch (e) { console.error('sim non avviata per', room.code, '—', e.message); room.sim = null; return; }
   room.simTick = 0;
   room.simTimer = setInterval(() => {
+    const t0 = PROFILE ? performance.now() : 0;
     try {
       room.sim.tick();
       if (++room.simTick % SNAP_EVERY === 0) {
@@ -127,6 +149,7 @@ function startSim(room) {
         room.sim.clearFx();                     // gli fx del giro sono stati spediti: svuota
       }
     } catch (e) { console.error('tick error', room.code, e.message); }
+    if (PROFILE) profAdd('tick', performance.now() - t0);   // include serializzazione+send: è il vero costo sul main loop
   }, Math.round(1000 / SIM_HZ));
 }
 function stopSim(room) {
@@ -335,6 +358,36 @@ const heartbeat = setInterval(() => {
   }
 }, HEARTBEAT_MS);
 wss.on('close', () => clearInterval(heartbeat));
+
+// ---------- Report di profilazione (solo con SIM_PROFILE) -------------------
+if (PROFILE) {
+  // lag dell'event loop: un timer a intervallo fisso; quanto arriva in ritardo
+  // oltre l'intervallo previsto è tempo in cui il loop era occupato (tick/gen).
+  let last = performance.now();
+  const lagTimer = setInterval(() => {
+    const p = performance.now();
+    const lag = (p - last) - 500;
+    last = p;
+    if (lag > 0) profAdd('lag', lag);
+  }, 500);
+  const reportTimer = setInterval(() => {
+    const tickAvg = prof.tickN ? prof.tickSum / prof.tickN : 0;
+    const lagAvg = prof.lagN ? prof.lagSum / prof.lagN : 0;
+    const cpu = (prof.tickSum / PROFILE_MS) * 100;   // ms di tick per ms di wall-clock = frazione di un core
+    log('[profile]',
+      `rooms=${rooms.size}`,
+      `ticks=${prof.tickN}`,
+      `tick(ms) avg=${tickAvg.toFixed(2)} max=${prof.tickMax.toFixed(1)}`,
+      `cpu=${cpu.toFixed(1)}%`,
+      `loop-lag(ms) avg=${lagAvg.toFixed(1)} max=${prof.lagMax.toFixed(1)}`,
+      prof.genN ? `gen(ms) n=${prof.genN} avg=${(prof.genSum / prof.genN).toFixed(1)} max=${prof.genMax.toFixed(1)}` : 'gen=—');
+    prof.tickN = prof.tickSum = prof.tickMax = 0;
+    prof.genN = prof.genSum = prof.genMax = 0;
+    prof.lagN = prof.lagSum = prof.lagMax = 0;
+  }, PROFILE_MS);
+  lagTimer.unref?.(); reportTimer.unref?.();      // non tengono vivo il processo
+  log('profilazione attiva (SIM_PROFILE): report ogni', PROFILE_MS + 'ms');
+}
 
 server.listen(PORT, HOST, () => log(`Libre City server in ascolto su ${HOST}:${PORT}`
   + (STATIC_DIR ? ` · serve i file statici da ${STATIC_DIR}` : ' · solo WebSocket')));
