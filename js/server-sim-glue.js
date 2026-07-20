@@ -135,6 +135,14 @@ function tickWorld() {
       if (pl.input.enterExit) { pl.input.enterExit = false; simEnterExit(pl); }
       if (pl.input.horn)      { pl.input.horn = false;      simHorn(pl); }
       if (pl.car) updateDrive(pl.car); else updatePlayerFoot();
+      // CLIENT-AUTHORITATIVE: la posizione la decide il client. Sovrascrivo quella
+      // simulata dal server (il movimento del server è scartato; lo sparo/le interazioni
+      // qui sopra sono già avvenuti dalla posizione riportata). Solo da vivo.
+      if (pl.hasReport) {
+        pl.x = pl.rx; pl.y = pl.ry;
+        if (pl.car && pl.rcx != null) { pl.car.x = pl.rcx; pl.car.y = pl.rcy;
+          if (pl.rca != null) pl.car.angle = pl.rca; if (pl.rcsp != null) pl.car.speed = pl.rcsp; }
+      }
       updateHealPads();
     }
     pl.input.fireEdge = false;
@@ -236,6 +244,14 @@ var __sim = {
     if (cmd.b != null) { i.fireHeld = !!(cmd.b & 1); if (cmd.b & 2) i.fireEdge = true; if (cmd.b & 4) i.enterExit = true; if (cmd.b & 8) i.horn = true; }
     if (cmd.drive) { touchDrive.active = !!cmd.drive.active; touchDrive.angle = cmd.drive.angle || 0; }
     if (cmd.w != null) i.weapon = cmd.w;
+    // POSIZIONE client-authoritative: il player possiede il proprio movimento. La
+    // memorizziamo qui e tickWorld la applica dopo il sim del player (lo sparo/le
+    // interazioni restano lato server, dalla posizione riportata dal client).
+    if (cmd.px != null) {
+      pl.rx = cmd.px; pl.ry = cmd.py; pl.hasReport = true;
+      if (cmd.cx != null) { pl.rcx = cmd.cx; pl.rcy = cmd.cy; pl.rca = cmd.ca; pl.rcsp = cmd.csp; }
+      else pl.rcx = null;
+    }
   },
   tick() { tickWorld(); },
   snapshotFor,

@@ -663,13 +663,14 @@ function netReconcileMe() {
     if (downT > 0 && bm) bm.classList.add('hidden');
     downT = 0;
   }
-  // posizione: correggi solo derive evidenti (fidati della predizione entro ~45px)
+  // posizione: CLIENT-AUTHORITATIVE. Il player possiede il proprio movimento e lo
+  // simula in locale (updateNetClient); il server NON lo corregge più — era la causa
+  // del "server che ti sposta"/rubber-band. Ci si riallinea SOLO su un teletrasporto
+  // vero (respawn/arresto che ti riposiziona altrove), oltre una soglia grande.
   const tx = me.car ? me.car.x : me.x, ty = me.car ? me.car.y : me.y;
-  const d = dist(player.x, player.y, tx, ty);
-  if (d > 140) { player.x = tx; player.y = ty; if (player.car) { player.car.x = tx; player.car.y = ty; } }
-  else if (d > 45) {
-    player.x += (tx - player.x) * 0.25; player.y += (ty - player.y) * 0.25;
-    if (player.car) { player.car.x = player.x; player.car.y = player.y; }
+  if (dist(player.x, player.y, tx, ty) > 300) {
+    player.x = tx; player.y = ty;
+    if (player.car) { player.car.x = tx; player.car.y = ty; }
   }
 }
 
@@ -683,7 +684,11 @@ function netSendInput() {
   if (net.firePending) { b |= 2; net.firePending = false; }
   if (net.enterEdge) { b |= 4; net.enterEdge = false; }
   if (net.hornEdge) { b |= 8; net.hornEdge = false; }
-  const cmd = { t: 'i', seq: ++net.inSeq, ax, ay, aim: Math.round(aim * 256) / 256, b };
+  const cmd = { t: 'i', seq: ++net.inSeq, ax, ay, aim: Math.round(aim * 256) / 256, b,
+                px: Math.round(player.x), py: Math.round(player.y) };   // posizione client-authoritative
+  const c = player.car;
+  if (c) { cmd.cx = Math.round(c.x); cmd.cy = Math.round(c.y);
+           cmd.ca = Math.round(c.angle * 256) / 256; cmd.csp = Math.round(c.speed * 100) / 100; }
   if (typeof touchDrive !== 'undefined' && touchDrive.active) cmd.drive = { active: true, angle: touchDrive.angle };
   if (net.weaponReq != null) { cmd.w = net.weaponReq; net.weaponReq = null; }
   netSend(cmd);
@@ -692,13 +697,19 @@ function netSendInput() {
 // il loop del client autoritativo (chiamato da update() al posto della simulazione)
 function updateNetClient() {
   if (mClicked) net.firePending = true;                // ricorda il click (lo sparo lo fa il server)
-  // predizione del proprio player (movimento/mira); a terra resta fermo
-  if (downT === 0) { player.aim = Math.atan2(mouseWY() - player.y, mouseWX() - player.x);
-                     if (player.car) updateDrive(player.car); else updatePlayerFoot(); }
-  if (frame % 2 === 0) netSendInput();                 // ~30 comandi/s
-  netInterpWorld();
-  netRebuildArrays();
-  netReconcileMe();
+  netInterpWorld();                                    // mondo (traffico/pedoni) dagli snapshot
+  netRebuildArrays();                                  // popola cars[]/peds[] (mondo + il tuo mezzo)
+  netReconcileMe();                                    // salute/soldi/arma/auto/morte dal server (NON la posizione)
+  // il player è CLIENT-AUTHORITATIVE: simulazione locale completa (movimento + collisioni
+  // col traffico) per la massima fluidità. La posizione risultante va al server (netSendInput),
+  // che la propaga agli altri. A terra resta fermo (respawn deciso dal server).
+  if (downT === 0) {
+    player.aim = Math.atan2(mouseWY() - player.y, mouseWX() - player.x);
+    if (player.car) updateDrive(player.car); else updatePlayerFoot();
+    resolveCarCollisions();                            // il tuo mezzo urta il traffico, localmente → fluido
+    resolveRemoteCarCollisions();                      // …e le auto degli altri giocatori
+  }
+  if (frame % 2 === 0) netSendInput();                 // ~30 comandi/s (assi, mira, pulsanti + posizione)
   updateParts();                                       // decadimento particelle cosmetiche locali
   // audio d'ambiente derivato dallo stato autoritativo (il motore lo fa già updateDrive)
   if (wanted > 0 && frame % 26 === 0) sfx.siren((frame / 26) % 2 < 1);
