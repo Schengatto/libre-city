@@ -140,11 +140,26 @@ function startSim(room) {
   try { room.sim = makeSim(room.code); }
   catch (e) { console.error('sim non avviata per', room.code, '—', e.message); room.sim = null; return; }
   room.simTick = 0;
+  // Accumulatore a passo fisso (come il client): il mondo avanza a ESATTAMENTE
+  // SIM_HZ passi/s di wall-clock anche se il timer di Node è impreciso/in ritardo.
+  // Senza, setInterval(17ms) rende ~55Hz → mondo al 92% e client (60Hz) più veloce
+  // del server → rubber-band residuo. Con l'accumulatore i due rate combaciano.
+  const STEP = 1000 / SIM_HZ;
+  room.simAcc = 0;
+  room.simLast = performance.now();
   room.simTimer = setInterval(() => {
     const t0 = PROFILE ? performance.now() : 0;
+    const t = performance.now();
+    room.simAcc += Math.min(t - room.simLast, STEP * 5);   // clamp: dopo un blocco non recuperare all'infinito
+    room.simLast = t;
+    let doSnap = false;
     try {
-      room.sim.tick();
-      if (++room.simTick % SNAP_EVERY === 0) {
+      while (room.simAcc >= STEP) {
+        room.sim.tick();
+        room.simAcc -= STEP;
+        if (++room.simTick % SNAP_EVERY === 0) doSnap = true;   // uno snapshot per giro anche se recupero più tick
+      }
+      if (doSnap) {
         for (const p of room.players.values()) {
           if (p.gone || !p.ws || p.ws.readyState !== 1) continue;
           const snap = room.sim.snapshotFor(p.id);
