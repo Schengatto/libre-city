@@ -479,9 +479,48 @@ function netTick() {
 //  update() (gameplay.js) devia qui quando net.authoritative è vero.
 // =============================================================================
 
-// applica i campi di un'auto dallo snapshot a un oggetto locale (target d'interp.)
+// ---------- Interpolazione a snapshot (rendering nel passato) ----------
+// Tecnica standard dei giochi autoritativi. NON si insegue l'ultima posizione con
+// uno smorzamento esponenziale (che con snapshot a 15/s resta SEMPRE indietro
+// rispetto a un veicolo in moto e va a scatti — la causa del "tutto lento"). Invece
+// si tiene un piccolo BUFFER delle ultime posizioni note e si disegna il mondo con
+// ~100ms di ritardo, interpolando LINEARMENTE tra i due snapshot che racchiudono
+// l'istante di rendering. Così il moto è fluido e a velocità CORRETTA anche con
+// pochi snapshot al secondo e rete ballerina. Il player locale NON passa di qui:
+// lui è predetto (updateNetClient) per restare reattivo.
+const INTERP_MS = 100;                    // ritardo di rendering (~1.5 intervalli di snapshot @15Hz)
+const INTERP_KEEP = 5;                    // stati tenuti per entità (~330ms di storia = margine per il jitter)
+function interpFeed(e, x, y, a) {
+  const t = performance.now();
+  const buf = e.ib || (e.ib = []);
+  const last = buf[buf.length - 1];
+  if (last && (Math.abs(x - last.x) > 280 || Math.abs(y - last.y) > 280)) buf.length = 0;   // teletrasporto (respawn): riparti, non strisciare
+  buf.push({ x, y, a, t });
+  if (buf.length > INTERP_KEEP) buf.shift();
+  if (buf.length === 1) { e.x = x; e.y = y; e.angle = a; }
+}
+function interpSample(e, renderT) {
+  const buf = e.ib;
+  if (!buf || !buf.length) return;
+  if (buf.length === 1 || renderT <= buf[0].t) { const s = buf[0]; e.x = s.x; e.y = s.y; e.angle = s.a; return; }
+  for (let i = buf.length - 1; i > 0; i--) {
+    const a0 = buf[i - 1];
+    if (renderT >= a0.t) {                 // coppia [a0,a1] che racchiude renderT (o l'ultima se renderT è nel futuro → si ferma sull'ultimo)
+      const a1 = buf[i], span = a1.t - a0.t;
+      let f = span > 0 ? (renderT - a0.t) / span : 1;
+      if (f > 1) f = 1;
+      e.x = a0.x + (a1.x - a0.x) * f;
+      e.y = a0.y + (a1.y - a0.y) * f;
+      e.angle = a0.a + angDiff(a0.a, a1.a) * f;
+      return;
+    }
+  }
+}
+
+// applica i campi NON di posizione di un'auto dallo snapshot (aspetto/stato); la
+// posizione va nel buffer d'interpolazione a parte (interpFeed).
 function netApplyCar(c, cp) {
-  c.tx = cp.x; c.ty = cp.y; c.ta = cp.an; c.speed = cp.sp;
+  c.speed = cp.sp;
   c.w = cp.w; c.h = cp.h; c.color = cp.col; c.role = cp.role;
   c.isBike = cp.bike; c.isTank = cp.tank; c.isTaxi = cp.taxi; c.isDelivery = cp.del;
   c.livery = cp.liv || null; c.wasPolice = cp.pol; c.helmet = cp.hel || '#2a2a2e';
@@ -491,7 +530,7 @@ function netApplyCar(c, cp) {
 function netMakeWorldCar(cp) {
   const c = { netId: cp.id, driver: 'net', colH: cp.tank ? 16 : cp.bike ? 8 : 13, gear: 1,
               kvx: 0, kvy: 0, x: cp.x, y: cp.y, angle: cp.an };
-  netApplyCar(c, cp); c.x = cp.x; c.y = cp.y; c.angle = cp.an;
+  netApplyCar(c, cp); interpFeed(c, cp.x, cp.y, cp.an);
   return c;
 }
 // crea l'auto GUIDATA dal player locale a partire dallo snapshot (con la fisica di
@@ -512,7 +551,7 @@ function netOnSnapshot(m) {
     seen.add(cp.id);
     let c = net.wcars.get(cp.id);
     if (!c) { c = netMakeWorldCar(cp); net.wcars.set(cp.id, c); }
-    else { netApplyCar(c, cp); if (dist(c.x, c.y, cp.x, cp.y) > 280) { c.x = cp.x; c.y = cp.y; c.angle = cp.an; } }
+    else { netApplyCar(c, cp); interpFeed(c, cp.x, cp.y, cp.an); }
   }
   for (const id of net.wcars.keys()) if (!seen.has(id)) net.wcars.delete(id);
   // --- pedoni ---
@@ -520,11 +559,11 @@ function netOnSnapshot(m) {
   for (const pp of m.peds) {
     seenP.add(pp.id);
     let p = net.wpeds.get(pp.id);
-    if (!p) { p = { netId: pp.id, x: pp.x, y: pp.y, walk: pp.wk, facing: pp.f }; net.wpeds.set(pp.id, p); }
-    p.tx = pp.x; p.ty = pp.y; p.tf = pp.f; p.walk = pp.wk; p.role = pp.role; p.ko = pp.ko;
+    if (!p) { p = { netId: pp.id }; net.wpeds.set(pp.id, p); }
+    p.facing = pp.f; p.walk = pp.wk; p.role = pp.role; p.ko = pp.ko;
     p.shirt = pp.sh; p.skin = pp.sk; p.hair = pp.ha;
     p.copDress = pp.dr === 1; p.soldierDress = pp.dr === 2;
-    if (dist(p.x, p.y, pp.x, pp.y) > 280) { p.x = pp.x; p.y = pp.y; }
+    interpFeed(p, pp.x, pp.y, pp.f);
   }
   for (const id of net.wpeds.keys()) if (!seenP.has(id)) net.wpeds.delete(id);
   // --- proiettili e razzi (estrapolati localmente tra gli snapshot) ---
@@ -540,12 +579,13 @@ function netOnSnapshot(m) {
     let g = net.players.get(pv.id);
     if (!g) { g = makeGhost(pv.id, pv.name, pv.sh); net.players.set(pv.id, g); }
     g.seen = true; g.name = pv.name; g.shirtIdx = pv.sh; g.shirt = NET_SHIRTS[pv.sh % NET_SHIRTS.length];
-    g.tx = pv.x; g.ty = pv.y; g.aim = pv.aim; g.walk = pv.wk; g.moving = pv.mov;
+    g.aim = pv.aim; g.walk = pv.wk; g.moving = pv.mov;
     g.gun = pv.gun; g.hp = pv.hp; g.down = pv.down; if (pv.punch) g.punchT = 10;
     if (pv.car) {
-      if (!g.car) { g.car = netMakeWorldCar(pv.car); } else netApplyCar(g.car, pv.car);
+      if (!g.car) g.car = netMakeWorldCar(pv.car);
+      else { netApplyCar(g.car, pv.car); interpFeed(g.car, pv.car.x, pv.car.y, pv.car.an); }
       g.car.riderShirt = g.shirt;
-    } else g.car = null;
+    } else { g.car = null; interpFeed(g, pv.x, pv.y, pv.aim); }
   }
   // --- messaggi del server per me (uccisioni, taglie): toast UNA volta per snapshot ---
   if (m.me && Array.isArray(m.me.ev)) for (const t of m.me.ev) { toast(t); if (t[0] === '💀' || t[0] === '🎯') sfx.coin(); }
@@ -564,26 +604,16 @@ function netApplyFx(e) {
   else if (e.k === 3) { spawnExplosion(e.x, e.y); const h = hear(e.x, e.y, 1100); if (h) sfx.boom(); }     // esplosione
 }
 
-// interpola mondo e ghost verso i target ricevuti + estrapola i proiettili
+// campiona il mondo all'istante di rendering (nel passato) dal buffer d'interpolazione
+// + estrapola i proiettili. Fluido e a velocità corretta a qualunque frame-rate.
 function netInterpWorld() {
-  const lerpCar = (c, k) => {
-    if (c.tx == null) return;
-    c.x += (c.tx - c.x) * k; c.y += (c.ty - c.y) * k;
-    c.angle += angDiff(c.angle, c.ta != null ? c.ta : c.angle) * 0.4;
-  };
-  for (const c of net.wcars.values()) lerpCar(c, 0.35);
-  for (const p of net.wpeds.values()) {
-    p.x += (p.tx - p.x) * 0.35; p.y += (p.ty - p.y) * 0.35;
-    if (p.tf != null) p.facing = p.tf;
-  }
+  const renderT = performance.now() - INTERP_MS;
+  for (const c of net.wcars.values()) interpSample(c, renderT);
+  for (const p of net.wpeds.values()) interpSample(p, renderT);
   for (const g of net.players.values()) {
     if (g.punchT > 0) g.punchT--;
-    if (g.car) { lerpCar(g.car, 0.3); g.x = g.car.x; g.y = g.car.y; }
-    else if (g.tx != null) {
-      g.x += (g.tx - g.x) * 0.3; g.y += (g.ty - g.y) * 0.3;
-      if (dist(g.x, g.y, g.tx, g.ty) > 280) { g.x = g.tx; g.y = g.ty; }
-      if (g.moving) g.walk += 0.3;
-    }
+    if (g.car) { interpSample(g.car, renderT); g.x = g.car.x; g.y = g.car.y; }
+    else { interpSample(g, renderT); if (g.moving) g.walk += 0.3; }
   }
   for (const k of coins) { k.spin += 0.13; k.bob += 0.08; }
   for (const b of net.wbullets) { b.x += b.vx; b.y += b.vy; }
