@@ -90,7 +90,9 @@ const WEAPONS = [
   { name: 'Pistola',        icon: '🔫', price: 50,  cd: 20, auto: false, spd: 13, life: 52, spread: 0.03,  knock: 4, dmgCar: 10, pvp: 10, sfx: 'shoot' },
   { name: 'Mitra',          icon: '⚡', price: 300, cd: 8,  auto: true,  spd: 13, life: 44, spread: 0.09,  knock: 3, dmgCar: 6,  pvp: 6,  sfx: 'smg' },
   { name: 'Fucile a pompa', icon: '💥', price: 500, cd: 46, auto: false, spd: 11, life: 26, spread: 0.22,  knock: 7, dmgCar: 8,  pvp: 8,  pellets: 6, shake: 4, sfx: 'shotgun' },
-  { name: 'Magnum',         icon: '🎯', price: 900, cd: 34, auto: false, spd: 18, life: 60, spread: 0.012, knock: 9, dmgCar: 34, pvp: 24, shake: 3, sfx: 'magnum' },
+  // Lanciarazzi: spara un RAZZO che esplode all'impatto — onda d'urto ad area
+  // (vedi playerShoot/updateRockets). Ricarica lenta, ma devastante in PvP.
+  { name: 'Lanciarazzi',    icon: '🚀', price: 1200, cd: 85, auto: false, rocket: true, spd: 7, life: 120, knock: 12, dmgCar: 95, pvp: 40, shake: 8, sfx: 'rocket' },
 ];
 
 // `let` (non `const`): sul server autoritativo la glue rilega `player` al
@@ -102,6 +104,7 @@ let player = {
   car: null, shootCd: 0, hurtCd: 0, punchT: 0,
   weaponIdx: 0, owned: WEAPONS.map(w => !w.price),
   shirt: '#e0533a', skin: '#f6c79a', hair: '#5a3a1a',
+  kills: 0, deaths: 0, score: 0, streak: 0, bounty: 0,   // punteggio/serie/taglia (PvP)
 };
 (function spawnPlayer() {
   const p = randomRoadNear(WORLD_W / 2, WORLD_H / 2, 0, 300) || nodes[Math.floor(nodes.length / 2)];

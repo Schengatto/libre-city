@@ -4,7 +4,7 @@
    Missioni taxi 🚕 · Pizza delivery in moto 🍕🏍️
    Soccorsi in ambulanza 🚑 · Caccia ai ladri in volante 🚔
    Si parte a mani nude: i pugni 👊 stendono in 3 colpi
-   Armeria 🛒: compra pistola, mitra, fucile a pompa e magnum
+   Armeria 🛒: compra pistola, mitra, fucile a pompa e lanciarazzi
    Ogni struttura ha i suoi mezzi parcheggiati davanti
    Caserma dell'esercito 🪖: area recintata con jeep e carri
    armati (razzi!) — ma le guardie sparano a vista agli intrusi!

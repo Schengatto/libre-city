@@ -74,6 +74,7 @@ function updatePlayerFoot() {
   mClicked = false;
 }
 function playerShoot(w) {
+  if (w.rocket) { playerFireRocket(w); return; }      // il lanciarazzi spara un razzo esplosivo
   for (let i = 0; i < (w.pellets || 1); i++) {        // il fucile a pompa spara una rosa di pallini
     const a = player.aim + rnd(-w.spread, w.spread);
     const bx = player.x + Math.cos(a) * 14, by = player.y + Math.sin(a) * 14;
@@ -84,6 +85,18 @@ function playerShoot(w) {
   shake(w.shake || 2, 3);
   (sfx[w.sfx] || sfx.shoot)();
   netShotFired(w);                                    // in multigiocatore i rivali vedono (e subiscono) i colpi
+}
+// il razzo del lanciarazzi: vola dritto dal player e scoppia al primo impatto
+// (updateRockets/explodeRocket). `owner` firma il colpo per punti/taglie in PvP.
+function playerFireRocket(w) {
+  const a = player.aim;
+  const bx = player.x + Math.cos(a) * 16, by = player.y + Math.sin(a) * 16;
+  rockets.push({ x: bx, y: by, vx: Math.cos(a) * (w.spd || 7), vy: Math.sin(a) * (w.spd || 7),
+                 life: w.life || 120, src: player.car || player, owner: player });
+  spawnMuzzle(bx, by, a);
+  shake(w.shake || 6, 6);
+  (sfx[w.sfx] || sfx.rocket)();
+  netRocketFired({ x: player.x, y: player.y, turretA: a });   // Fase 1: i rivali vedono il razzo volare
 }
 
 // ---------- Pugni: attacco ravvicinato — al terzo colpo il pedone va al tappeto ----------
@@ -97,9 +110,9 @@ function playerPunch(w) {
       if (v === puncher || v.downT > 0 || v.car) continue;
       if (dist(puncher.x, puncher.y, v.x, v.y) < w.range &&
           Math.abs(angDiff(puncher.aim, Math.atan2(v.y - puncher.y, v.x - puncher.x))) < 1.0) {
-        const wasDown = v.downT > 0;
+        const wasDown = v.downT > 0, vb = v.bounty | 0;
         asPlayer(v, () => hurtPlayer(12, puncher.aim));
-        if (!wasDown && v.downT > 0) { puncher.kills = (puncher.kills | 0) + 1; v.deaths++; }
+        if (!wasDown && v.downT > 0) creditKill(puncher, v, vb);
         return;
       }
     }
@@ -778,15 +791,15 @@ function updateBullets() {
         if (v.car) {
           const c = v.car;
           if (Math.abs(b.x - c.x) < c.w / 2 && Math.abs(b.y - c.y) < c.h / 2 + 4) {
-            const wasDown = v.downT > 0;
+            const wasDown = v.downT > 0, vb = v.bounty | 0;
             asPlayer(v, () => { damageCar(c, b.dmg || 10, Math.atan2(b.vy, b.vx)); hurtPlayer(3); });
-            if (!wasDown && v.downT > 0 && b.owner) { b.owner.kills = (b.owner.kills | 0) + 1; v.deaths++; }
+            if (!wasDown && v.downT > 0 && b.owner) creditKill(b.owner, v, vb);
             spawnSparks(b.x, b.y, 2); hit = true; break;
           }
         } else if (dist(b.x, b.y, v.x, v.y) < v.r + 3) {
-          const wasDown = v.downT > 0;
+          const wasDown = v.downT > 0, vb = v.bounty | 0;
           asPlayer(v, () => hurtPlayer(b.pvp || 8, Math.atan2(b.vy, b.vx)));
-          if (!wasDown && v.downT > 0 && b.owner) { b.owner.kills = (b.owner.kills | 0) + 1; v.deaths++; }
+          if (!wasDown && v.downT > 0 && b.owner) creditKill(b.owner, v, vb);
           hit = true; break;
         }
       }
@@ -877,6 +890,44 @@ function explodeCar(c) {
   if (player.car === c) { player.car = null; engineGain(0); }
 }
 
+// ---------- Punteggio, serie di uccisioni e taglie (PvP multigiocatore) ----------
+const KILL_POINTS = 100;                          // punti base per un'uccisione
+// nomi delle serie ravvicinate, per il messaggio a schermo
+const STREAK_NAME = { 2: 'Doppia uccisione!', 3: 'Tripla uccisione!', 4: 'Quadrupla!',
+                      5: 'Scatenato!', 7: 'Inarrestabile!', 10: 'LEGGENDARIO!' };
+// più uccisioni fai senza morire, più alta è la TAGLIA sulla tua testa: chi ti
+// stende la incassa (in punti e in soldi). Diventi il bersaglio numero uno.
+function bountyForStreak(s) {
+  if (s >= 10) return 1000;
+  if (s >= 7)  return 500;
+  if (s >= 5)  return 300;
+  if (s >= 3)  return 150;
+  return 0;
+}
+// un messaggio per un giocatore: in locale è un toast immediato, sul server
+// autoritativo va in coda e parte col prossimo snapshot (vedi snapshotFor).
+function pushEvent(pl, text) {
+  if (!MP) { toast(text); return; }
+  (pl.events || (pl.events = [])).push(text);
+}
+// accredita a `killer` l'uccisione di `victim`. `vb` è la taglia della vittima
+// CATTURATA PRIMA del colpo (startDown l'azzera), che il killer incassa.
+function creditKill(killer, victim, vb) {
+  killer.kills  = (killer.kills  | 0) + 1;
+  killer.streak = (killer.streak | 0) + 1;
+  killer.score  = (killer.score  | 0) + KILL_POINTS;
+  victim.deaths = (victim.deaths | 0) + 1;
+  vb = vb | 0;
+  const streakMsg = STREAK_NAME[killer.streak] ? ' · ' + STREAK_NAME[killer.streak] : '';
+  pushEvent(killer, (vb > 0 ? `💀 Hai steso ${victim.name}! Taglia +$${vb}` : `💀 Hai steso ${victim.name}!`) + streakMsg);
+  pushEvent(victim, `☠️ ${killer.name} ti ha steso!`);
+  if (vb > 0) { asPlayer(killer, () => { cash += vb; }); killer.score += vb; }   // incassa la taglia
+  // la nuova serie può alzare la taglia sulla testa del killer
+  const nb = bountyForStreak(killer.streak);
+  if (nb > (killer.bounty | 0)) pushEvent(killer, `🎯 Taglia su di te: $${nb} — sei un bersaglio!`);
+  killer.bounty = nb;
+}
+
 // ---------- Danno al player / morte ----------
 function hurtPlayer(dmg, angle) {
   if (downT > 0) return;                          // già a terra: niente danni extra
@@ -896,6 +947,7 @@ function arrestPlayer() { startDown('busted'); }
 function startDown(kind) {
   if (downT > 0) return;                          // già a terra: niente doppioni
   downT = 180; downKind = kind;
+  player.streak = 0; player.bounty = 0;           // muori/ti arrestano: serie e taglia azzerate
   netReportDown(kind);                            // multigiocatore: conta la morte e accredita l'uccisore
   sfx.bust();
   if (kind === 'dead') { cash = Math.floor(cash * 0.5); updateCash(); }

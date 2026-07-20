@@ -354,6 +354,14 @@
   #mpBadge b { color:#ffd23a; letter-spacing:2px; }
   body.touch #mpBadge { top:auto; bottom:calc(10px + env(safe-area-inset-bottom,0px));
     left:calc(12px + env(safe-area-inset-left,0px)); transform:none; font-size:11px; padding:3px 10px; }
+  /* taglia sulla propria testa: pulsa quando è attiva */
+  #bountyBadge { position:absolute; top:44px; left:50%; transform:translateX(-50%); z-index:5;
+    font-size:14px; font-weight:bold; color:#ffd23a; background:rgba(120,10,10,.6);
+    border:1px solid rgba(255,210,58,.6); padding:3px 14px; border-radius:14px; white-space:nowrap;
+    animation:bountyPulse 1s ease-in-out infinite; }
+  @keyframes bountyPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(255,90,42,.5); } 50%{ box-shadow:0 0 12px 3px rgba(255,90,42,.7); } }
+  body.touch #bountyBadge { top:auto; bottom:calc(40px + env(safe-area-inset-bottom,0px));
+    left:calc(12px + env(safe-area-inset-left,0px)); transform:none; font-size:11px; padding:2px 10px; }
   .roomcode { font-size:38px; font-weight:bold; letter-spacing:8px; color:#ffd23a;
     background:rgba(0,0,0,.35); padding:8px 22px; border-radius:14px; text-shadow:0 2px 0 #9a6a10; }
   .mpstatus { min-height:18px; font-size:14px; color:#ff8a6a; }
@@ -364,12 +372,12 @@
   #ladder { position:absolute; inset:0; z-index:46; display:flex; align-items:center; justify-content:center;
     background:rgba(10,11,16,.45); pointer-events:none; }
   #ladder .lbox { background:rgba(13,15,23,.94); border:2px solid rgba(255,210,58,.45); border-radius:16px;
-    padding:20px 26px; display:flex; flex-direction:column; align-items:center; gap:12px; }
+    padding:20px 26px; display:flex; flex-direction:column; align-items:center; gap:12px; max-width:96vw; overflow-x:auto; }
   #ladder h2 { color:#ffd23a; font-size:22px; letter-spacing:1px; }
-  .ladtab { border-collapse:collapse; min-width:min(440px,88vw); font-size:15px; }
+  .ladtab { border-collapse:collapse; min-width:min(480px,92vw); font-size:15px; }
   .ladtab th { font-size:11px; letter-spacing:1px; text-transform:uppercase; color:#8fd6ff;
-    padding:7px 12px; border-bottom:1px solid rgba(255,255,255,.18); }
-  .ladtab td { padding:7px 12px; text-align:center; border-bottom:1px solid rgba(255,255,255,.07); }
+    padding:7px 9px; border-bottom:1px solid rgba(255,255,255,.18); }
+  .ladtab td { padding:7px 9px; text-align:center; border-bottom:1px solid rgba(255,255,255,.07); }
   .ladtab td:nth-child(2) { text-align:left; font-weight:bold; }
   .ladtab tr.me td { color:#ffd23a; }
   .ladhint { font-size:12px; opacity:.65; }
@@ -387,6 +395,7 @@
   </div>
 
   <div id="mpBadge" class="hidden"></div>
+  <div id="bountyBadge" class="hidden"></div>
 
   <div id="status">
     <div id="cash">$0</div>
@@ -404,7 +413,7 @@
     <div id="hintFull">
       <b>Tab</b> classifica della partita (in multigiocatore 🌐)<br>
       👊 Parti a mani nude: 3 pugni stendono un passante<br>
-      🛒 Compra le armi all'<b>ARMERIA</b> (pistola, mitra, fucile a pompa, magnum)<br>
+      🛒 Compra le armi all'<b>ARMERIA</b> (pistola, mitra, fucile a pompa, lanciarazzi)<br>
       🚕 Sali su un <b>taxi</b>: porta i clienti a destinazione e guadagna<br>
       🍕 Sali sulla <b>moto delle consegne</b>: ritira il cibo in pizzeria e consegnalo<br>
       🚑 Sali sull'<b>ambulanza</b> (all'ospedale): soccorri i feriti in città<br>
@@ -439,7 +448,7 @@
     <div id="goRank"></div>
     <div id="goLadderWrap" class="hidden">
       <table class="ladtab" id="goLadderTable">
-        <thead><tr><th>#</th><th>Nome</th><th>💀 Stesi</th><th>☠️ Morti</th><th>💰 Soldi</th></tr></thead>
+        <thead><tr><th>#</th><th>Nome</th><th>🏆 Punti</th><th>💀 Stesi</th><th>☠️ Morti</th><th>🎯 Taglia</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -451,7 +460,7 @@
     <div class="lbox">
       <h2>🏆 Classifica della partita</h2>
       <table class="ladtab" id="ladderTable">
-        <thead><tr><th>#</th><th>Nome</th><th>💀 Stesi</th><th>☠️ Morti</th><th>💰 Soldi</th></tr></thead>
+        <thead><tr><th>#</th><th>Nome</th><th>🏆 Punti</th><th>💀 Stesi</th><th>☠️ Morti</th><th>🎯 Taglia</th></tr></thead>
         <tbody></tbody>
       </table>
       <div class="ladhint">Premi Tab (o tocca 🏆) per chiudere</div>
@@ -678,7 +687,7 @@
        e le <b>jeep armate</b> ti danno la caccia!
        Parti <b>a mani nude</b>: i <b>pugni 👊</b> feriscono i passanti e al <b>terzo colpo</b>
        li stendono. Coi soldi guadagnati passa all'<b>ARMERIA 🔫</b>: la <b>pistola</b> costa
-       pochi dollari, poi arrivano <b>mitra, fucile a pompa e magnum</b>. Ma attento: se investi,
+       pochi dollari, poi arrivano <b>mitra, fucile a pompa e lanciarazzi</b>. Ma attento: se investi,
        picchi o spari la gente, la <b>polizia</b> ti darà la caccia — più stelle ⭐ hai, più diventano cattivi!</p>
     <div class="keys kb">
       <span><b>WASD</b> / frecce</span><span>muovere / guidare</span>

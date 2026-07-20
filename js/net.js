@@ -28,7 +28,7 @@ const net = {
   clockLeft: null,       // frame di partita rimasti, comunicati dal server
   reconnT: null, reconnDelay: 0, wantOpen: false, dropped: false,  // riaggancio automatico
   wake: null,            // wake lock: schermo acceso finché si è in multigiocatore
-  kills: 0, deaths: 0,
+  kills: 0, deaths: 0, score: 0, streak: 0, bounty: 0,   // punteggio, serie e taglia sulla nostra testa
   lastHitBy: null, lastHitT: -9999,   // ultimo rivale che ci ha colpito (per il kill credit)
   looseCars: new Map(),   // netId → mezzo abbandonato da un rivale (sagoma parcheggiata, condivisa)
   carSeq: 0,              // id progressivo dei mezzi che il player locale guida
@@ -70,7 +70,7 @@ function makeGhost(id, name, shirtIdx) {
     x: player.x, y: player.y, tx: player.x, ty: player.y,   // posizione attuale e bersaglio (interpolata)
     aim: 0, walk: 0, moving: false, gun: false, hp: 100, down: false,
     punchT: 0, car: null,
-    stats: { k: 0, d: 0, c: 0 },
+    stats: { k: 0, d: 0, c: 0, s: 0, b: 0 },
   };
 }
 
@@ -209,6 +209,7 @@ function netShutdown() {
   net.sock = null; net._open = null; net.hello = null; net.rejoin = null;
   net.players.clear(); net.looseCars.clear(); net.remoteCops.clear();
   net.mode = null; net.myId = null; net.token = null; net.clockLeft = null;
+  net.score = 0; net.streak = 0; net.bounty = 0; updateBountyHud(0);
   document.body.classList.remove('mp');
   netRefreshBadge();
 }
@@ -252,7 +253,7 @@ function netMyState() {
   return {
     t: 's', x: player.x, y: player.y, a: player.aim, w: player.walk, m: player.moving,
     g: !WEAPONS[player.weaponIdx].melee, hp: player.health, dn: downT > 0,
-    st: { k: net.kills, d: net.deaths, c: cash },
+    st: { k: net.kills, d: net.deaths, c: cash, s: net.score, b: net.bounty },
     c: c ? carNetPayload(c) : null,
     pol: netCopPayloads(),                        // volanti al mio inseguimento (se ricercato)
   };
@@ -401,7 +402,9 @@ function netSpawnRocket(id, m) {
 function netRegisterHit(id) { net.lastHitBy = id; net.lastHitT = frame; }
 // chiamato da startDown(): aggiorna morti e accredita l'eventuale uccisore
 function netReportDown(kind) {
-  if (!netActive() || kind !== 'dead') return;
+  if (!netActive()) return;
+  if (kind === 'dead' || kind === 'busted') { net.streak = 0; net.bounty = 0; updateBountyHud(0); }   // serie/taglia azzerate
+  if (kind !== 'dead') return;
   net.deaths++;
   if (net.lastHitBy != null && frame - net.lastHitT < 60 * 6) {
     netSend({ t: 'kill', to: net.lastHitBy });    // il server recapita il punto al tiratore
@@ -413,6 +416,11 @@ function netReportDown(kind) {
 // ci è arrivato un punto: abbiamo steso la vittima `victimId`
 function netScoreKill(victimId) {
   net.kills++;
+  net.streak++;
+  net.score += KILL_POINTS;
+  const nb = bountyForStreak(net.streak);
+  if (nb > net.bounty) toast(`🎯 Taglia su di te: $${nb} — sei un bersaglio!`);
+  net.bounty = nb; updateBountyHud(nb);
   const g = net.players.get(victimId);
   cash += 25; updateCash();                     // taglia sul rivale steso
   toast(`💀 Hai steso ${g ? g.name : 'un rivale'}! (+$25)`);
@@ -539,10 +547,12 @@ function netOnSnapshot(m) {
       g.car.riderShirt = g.shirt;
     } else g.car = null;
   }
+  // --- messaggi del server per me (uccisioni, taglie): toast UNA volta per snapshot ---
+  if (m.me && Array.isArray(m.me.ev)) for (const t of m.me.ev) { toast(t); if (t[0] === '💀' || t[0] === '🎯') sfx.coin(); }
   // --- classifica dallo snapshot (stats autoritative) ---
   if (Array.isArray(m.sc)) for (const s of m.sc) {
-    if (s.id === net.myId) { net.kills = s.k; net.deaths = s.d; }
-    else { const g = net.players.get(s.id); if (g) g.stats = { k: s.k, d: s.d, c: s.c }; }
+    if (s.id === net.myId) { net.kills = s.k; net.deaths = s.d; }   // punteggio/taglia miei: via `me`
+    else { const g = net.players.get(s.id); if (g) g.stats = { k: s.k, d: s.d, c: s.c, s: s.s | 0, b: s.b | 0 }; }
   }
 }
 
@@ -603,6 +613,9 @@ function netReconcileMe() {
   if (me.wanted != null && me.wanted !== wanted) { wanted = me.wanted; updateStars(); }
   if (me.k != null) net.kills = me.k;
   if (me.d != null) net.deaths = me.d;
+  if (me.sco != null) net.score = me.sco;
+  if (me.stk != null) net.streak = me.stk;
+  if (me.bty != null) { net.bounty = me.bty | 0; updateBountyHud(net.bounty); }   // idempotente ⇒ ok ogni frame
   // auto: crea/rimuovi seguendo l'autorità
   if (me.car && !player.car) { player.car = netMakePlayerCar(me.car); }
   else if (!me.car && player.car) { player.car = null; engineGain(0); }
@@ -686,6 +699,9 @@ function netTag(g, x, y) {
   ctx.font = 'bold 11px Trebuchet MS'; ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillText(g.name, x + 1, y - 17);
   ctx.fillStyle = '#8fd6ff'; ctx.fillText(g.name, x, y - 18);
+  // taglia sulla testa del rivale: bersaglio ambito (💰 in oro sopra il nome)
+  const b = (g.stats && g.stats.b) | 0;
+  if (b > 0) { ctx.fillStyle = '#ffd23a'; ctx.fillText('🎯 $' + b, x, y - 30); }
   ctx.textAlign = 'left';
   ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(x - 14, y - 15, 28, 3);
   ctx.fillStyle = '#5ee06a'; ctx.fillRect(x - 14, y - 15, 28 * clamp(g.hp, 0, 100) / 100, 3);
@@ -699,9 +715,10 @@ function toggleLadder() {
   if (!ladderEl.classList.contains('hidden')) renderLadder();
 }
 function ladderRows() {
-  const rows = [{ name: playerName, k: net.kills, d: net.deaths, c: cash, me: true }];
-  for (const g of net.players.values()) rows.push({ name: g.name, k: g.stats.k, d: g.stats.d, c: g.stats.c, me: false });
-  rows.sort((a, b) => b.k - a.k || a.d - b.d || b.c - a.c);
+  const rows = [{ name: playerName, s: net.score, k: net.kills, d: net.deaths, b: net.bounty, me: true }];
+  for (const g of net.players.values())
+    rows.push({ name: g.name, s: g.stats.s | 0, k: g.stats.k, d: g.stats.d, b: g.stats.b | 0, me: false });
+  rows.sort((a, b) => b.s - a.s || b.k - a.k || a.d - b.d);   // punteggio, poi uccisioni, poi meno morti
   return rows;
 }
 // riempie sia la ladder in gioco sia quella della schermata di fine partita
@@ -714,7 +731,9 @@ function renderLadder() {
     rows.forEach((r, i) => {
       const tr = document.createElement('tr');
       if (r.me) tr.className = 'me';
-      for (const txt of [i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1, r.name, r.k, r.d, '$' + r.c]) {
+      const rank = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1;
+      const name = (r.b > 0 ? '🎯 ' : '') + r.name;          // taglia attiva: bersaglio segnalato
+      for (const txt of [rank, name, r.s, r.k, r.d, r.b > 0 ? '$' + r.b : '—']) {
         const td = document.createElement('td');
         td.textContent = txt;
         tr.appendChild(td);
@@ -722,6 +741,14 @@ function renderLadder() {
       body.appendChild(tr);
     });
   }
+}
+
+// ---------- Taglia sulla propria testa (HUD) ----------
+function updateBountyHud(b) {
+  const el = document.getElementById('bountyBadge');
+  if (!el) return;
+  if (b > 0) { el.textContent = `🎯 Taglia: $${b}`; el.classList.remove('hidden'); }
+  else el.classList.add('hidden');
 }
 
 // ---------- Badge, link d'invito, condivisione ----------

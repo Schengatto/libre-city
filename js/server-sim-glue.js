@@ -54,6 +54,7 @@ function makeSimPlayer(name, shirtIdx) {
     weaponIdx: 0, owned: WEAPONS.map(w => !w.price),
     shirt: '#e0533a', skin: '#f6c79a', hair: '#5a3a1a',
     cash: 0, downT: 0, downKind: null, kills: 0, deaths: 0,
+    score: 0, streak: 0, bounty: 0, events: [],   // punteggio/serie/taglia + coda messaggi (toast) del player
     input: { ax: 0, ay: 0, aim: 0, fireHeld: false, fireEdge: false, enterExit: false, horn: false, weapon: null },
   };
 }
@@ -177,7 +178,9 @@ function snapshotFor(id) {
     t: 'w', tick: frame, ack: me.input.seq || 0,
     me: { x: R2(me.x), y: R2(me.y), aim: me.aim, hp: R2(me.health), cash: me.cash,
           wanted, down: me.downT > 0, dt: me.downT, dk: me.downKind, wp: me.weaponIdx, own: me.owned,
-          k: me.kills, d: me.deaths, car: me.car ? carPayload(me.car) : null },
+          k: me.kills, d: me.deaths, sco: me.score | 0, stk: me.streak | 0, bty: me.bounty | 0,
+          ev: (me.events && me.events.length) ? me.events.splice(0) : null,   // toast in coda → li consumo qui
+          car: me.car ? carPayload(me.car) : null },
     players: [], cars: [], peds: [], bul: [], rkt: [], coins: [], fires: [], fx: [],
   };
   for (const e of __fx) if (near(e.x, e.y)) out.fx.push(e);
@@ -212,7 +215,7 @@ var __sim = {
   snapshotFor,
   clearFx() { __fx.length = 0; },        // il server svuota gli fx dopo ogni giro di snapshot
   playerState(id) { const p = playerById(id); return p ? { id: p.id, x: R2(p.x), y: R2(p.y), hp: R2(p.health), cash: p.cash, down: p.downT > 0, inCar: !!p.car, wanted } : null; },
-  scores() { return players.map(p => ({ id: p.id, name: p.name, k: p.kills, d: p.deaths, c: p.cash })); },
+  scores() { return players.map(p => ({ id: p.id, name: p.name, k: p.kills, d: p.deaths, c: p.cash, s: p.score | 0, b: p.bounty | 0 })); },
   playerCount() { return players.length; },
   _player(id) { return playerById(id); },   // solo per i test: riferimento diretto all'oggetto player
   // --- diagnostica per i test ---

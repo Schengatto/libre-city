@@ -327,7 +327,22 @@ const server = http.createServer((req, res) => {
   res.writeHead(404); res.end();
 });
 
-const wss = new WebSocketServer({ server, maxPayload: MAX_PAYLOAD });
+// permessage-deflate: gli snapshot 'w' sono JSON con chiavi molto ripetitive e
+// pesano decine di KB grezzi (a 15/s = ~centinaia di KB/s per giocatore: su mobile
+// la socket si intasa e TUTTO diventa lentissimo). Comprimono a ~15-18% del grezzo
+// per ~2ms di CPU a giro: il singolo intervento che rende giocabile il multiplayer.
+// Livello basso (rapporto quasi uguale, meno CPU); soglia per saltare i messaggi
+// piccoli (input del client); niente context-takeover lato client per non far
+// crescere la RAM sui telefoni.
+const wss = new WebSocketServer({
+  server, maxPayload: MAX_PAYLOAD,
+  perMessageDeflate: {
+    threshold: 256,                       // sotto i 256B non conviene comprimere
+    zlibDeflateOptions: { level: 3, memLevel: 8 },
+    clientNoContextTakeover: true, serverNoContextTakeover: false,
+    concurrencyLimit: 10,
+  },
+});
 
 wss.on('connection', ws => {
   ws.isAlive = true;

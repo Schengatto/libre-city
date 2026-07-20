@@ -78,7 +78,6 @@ const sfx = {
   smg()      { noise(0.035, 0.2, 2200); tone(520, 0.05, 'square', 0.11, 160); },
   shotgun()  { noise(0.16, 0.42, 800); tone(150, 0.16, 'square', 0.2, 55);
                tone(200, 0.05, 'square', 0.12, null, 0.28); tone(150, 0.06, 'square', 0.12, null, 0.36); },  // + "ka-chak" della pompa
-  magnum()   { noise(0.07, 0.3, 1200); tone(250, 0.12, 'square', 0.2, 70); },
   copShoot(h){ const v = h ? h.v : 1, pan = h ? h.pan : 0;
                noise(0.05, 0.2 * v, 1400, 0, pan); tone(300, 0.09, 'square', 0.12 * v, 100, 0, pan); },
   ricochet(h){ if (!h || sfxCd.rico) return; sfxCd.rico = 4;

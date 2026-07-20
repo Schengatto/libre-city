@@ -38,6 +38,11 @@ function updateRockets() {
     }
     if (!boom) for (const p of peds)
       if (!p.ko && dist(r.x, r.y, p.x, p.y) < p.r + 5) { boom = true; break; }
+    // il razzo scoppia anche addosso a un giocatore a piedi (PvP col lanciarazzi)
+    if (!boom && MP) for (const v of MP) {
+      if (v === r.owner || v.downT > 0 || v.car) continue;
+      if (dist(r.x, r.y, v.x, v.y) < v.r + 6) { boom = true; break; }
+    }
     if (boom) { explodeRocket(r); rockets.splice(i, 1); }
   }
 }
@@ -57,7 +62,14 @@ function explodeRocket(r) {
   eachActivePlayer(v => {
     const px = v.car ? v.car.x : v.x, py = v.car ? v.car.y : v.y;
     if (r.fromNet && dist(px, py, r.x, r.y) < 85) netRegisterHit(r.fromNet);   // firma del tiratore (client)
-    if (!v.car && dist(v.x, v.y, r.x, r.y) < 72) asPlayer(v, () => hurtPlayer(30, Math.atan2(v.y - r.y, v.x - r.x)));
+    const dd = !v.car ? dist(v.x, v.y, r.x, r.y) : Infinity;
+    if (dd < 72) {
+      const dmg = Math.round(120 - 85 * (dd / 72));   // ~120 in pieno (letale) → ~35 ai margini
+      const wasDown = v.downT > 0, vb = v.bounty | 0;
+      asPlayer(v, () => hurtPlayer(dmg, Math.atan2(v.y - r.y, v.x - r.x)));
+      // razzo di un giocatore (lanciarazzi): l'uccisione di un ALTRO player fa punti e taglia
+      if (!wasDown && v.downT > 0 && r.owner && v !== r.owner && typeof creditKill === 'function') creditKill(r.owner, v, vb);
+    }
   });
   for (const o of [...cars]) if (o !== r.src && dist(o.x, o.y, r.x, r.y) < 85) damageCar(o, 45);
 }
