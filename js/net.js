@@ -696,6 +696,12 @@ function netSendInput() {
            cmd.ca = Math.round(c.angle * 256) / 256; cmd.csp = Math.round(c.speed * 100) / 100; }
   if (typeof touchDrive !== 'undefined' && touchDrive.active) cmd.drive = { active: true, angle: touchDrive.angle };
   if (net.weaponReq != null) { cmd.w = net.weaponReq; net.weaponReq = null; }
+  // raggio d'interesse adattivo: chiedo al server SOLO le entità che il mio schermo
+  // può mostrare (+ margine per interpolazione/pop-in), non un fisso 1200 tarato sul
+  // desktop. Su un telefono taglia di molto entità/banda/GC → più fluido. Lo mando
+  // solo quando cambia (orientamento/resize), è idempotente lato server.
+  const vr = Math.round(Math.max(vw, vh) * 0.5 + 250);
+  if (vr !== net.lastVR) { cmd.vr = vr; net.lastVR = vr; }
   netSend(cmd);
 }
 

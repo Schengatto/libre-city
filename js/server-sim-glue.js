@@ -206,7 +206,7 @@ const AOI_R = 1200;                       // raggio di interesse attorno a ciasc
 // snapshot del mondo per il giocatore `id`: solo entità entro AOI_R da lui
 function snapshotFor(id) {
   const me = playerById(id); if (!me) return null;
-  const mx = me.x, my = me.y, R = AOI_R, R2q = R * R;
+  const mx = me.x, my = me.y, R = me.aoi || AOI_R, R2q = R * R;
   const near = (x, y) => { const dx = x - mx, dy = y - my; return dx * dx + dy * dy <= R2q; };
   const out = {
     t: 'w', tick: frame, ack: me.input.seq || 0,
@@ -252,6 +252,9 @@ var __sim = {
       if (cmd.cx != null) { pl.rcx = cmd.cx; pl.rcy = cmd.cy; pl.rca = cmd.ca; pl.rcsp = cmd.csp; }
       else pl.rcx = null;
     }
+    // raggio d'interesse adattivo richiesto dal client (clamp: mai troppo piccolo da
+    // far comparire entità a vista, mai più del tetto di default)
+    if (cmd.vr != null) pl.aoi = Math.max(650, Math.min(AOI_R, cmd.vr));
   },
   tick() { tickWorld(); },
   snapshotFor,
