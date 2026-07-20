@@ -63,6 +63,30 @@ function playerById(id) { for (const p of players) if (p.id === id) return p; re
 function loadP(pl) { player = pl; downT = pl.downT | 0; downKind = pl.downKind; cash = pl.cash | 0; }
 function saveP(pl) { pl.downT = downT; pl.downKind = downKind; pl.cash = cash; }
 
+// ---- carjacking: sbalza fuori il guidatore (da input.js:tossDriver) ----
+// input.js NON è nel bundle del server, ma la glue lo richiama quando un giocatore
+// entra in un'auto del traffico/polizia/esercito: senza questa copia la sim lanciava
+// "tossDriver is not defined" a OGNI tick (flag enterExit mai azzerato) e il mondo
+// autoritativo si congelava per tutti. `hear`/`sfx` sono già stub no-op sul server.
+function tossDriver(c) {
+  const nx = Math.cos(c.angle + Math.PI / 2), ny = Math.sin(c.angle + Math.PI / 2);
+  const side = (player.x - c.x) * nx + (player.y - c.y) * ny > 0 ? -1 : 1;
+  let ex = c.x + nx * side * (c.h / 2 + 20), ey = c.y + ny * side * (c.h / 2 + 20);
+  if (boxHits(ex, ey, 7, 7)) { ex = c.x - nx * side * (c.h / 2 + 20); ey = c.y - ny * side * (c.h / 2 + 20); }
+  if (boxHits(ex, ey, 7, 7)) { ex = c.x + Math.cos(c.angle) * (c.w / 2 + 18); ey = c.y + Math.sin(c.angle) * (c.w / 2 + 18); }
+  const p = makePed(ex, ey, 'civ');
+  if (c.riderShirt) p.shirt = c.riderShirt;
+  if (c.role === 'police' || c.wasPolice) { p.shirt = '#20407a'; p.hair = '#1a1a2a'; p.copDress = true; }
+  if (c.role === 'armycar' || c.livery === 'army') { p.shirt = '#3d5226'; p.hair = '#2a2a1e'; p.soldierDress = true; }
+  p.stolenBike = !!c.isBike;
+  const a = Math.atan2(ey - c.y, ex - c.x);
+  p.ko = true; p.getsUp = true; p.koT = rndi(55, 85);
+  p.kx = Math.cos(a) * 3.4; p.ky = Math.sin(a) * 3.4;
+  p.spin = rnd(-0.5, 0.5);
+  peds.push(p);
+  sfx.thud(); sfx.yell(hear(ex, ey, 700));
+}
+
 // ---- sali / scendi (compatto, da input.js:toggleCar, senza toast/missioni/net) ----
 function simEnterExit(pl) {
   if (pl.downT > 0) return;
@@ -105,9 +129,11 @@ function tickWorld() {
     if (pl.hurtCd > 0) pl.hurtCd--;
     if (downT > 0) updateDown();
     else {
-      if (pl.input.weapon != null) { weaponKey(pl.input.weapon); pl.input.weapon = null; }
-      if (pl.input.enterExit) { simEnterExit(pl); pl.input.enterExit = false; }
-      if (pl.input.horn)      { simHorn(pl);      pl.input.horn = false; }
+      // i flag one-shot vanno azzerati PRIMA di agire: se l'azione lancia
+      // un'eccezione, il flag non resta "incastrato" a rifar throw ogni tick
+      if (pl.input.weapon != null) { const w = pl.input.weapon; pl.input.weapon = null; weaponKey(w); }
+      if (pl.input.enterExit) { pl.input.enterExit = false; simEnterExit(pl); }
+      if (pl.input.horn)      { pl.input.horn = false;      simHorn(pl); }
       if (pl.car) updateDrive(pl.car); else updatePlayerFoot();
       updateHealPads();
     }
