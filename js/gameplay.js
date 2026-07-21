@@ -1061,9 +1061,9 @@ function managePopulation() {
     if (!has) parkServiceCar(lm);
   }
   // monetine sparse + qualche monetina nascosta nei vicoli
-  const wantCoins = 22 * nP;
-  if (coins.length < wantCoins && frame % 14 === 0) spawnCoinNear(fp.x, fp.y, vw * 0.35, vw * 0.9);
-  if (coins.length < wantCoins && frame % 45 === 0) spawnAlleyCoin(fp.x, fp.y, vw * 0.9);
+  const wantCoins = 6 * nP;
+  if (coins.length < wantCoins && frame % 40 === 0) spawnCoinNear(fp.x, fp.y, vw * 0.35, vw * 0.9);
+  if (coins.length < wantCoins && frame % 120 === 0) spawnAlleyCoin(fp.x, fp.y, vw * 0.9);
   // ALLARME MILITARE: finché è attivo, soldati e jeep armate danno la caccia
   if (armyAlertT > 0) {
     if (nSoldier < 3 * nP && frame % 40 === 0) { const p = randomWalkNear(fp.x, fp.y, vw * 0.5, vw * 0.75); if (p) peds.push(makeSoldier(p.x, p.y)); }
