@@ -66,11 +66,23 @@ const MAX_PAYLOAD = 64 * 1024;    // un messaggio di stato è ~qualche centinaio
 // Versione del client servito da questo server (build hash generato da build.js in
 // version.json). Il server la manda nell'handshake `ok`; il client la confronta con
 // la propria (window.LC_BUILD) e, se differiscono, invita a ricaricare la pagina.
-// Env LC_BUILD sovrascrive; letta una volta all'avvio (il container riparte a ogni deploy).
-const SERVER_BUILD = process.env.LC_BUILD || (() => {
-  try { return JSON.parse(fs.readFileSync(path.join(STATIC_DIR, 'version.json'), 'utf8')).build || ''; }
-  catch { return ''; }
-})();
+// Env LC_BUILD sovrascrive. NON leggerla una-tantum: public/ è un bind mount che un
+// deploy solo-client aggiorna SENZA ricreare il container (l'immagine server è invariata,
+// quindi il processo non riparte). Un valore memorizzato all'avvio resterebbe stantio e
+// farebbe scattare "Nuova versione" a ogni ingresso. Rileggiamo il file, con cache su
+// mtime → zero I/O superfluo, ma ogni nuovo deploy viene raccolto senza riavvio.
+const VERSION_FILE = path.join(STATIC_DIR, 'version.json');
+let _buildCache = { mtimeMs: -1, build: '' };
+function serverBuild() {
+  if (process.env.LC_BUILD) return process.env.LC_BUILD;
+  try {
+    const mtimeMs = fs.statSync(VERSION_FILE).mtimeMs;
+    if (mtimeMs !== _buildCache.mtimeMs) {
+      _buildCache = { mtimeMs, build: JSON.parse(fs.readFileSync(VERSION_FILE, 'utf8')).build || '' };
+    }
+    return _buildCache.build;
+  } catch { return ''; }
+}
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const now = () => Date.now();
@@ -213,7 +225,7 @@ function addPlayer(ws, room, name) {
   sendRaw(ws, {
     t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes,
     left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, sim: !!room.sim,
-    build: SERVER_BUILD,
+    build: serverBuild(),
   });
   broadcast(room, { t: 'join', id: p.id, name: p.name, shirtIdx: p.shirtIdx }, p.id);
   log('join', room.code, p.id, p.name, `(${activeCount(room)}/${room.max})`);
@@ -261,7 +273,7 @@ function handleJoin(ws, m) {
       sendRaw(ws, {
         t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes,
         left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, resumed: true, sim: !!room.sim,
-        build: SERVER_BUILD,
+        build: serverBuild(),
       });
       // se la sua uscita era già stata annunciata, gli altri lo re-inseriscono
       if (wasGone) broadcast(room, { t: 'join', id: p.id, name: p.name, shirtIdx: p.shirtIdx }, p.id);
