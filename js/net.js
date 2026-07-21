@@ -509,11 +509,19 @@ function netTick() {
 // uno smorzamento esponenziale (che con snapshot a 15/s resta SEMPRE indietro
 // rispetto a un veicolo in moto e va a scatti — la causa del "tutto lento"). Invece
 // si tiene un piccolo BUFFER delle ultime posizioni note e si disegna il mondo con
-// ~100ms di ritardo, interpolando LINEARMENTE tra i due snapshot che racchiudono
-// l'istante di rendering. Così il moto è fluido e a velocità CORRETTA anche con
-// pochi snapshot al secondo e rete ballerina. Il player locale NON passa di qui:
-// lui è predetto (updateNetClient) per restare reattivo.
-const INTERP_MS = 100;                    // ritardo di rendering (~1.5 intervalli di snapshot @15Hz)
+// un piccolo ritardo (INTERP_MS), interpolando LINEARMENTE tra i due snapshot che
+// racchiudono l'istante di rendering. Così il moto è fluido e a velocità CORRETTA anche
+// con pochi snapshot al secondo e rete ballerina. Il ritardo è tenuto BASSO (e la coda
+// oltre l'ultimo snapshot viene ESTRAPOLATA, non congelata) così il rivale non appare
+// troppo "nel passato" quando si allontana. Il player locale NON passa di qui: lui è
+// predetto (updateNetClient) per restare reattivo.
+// Ritardo di rendering RIDOTTO (~0.9 intervalli @15Hz invece di 1.5): meno "posizione
+// nel passato" del rivale. Per non tornare a scattare quando uno snapshot arriva in
+// ritardo, oltre l'ultimo stato noto si ESTRAPOLA col moto dell'ultimo tratto
+// (dead-reckoning) invece di congelare — fino a EXTRAP_MS, così su un buco di rete
+// l'entità non "vola via" e si riallinea al primo snapshot utile.
+const INTERP_MS = 60;                     // ritardo di rendering (~0.9 intervalli di snapshot @15Hz)
+const EXTRAP_MS = 120;                    // estrapolazione massima oltre l'ultimo snapshot (~2 intervalli)
 const INTERP_KEEP = 5;                    // stati tenuti per entità (~330ms di storia = margine per il jitter)
 function interpFeed(e, x, y, a) {
   const t = performance.now();
@@ -527,13 +535,21 @@ function interpFeed(e, x, y, a) {
 function interpSample(e, renderT) {
   const buf = e.ib;
   if (!buf || !buf.length) return;
+  const last = buf[buf.length - 1];
   if (buf.length === 1 || renderT <= buf[0].t) { const s = buf[0]; e.x = s.x; e.y = s.y; e.angle = s.a; return; }
+  if (renderT >= last.t) {                  // oltre l'ultimo snapshot: ESTRAPOLA col moto dell'ultimo tratto
+    const prev = buf[buf.length - 2], span = last.t - prev.t;
+    const k = span > 0 ? Math.min(renderT - last.t, EXTRAP_MS) / span : 0;
+    e.x = last.x + (last.x - prev.x) * k;   // dead-reckoning: prosegue in linea retta (ottimo per i veicoli)
+    e.y = last.y + (last.y - prev.y) * k;
+    e.angle = last.a;                       // l'angolo resta fermo: estrapolarlo lo farebbe ruotare a vuoto
+    return;
+  }
   for (let i = buf.length - 1; i > 0; i--) {
     const a0 = buf[i - 1];
-    if (renderT >= a0.t) {                 // coppia [a0,a1] che racchiude renderT (o l'ultima se renderT è nel futuro → si ferma sull'ultimo)
+    if (renderT >= a0.t) {                  // coppia [a0,a1] che racchiude renderT
       const a1 = buf[i], span = a1.t - a0.t;
-      let f = span > 0 ? (renderT - a0.t) / span : 1;
-      if (f > 1) f = 1;
+      const f = span > 0 ? (renderT - a0.t) / span : 1;
       e.x = a0.x + (a1.x - a0.x) * f;
       e.y = a0.y + (a1.y - a0.y) * f;
       e.angle = a0.a + angDiff(a0.a, a1.a) * f;
