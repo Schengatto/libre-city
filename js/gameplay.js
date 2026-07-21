@@ -1140,11 +1140,12 @@ function update() {
   if (player.hurtCd > 0) player.hurtCd--;
   if (flashT > 0) flashT--;
   updateLights();
-  updateTrains(true);                            // treno: cinematica + urti (schiaccia le auto)
+  updateTrainKinematics();                        // treno: posizione (serve a trainBlocking negli updateCar)
   if (player.car) updateDrive(player.car); else updatePlayerFoot();
   for (const c of cars) updateCar(c);
   resolveCarCollisions();
   resolveRemoteCarCollisions();                  // urti con le auto degli altri giocatori/volanti
+  trainCollide();                                // treno = muro solido: dopo il movimento (blocco senza ritardo)
   for (const p of peds) updatePed(p);
   updateBullets();
   updateRockets();

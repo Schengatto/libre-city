@@ -708,15 +708,10 @@ function netSendInput() {
 // il loop del client autoritativo (chiamato da update() al posto della simulazione)
 function updateNetClient() {
   if (mClicked) net.firePending = true;                // ricorda il click (lo sparo lo fa il server)
-  updateTrains(false);                                 // treno: solo cinematica (gli urti li decide il server)
+  updateTrainKinematics();                             // treno: solo cinematica (gli urti li decide il server)
   netInterpWorld();                                    // mondo (traffico/pedoni) dagli snapshot
   netRebuildArrays();                                  // popola cars[]/peds[] (mondo + il tuo mezzo)
   netReconcileMe();                                    // salute/soldi/arma/auto/morte dal server (NON la posizione)
-  // render interpolation: memorizzo la posizione LOGICA prima del passo (dopo l'eventuale
-  // snap di respawn), così il loop (ui.js) può disegnare il player interpolato tra due passi
-  // → niente micro-scatti quando un frame esegue 0 o 2 update (fps non allineati a 60).
-  player._prevX = player.x; player._prevY = player.y;
-  if (player.car) { player.car._prevX = player.car.x; player.car._prevY = player.car.y; }
   // il player è CLIENT-AUTHORITATIVE: simulazione locale completa (movimento + collisioni
   // col traffico) per la massima fluidità. La posizione risultante va al server (netSendInput),
   // che la propaga agli altri. A terra resta fermo (respawn deciso dal server).

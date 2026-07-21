@@ -28,14 +28,16 @@ const TRAIN_SPEED = TRAIN_TRAVEL / TRAIN_CROSS_F;          // px/frame (scala co
 const TRAIN_STOP_BAND = 2.6 * T;          // entro questa distanza dal binario le auto si fermano
 const TRAIN_WARN = 360;                   // margine orizzontale entro cui il treno "blocca" il traffico
 
-// stato del treno: rigenerato ogni frame in updateTrains(); `segs` sono i
+// stato del treno: rigenerato ogni frame in updateTrainKinematics(); `segs` sono i
 // riquadri (locomotiva + vagoni) con centro X, larghezza e flag locomotiva.
 const train = { active: false, isTrain: true, x: 0, y: RAIL_Y, dir: 1, headX: 0, minX: 0, maxX: 0, segs: [] };
 
 // posizione del treno in funzione del solo `frame` (nessuna casualità: identica
-// su ogni client/server). doCollisions=false ⇒ solo cinematica (client che RENDE
-// un server autoritativo: gli urti li decide il server).
-function updateTrains(doCollisions) {
+// su ogni client/server). Solo cinematica: gli urti sono in trainCollide(),
+// chiamato DOPO il movimento di auto e player così il muro è solido (niente
+// compenetrazione di un frame). Il client che rende un server autoritativo
+// chiama solo questa (gli urti li decide il server).
+function updateTrainKinematics() {
   const phase = frame % TRAIN_PERIOD;
   const pass = Math.floor(frame / TRAIN_PERIOD);
   const dir = pass % 2 === 0 ? 1 : -1;                     // direzione alternata a ogni passaggio
@@ -53,7 +55,6 @@ function updateTrains(doCollisions) {
   let minX = Infinity, maxX = -Infinity;
   for (const s of train.segs) { if (s.cx - s.w / 2 < minX) minX = s.cx - s.w / 2; if (s.cx + s.w / 2 > maxX) maxX = s.cx + s.w / 2; }
   train.minX = minX; train.maxX = maxX;
-  if (doCollisions) trainCollide();
   // rombo/tromba del treno vicino al giocatore (sul server hear() è nullo ⇒ muto)
   if (frame % 10 === 0) { const h = hear(headX, RAIL_Y, 1000); if (h) sfx.train(h, phase < TRAIN_SPEED); }
 }
@@ -65,38 +66,44 @@ function trainBlocking(c) {
   return c.x > train.minX - TRAIN_WARN && c.x < train.maxX + TRAIN_WARN;
 }
 
-// urti del treno: la locomotiva schiaccia (distrugge) le auto che tocca; i
-// vagoni le scaraventano di lato come un urto forte. A piedi: la locomotiva è
-// letale, un vagone ti sbatte via ferendoti.
+// urti del treno (chiamato DOPO il movimento). Il treno è un MURO immobile: non
+// lo si sposta mai. La locomotiva schiaccia (distrugge) le auto che tocca; i
+// vagoni sono pareti solide — l'auto che li tocca viene ricacciata fuori dalla
+// sagoma e frenata, come contro un muro. A piedi la locomotiva è letale, un
+// vagone ti respinge ferendoti.
 function trainCollide() {
+  if (!train.active) return;
   const halfH = TRAIN_BODY_H / 2;
   // --- auto (all'indietro: explodeCar rimuove dall'array) ---
   for (let i = cars.length - 1; i >= 0; i--) {
     const c = cars[i];
-    if (Math.abs(c.y - RAIL_Y) > halfH + 15) continue;
+    const cr = c.colH;                                    // mezza-estensione di collisione
+    if (Math.abs(c.y - RAIL_Y) >= halfH + cr) continue;
     for (const s of train.segs) {
-      if (c.x < s.cx - s.w / 2 - 12 || c.x > s.cx + s.w / 2 + 12) continue;
-      if (s.loco) {
-        explodeCar(c);                                    // schiacciata: distrutta
-      } else {
-        const away = c.y < RAIL_Y ? -1 : 1;               // scaraventata via dal binario
-        applyImpulse(c, train.dir * 3.5, away * 4.6);
-        damageCar(c, 8);
-        if (c.driver === 'player') { shake(6, 7); sfx.crash(); }
-      }
+      if (c.x <= s.cx - s.w / 2 - cr || c.x >= s.cx + s.w / 2 + cr) continue;   // niente sovrapposizione
+      if (s.loco) { explodeCar(c); break; }              // schiacciata: distrutta
+      // vagone = muro: spingi l'auto fuori dal fianco (lato su cui si trova) e frena
+      const sign = c.y < RAIL_Y ? -1 : 1;
+      const penY = (halfH + cr) - Math.abs(c.y - RAIL_Y);
+      moveBox(c, 0, sign * (penY + 0.5), c.colH, c.colH);
+      c.speed *= 0.3; c.kvx *= 0.5; c.kvy *= 0.5;         // urto contro il muro: quasi ferma
+      damageCar(c, 4);
+      if (c.driver === 'player') { shake(5, 6); sfx.crash(); }
       break;
     }
   }
+  eachActivePlayer(v => { if (v.car) { v.x = v.car.x; v.y = v.car.y; } });   // ri-sincronizza chi guida
   // --- giocatori a piedi ---
   eachActivePlayer(v => {
     if (v.car || v.downT > 0) return;
-    if (Math.abs(v.y - RAIL_Y) > halfH + v.r) return;
+    if (Math.abs(v.y - RAIL_Y) >= halfH + v.r) return;
     for (const s of train.segs) {
-      if (v.x < s.cx - s.w / 2 - v.r || v.x > s.cx + s.w / 2 + v.r) continue;
+      if (v.x <= s.cx - s.w / 2 - v.r || v.x >= s.cx + s.w / 2 + v.r) continue;
       const away = v.y < RAIL_Y ? -1 : 1;
       asPlayer(v, () => {
         hurtPlayer(s.loco ? 120 : 45, Math.atan2(away, train.dir));   // locomotiva = letale
-        moveBox(player, train.dir * 4, away * 6, player.r, player.r);
+        const penY = (halfH + player.r) - Math.abs(player.y - RAIL_Y);
+        moveBox(player, 0, away * (penY + 1), player.r, player.r);     // respinto fuori dal treno
         shake(7, 9);
       });
       break;
