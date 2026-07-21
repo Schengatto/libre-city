@@ -56,21 +56,21 @@ function makeEngine(out) {
   const buf = AC.createBuffer(1, len, AC.sampleRate), d = buf.getChannelData(0);
   for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
   const src = AC.createBufferSource(); src.buffer = buf; src.loop = true;
-  const nbp = AC.createBiquadFilter(); nbp.type = 'bandpass'; nbp.frequency.value = 320; nbp.Q.value = 0.7;
-  const nAmt = AC.createGain(); nAmt.gain.value = 0.6;
+  const nbp = AC.createBiquadFilter(); nbp.type = 'bandpass'; nbp.frequency.value = 180; nbp.Q.value = 0.6;
+  const nAmt = AC.createGain(); nAmt.gain.value = 0.4;           // poco sibilo: il rombo è sordo
 
-  // sub: il "thump" pesante di ogni scoppio
-  const sub = AC.createOscillator(); sub.type = 'triangle'; sub.frequency.value = 52;
-  const sAmt = AC.createGain(); sAmt.gain.value = 0.7;
+  // sub: il "thump" pesante e bombato di ogni scoppio (è la voce dominante)
+  const sub = AC.createOscillator(); sub.type = 'triangle'; sub.frequency.value = 38;
+  const sAmt = AC.createGain(); sAmt.gain.value = 0.95;
 
   // modulazione d'ampiezza alla frequenza di scoppio → i singoli colpi del motore
   const am = AC.createGain(); am.gain.value = 0.5;               // livello medio del chop
-  const lfo = AC.createOscillator(); lfo.type = 'sawtooth'; lfo.frequency.value = 52;
-  const depth = AC.createGain(); depth.gain.value = 0.42;        // profondità del chop
+  const lfo = AC.createOscillator(); lfo.type = 'sawtooth'; lfo.frequency.value = 38;
+  const depth = AC.createGain(); depth.gain.value = 0.4;         // profondità del chop
   lfo.connect(depth).connect(am.gain);
 
-  // corpo/silenziatore: scalda l'insieme e toglie il sibilo acuto
-  const body = AC.createBiquadFilter(); body.type = 'lowpass'; body.frequency.value = 500; body.Q.value = 1.2;
+  // corpo/silenziatore: chiuso e risonante → rombo grave e "bombato", mai stridulo
+  const body = AC.createBiquadFilter(); body.type = 'lowpass'; body.frequency.value = 280; body.Q.value = 2;
   const g = AC.createGain(); g.gain.value = 0;
 
   src.connect(nbp).connect(nAmt).connect(am);
@@ -82,14 +82,15 @@ function makeEngine(out) {
 // aggiorna una voce motore: ritmo degli scoppi = giri; agli alti giri apre i filtri
 // e attenua il chop (i colpi si fondono in un ruggito continuo)
 function driveEngine(e, vol, freq, smooth) {
-  const t = AC.currentTime, f = freq || 52, s = smooth || 0.1;
-  const rev = clamp((f - 45) / 190, 0, 1);                       // 0 al minimo → 1 su di giri
-  e.g.gain.setTargetAtTime((vol || 0) * 1.4, t, s);
+  const t = AC.currentTime, s = smooth || 0.1;
+  const f = (freq || 52) * 0.68;                                 // scoppi più gravi = rombo sordo
+  const rev = clamp((f - 30) / 130, 0, 1);                       // 0 al minimo → 1 su di giri
+  e.g.gain.setTargetAtTime((vol || 0) * 1.25, t, s);
   e.lfo.frequency.setTargetAtTime(f, t, s * 0.6);               // scoppi al secondo = giri
   e.sub.frequency.setTargetAtTime(f, t, s * 0.6);
-  e.nbp.frequency.setTargetAtTime(280 + rev * 900, t, s * 0.6); // più giri = più brillante
-  e.body.frequency.setTargetAtTime(420 + rev * 1600, t, s * 0.6);
-  e.depth.gain.setTargetAtTime(0.42 - rev * 0.26, t, s * 0.6);  // agli alti giri il chop si fonde
+  e.nbp.frequency.setTargetAtTime(150 + rev * 380, t, s * 0.6); // filtri chiusi: poco acuto anche in corsa
+  e.body.frequency.setTargetAtTime(240 + rev * 560, t, s * 0.6);
+  e.depth.gain.setTargetAtTime(0.4 - rev * 0.3, t, s * 0.6);    // agli alti giri il chop si fonde nel rombo
 }
 function engineGain(vol, freq) {
   if (!AC) return;
