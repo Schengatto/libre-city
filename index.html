@@ -592,6 +592,22 @@
           <option value="8">8 giocatori</option>
         </select>
       </div>
+      <div class="field">
+        <label for="hostDuration">Durata della partita</label>
+        <select id="hostDuration">
+          <option value="5">5 minuti</option>
+          <option value="10" selected>10 minuti</option>
+          <option value="15">15 minuti</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="hostSize">Dimensione della mappa</label>
+        <select id="hostSize">
+          <option value="P" selected>Piccola</option>
+          <option value="M">Media (area 2×)</option>
+          <option value="G">Grande (area 4×)</option>
+        </select>
+      </div>
       <div id="hostStatus" class="mpstatus"></div>
       <button id="hostGo" class="mbtn">🏙️ Crea la stanza</button>
       <button id="hostBack" class="mbtn back">↩ Indietro</button>
@@ -625,7 +641,7 @@
       </div>
       <div class="field">
         <label for="joinCode">Codice stanza</label>
-        <input id="joinCode" maxlength="12" placeholder="es. K7PF2M" autocomplete="off" style="text-transform:uppercase">
+        <input id="joinCode" maxlength="12" placeholder="es. MK7PF2" autocomplete="off" style="text-transform:uppercase">
       </div>
       <div class="field">
         <label for="joinPass">Password (se richiesta)</label>

@@ -4,7 +4,15 @@
 // ---------- Città: rete stradale a grafo (strade che curvano) ----------
 const T = 32;                 // pixel per tile
 const PERIOD = 14;            // dimensione media delle regioni (varietà: parchi, piazze, colori)
-const MAP_W = 184, MAP_H = 184;         // città grande
+// La TAGLIA della città è codificata nella 1ª lettera del CODICE STANZA
+// (P=piccola, M=media, G=grande): così ogni client — da link o digitando il codice —
+// e il server rigenerano una mappa della stessa dimensione già al load, dal solo
+// seme, senza trasmettere nulla. La media raddoppia l'area crescendo in verticale;
+// la grande raddoppia ancora crescendo in orizzontale. Iniziale non P/M/G → piccola
+// (single-player e stanze anonime, vedi core.js).
+const MAP_DIMS = { P: [184, 184], M: [184, 368], G: [368, 368] };
+const _mapDims = MAP_DIMS[String(ROOM_CODE).charAt(0)] || MAP_DIMS.P;
+const MAP_W = _mapDims[0], MAP_H = _mapDims[1];
 const WORLD_W = MAP_W * T, WORLD_H = MAP_H * T;
 const HALF_ROAD = 2.1 * T;    // semilarghezza carreggiata (px)
 const LANE = 18;              // scostamento della corsia di destra dal centro strada

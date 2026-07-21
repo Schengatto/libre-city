@@ -247,19 +247,27 @@ function netErrText(err) {
 }
 
 // ---- ospita: crea la stanza e mostra il pannello d'invito ----
+// codice stanza la cui 1ª lettera codifica la taglia della mappa (P/M/G, vedi city.js)
+function makeSizedRoomCode(sizeChar) {
+  const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';        // niente caratteri ambigui (0/O, 1/I/L)
+  let tail = '';
+  for (let i = 0; i < 5; i++) tail += A[Math.floor(Math.random() * A.length)];
+  return (/[PMG]/.test(sizeChar) ? sizeChar : 'P') + tail;
+}
 onClick('hostGo', () => {
   const st = $('#hostStatus');
-  if (st) st.textContent = 'Creazione della stanza…';
   const pass = $('#hostPass') ? $('#hostPass').value : '';
   const maxP = $('#hostMax') ? +$('#hostMax').value : 4;
-  netStartHost(pass, maxP, err => {
-    if (err) { if (st) st.textContent = netErrText(err); return; }
-    if (st) st.textContent = '';
-    const c = $('#inviteCode'); if (c) c.textContent = ROOM_CODE;
-    const l = $('#inviteLink'); if (l) l.value = inviteLink();
-    netRefreshBadge();
-    showPanel('invitePanel');
-  });
+  const mins = $('#hostDuration') ? +$('#hostDuration').value : 10;
+  const size = $('#hostSize') ? $('#hostSize').value : 'P';
+  const code = makeSizedRoomCode(size);
+  // La città della taglia scelta si genera al LOAD dal seme = codice: come per
+  // l'ingresso con un codice, ricarichiamo sulla stanza giusta; al ritorno,
+  // riconosciuto l'hostIntent, creiamo davvero la stanza e mostriamo l'invito.
+  store.set('hostIntent', { code, pass, maxP, mins, name: playerName });
+  if (st) st.textContent = 'Creazione della stanza…';
+  location.hash = 'room=' + code;
+  location.reload();
 });
 onClick('inviteShare', () => shareInvite($('#inviteShare')));
 onClick('inviteCopy', () => copyInvite($('#inviteCopy')));
@@ -319,8 +327,27 @@ onClick('nameOk', confirmName);
 const nameInput = $('#nameInput');
 if (nameInput) nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') confirmName(); });
 
+// ritorno dal reload di creazione stanza (host): la mappa della taglia scelta è
+// ormai generata dal seme del codice → crea davvero la stanza e mostra l'invito
+const hostIntent = store.get('hostIntent', null);
+if (hostIntent && ROOM_FROM_URL === hostIntent.code) {
+  store.set('hostIntent', null);
+  if (hostIntent.name) { playerName = hostIntent.name; store.set('name', playerName); }
+  gameMinutes = hostIntent.mins;
+  showPanel('invitePanel');
+  const c = $('#inviteCode'); if (c) c.textContent = ROOM_CODE;
+  const l = $('#inviteLink'); if (l) l.value = inviteLink();
+  netStartHost(hostIntent.pass, hostIntent.maxP, err => {
+    if (err) {
+      showPanel('hostPanel');
+      const st = $('#hostStatus'); if (st) st.textContent = netErrText(err);
+      return;
+    }
+    netRefreshBadge();
+  });
+}
 // arrivati da un link d'invito (#room=…): dritti al pannello "entra in partita"
 // (che chiede anche il nome, quindi va bene pure al primo avvio)
-if (ROOM_FROM_URL) showJoinPanel();
+else if (ROOM_FROM_URL) showJoinPanel();
 else if (playerName) showMenu();
 else { showPanel('namePanel'); if (nameInput) nameInput.focus(); }

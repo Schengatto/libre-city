@@ -1134,10 +1134,13 @@ const mctx = miniEl ? miniEl.getContext('2d') : null;
 function drawMinimap() {
   if (!mctx) return;
   if (frame % 3 !== 0) return;                    // ~20 Hz: la minimappa non serve a 60 fps, resta l'ultimo disegno
-  const S = miniEl.width, sc = S / MAP_W;
+  // scala UNIFORME + centratura (letterbox): così le mappe non quadrate (media
+  // 184×368) non vengono stirate e i pallini restano allineati alla città.
+  const S = miniEl.width, sc = S / Math.max(MAP_W, MAP_H);
+  const ox = (S - MAP_W * sc) / 2, oy = (S - MAP_H * sc) / 2;
   mctx.clearRect(0, 0, S, S);
-  mctx.drawImage(cityMini, 0, 0, MAP_W, MAP_H, 0, 0, S, S);
-  const dot = (wx, wy, col, r) => { mctx.fillStyle = col; mctx.beginPath(); mctx.arc(wx / T * sc, wy / T * sc, r, 0, TAU); mctx.fill(); };
+  mctx.drawImage(cityMini, 0, 0, MAP_W, MAP_H, ox, oy, MAP_W * sc, MAP_H * sc);
+  const dot = (wx, wy, col, r) => { mctx.fillStyle = col; mctx.beginPath(); mctx.arc(ox + wx / T * sc, oy + wy / T * sc, r, 0, TAU); mctx.fill(); };
   for (const c of cars) if (c.role === 'police') dot(c.x, c.y, '#3a7bff', 2.2);
   for (const p of peds) if (p.role === 'cop') dot(p.x, p.y, '#3a7bff', 1.8);
   for (const c of cars) if (c.role === 'armycar') dot(c.x, c.y, '#7da03e', 2.2);
@@ -1151,6 +1154,6 @@ function drawMinimap() {
   dot(player.x, player.y, '#7dff5a', 2.6);
   // riquadro vista
   mctx.strokeStyle = 'rgba(255,255,255,.5)'; mctx.lineWidth = 1;
-  mctx.strokeRect(camX / T * sc, camY / T * sc, vw / T * sc, vh / T * sc);
+  mctx.strokeRect(ox + camX / T * sc, oy + camY / T * sc, vw / T * sc, vh / T * sc);
 }
 

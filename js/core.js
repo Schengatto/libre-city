@@ -57,8 +57,11 @@ const ROOM_FROM_URL = (() => {
 })();
 const ROOM_CODE = ROOM_FROM_URL || (() => {
   const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';        // niente caratteri ambigui (0/O, 1/I/L)
-  let c = '';
-  for (let i = 0; i < 6; i++) c += A[Math.floor(Math.random() * A.length)];
+  // La 1ª lettera codifica la taglia della mappa (P/M/G, vedi city.js): per le
+  // stanze "anonime" (single-player, nessun host) la evitiamo, così restano Piccole.
+  const A1 = A.replace(/[PMG]/g, '');
+  let c = A1[Math.floor(Math.random() * A1.length)];
+  for (let i = 1; i < 6; i++) c += A[Math.floor(Math.random() * A.length)];
   return c;
 })();
 const random = mulberry32(hashStr(ROOM_CODE));
