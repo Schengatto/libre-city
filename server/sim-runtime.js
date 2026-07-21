@@ -24,7 +24,7 @@ const JS_DIR = SIM_DIRS.find(d => fs.existsSync(path.join(d, 'gameplay.js')));
 if (!JS_DIR) throw new Error('sim-runtime: sorgenti della simulazione non trovati in ' + SIM_DIRS.join(' | '));
 
 // ordine di caricamento del browser meno input/render/audio/ui/net, + la glue
-const SIM_FILES = ['core.js', 'city.js', 'entities.js', 'missions.js', 'army.js', 'gameplay.js', 'server-sim-glue.js'];
+const SIM_FILES = ['core.js', 'city.js', 'train.js', 'entities.js', 'missions.js', 'army.js', 'gameplay.js', 'server-sim-glue.js'];
 const BUNDLE = SIM_FILES
   .map(f => `\n//# ${f} ------------------------------------------------------------\n` + fs.readFileSync(path.join(JS_DIR, f), 'utf8'))
   .join('\n');

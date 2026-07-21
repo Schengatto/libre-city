@@ -84,6 +84,7 @@ function drawWorldStatic() {
   }
   drawMarkings();
   drawCrosswalks();
+  drawRailway();                                  // binario del treno (linea orizzontale)
   drawLandmarks();
 }
 // un marciapiede è "di bordo strada" (coperto dal nastro liscio) se tocca l'asfalto
@@ -1085,10 +1086,12 @@ function render() {
   for (const c of cars) ents.push(c);
   for (const p of peds) ents.push(p);
   if (!player.car) ents.push(player);          // a piedi disegna Federico; in auto lo copre l'auto
+  if (train.active) ents.push(train);          // il treno di passaggio (ordinato per Y come le auto)
   if (netActive()) netPushEnts(ents);          // multigiocatore: i ghost dei rivali
   ents.sort((a, b) => a.y - b.y);
   for (const e of ents) {
     if (e === player) drawPlayer();
+    else if (e.isTrain) drawTrain();
     else if (e.netG) drawNetPlayer(e.netG);
     else if (e.role === 'traffic' || e.role === 'police' || e.role === 'armycar' || e.role === 'parked' || e.role === 'player') drawCar(e);
     else drawPed(e);
@@ -1128,6 +1131,9 @@ cityMini.width = MAP_W; cityMini.height = MAP_H;
     m.fillStyle = { police: '#4a6fd2', hospital: '#e84a4a', fire: '#e07a2a', bank: '#e0c04a', market: '#3ab0a0', pizzeria: '#ff8a3a', gunshop: '#c04ad2', army: '#6a8a3a' }[lm.type];
     m.fillRect(lm.x0, lm.y0, lm.x1 - lm.x0 + 1, lm.y1 - lm.y0 + 1);
   }
+  // la ferrovia: linea orizzontale ben visibile
+  m.fillStyle = '#c9a24a';
+  m.fillRect(0, RAIL_TY, MAP_W, 1);
 })();
 const miniEl = document.getElementById('mini');
 const mctx = miniEl ? miniEl.getContext('2d') : null;

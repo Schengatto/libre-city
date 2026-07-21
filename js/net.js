@@ -708,6 +708,7 @@ function netSendInput() {
 // il loop del client autoritativo (chiamato da update() al posto della simulazione)
 function updateNetClient() {
   if (mClicked) net.firePending = true;                // ricorda il click (lo sparo lo fa il server)
+  updateTrains(false);                                 // treno: solo cinematica (gli urti li decide il server)
   netInterpWorld();                                    // mondo (traffico/pedoni) dagli snapshot
   netRebuildArrays();                                  // popola cars[]/peds[] (mondo + il tuo mezzo)
   netReconcileMe();                                    // salute/soldi/arma/auto/morte dal server (NON la posizione)

@@ -149,6 +149,7 @@ function tickWorld() {
     saveP(pl);
   }
   // --- FASE MONDO CONDIVISA (funzioni della sim invariate) ---
+  updateTrains(true);                            // treno autoritativo: cinematica + urti
   for (const c of cars) updateCar(c);
   resolveCarCollisions();
   for (const pl of players) if (pl.car) { pl.x = pl.car.x; pl.y = pl.car.y; }   // ri-sincronizza chi guida
