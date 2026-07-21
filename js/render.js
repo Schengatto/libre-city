@@ -999,6 +999,14 @@ function drawPlayer() {
 function drawBullets() {
   for (const b of bullets) {
     const x = b.x - camX, y = b.y - camY;
+    if (b.flame) {                                    // lanciafiamma: fiammella che cresce e sbiadisce lungo la vita
+      const k = clamp((b.life || 0) / 8, 0, 1), r = 4 + (1 - k) * 7;
+      ctx.globalAlpha = 0.35 + 0.45 * k;
+      ctx.fillStyle = k > 0.6 ? '#fff0a0' : (k > 0.3 ? '#ff8a2a' : '#c22822');
+      ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+      ctx.globalAlpha = 1;
+      continue;
+    }
     ctx.strokeStyle = b.fromPlayer ? '#fff2a0' : '#ff7a5a'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - b.vx * 1.4, y - b.vy * 1.4); ctx.stroke();
   }
@@ -1009,6 +1017,13 @@ function drawRockets() {
   for (const r of rockets) {
     const x = r.x - camX, y = r.y - camY;
     if (x < -30 || y < -30 || x > vw + 30 || y > vh + 30) continue;
+    if (r.grenade) {                                                     // granata: ordigno tondo scuro con miccia scintillante
+      ctx.fillStyle = '#2b2f36'; ctx.beginPath(); ctx.arc(x, y, 4, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#5a6068'; ctx.beginPath(); ctx.arc(x - 1.2, y - 1.2, 1.4, 0, TAU); ctx.fill();
+      ctx.fillStyle = frame % 4 < 2 ? '#ffd23a' : '#ff5a2a';
+      ctx.beginPath(); ctx.arc(x + 3, y - 3.5, 1.6, 0, TAU); ctx.fill();
+      continue;
+    }
     ctx.save(); ctx.translate(x, y); ctx.rotate(Math.atan2(r.vy, r.vx));
     ctx.fillStyle = frame % 4 < 2 ? '#ffd23a' : '#ff8a2a';
     ctx.beginPath(); ctx.arc(-8, 0, 3.2, 0, TAU); ctx.fill();            // fiammata
@@ -1026,6 +1041,21 @@ function drawParts() {
     if (p.kind === 'smoke') { ctx.beginPath(); ctx.arc(x, y, p.size, 0, TAU); ctx.fill(); }
     else ctx.fillRect(x - p.size / 2, y - p.size / 2, p.size, p.size);
   }
+  ctx.globalAlpha = 1;
+}
+// numeretti volanti del punteggio ("+50") che salgono e svaniscono sul punto dell'azione
+function drawPops() {
+  if (!pops.length) return;
+  ctx.save();
+  ctx.font = 'bold 15px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  for (const q of pops) {
+    const x = q.x - camX, y = q.y - camY;
+    ctx.globalAlpha = clamp(q.life / 55, 0, 1);
+    ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillText(q.text, x + 1, y + 1);
+    ctx.fillStyle = '#ffd23a'; ctx.fillText(q.text, x, y);
+  }
+  ctx.restore();
   ctx.globalAlpha = 1;
 }
 function drawAim() {
@@ -1101,6 +1131,7 @@ function render() {
   drawRockets();
   drawWater();
   drawParts();
+  drawPops();
   drawTaxiGuide();
   drawPizzaGuide();
   drawRescueGuide();

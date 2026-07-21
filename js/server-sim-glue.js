@@ -223,8 +223,8 @@ function snapshotFor(id) {
   for (const p of players) if (p !== me && near(p.x, p.y)) out.players.push(playerView(p));
   for (const c of cars) if (c.driver !== 'player' && near(c.x, c.y)) out.cars.push(carPayload(c));
   for (const p of peds) if (near(p.x, p.y)) out.peds.push(pedPayload(p));
-  for (const b of bullets) if (near(b.x, b.y)) out.bul.push({ x: R2(b.x), y: R2(b.y), a: Math.atan2(b.vy, b.vx), hostile: !b.fromPlayer });
-  for (const r of rockets) if (near(r.x, r.y)) out.rkt.push({ x: R2(r.x), y: R2(r.y), a: Math.atan2(r.vy, r.vx) });
+  for (const b of bullets) if (near(b.x, b.y)) out.bul.push({ x: R2(b.x), y: R2(b.y), a: Math.atan2(b.vy, b.vx), hostile: !b.fromPlayer, fl: b.flame ? 1 : 0 });
+  for (const r of rockets) if (near(r.x, r.y)) out.rkt.push({ x: R2(r.x), y: R2(r.y), a: Math.atan2(r.vy, r.vx), gr: r.grenade ? 1 : 0 });
   for (const k of coins) if (near(k.x, k.y)) out.coins.push({ x: R2(k.x), y: R2(k.y), v: k.val });
   for (const f of fires) if (near(f.x, f.y)) out.fires.push({ x: R2(f.x), y: R2(f.y) });
   return out;

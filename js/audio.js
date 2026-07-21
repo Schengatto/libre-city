@@ -171,6 +171,8 @@ const sfx = {
   // bitonale del mezzo del player: l'ambulanza è più acuta della volante
   emergency(amb, hi) { tone(amb ? (hi ? 960 : 720) : (hi ? 780 : 580), 0.3, 'square', 0.07); },
   spray()    { noise(0.16, 0.09, 750); },
+  // lanciafiamma: soffio filtrato brevissimo, basso volume (scatta ~20 volte al secondo)
+  flame()    { noise(0.09, 0.05, 900); },
   // whoosh del razzo del carro armato
   rocket()   { noise(0.22, 0.3, 750); tone(200, 0.4, 'sawtooth', 0.2, 55); tone(95, 0.3, 'square', 0.12, 40, 0.04); },
   // klaxon bitonale della base militare in allarme

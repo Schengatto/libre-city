@@ -26,7 +26,7 @@ console.log('1) il lanciarazzi stende un giocatore a piedi e accredita l\'uccisi
   const sim = createRoomSim('ROCKET1');
   const X = sim.addPlayer('Rocketman', 0), Y = sim.addPlayer('Bersaglio', 1);
   const px = sim._player(X), py = sim._player(Y);
-  px.owned[4] = true; px.weaponIdx = 4;         // 4 = Lanciarazzi (vedi WEAPONS)
+  px.owned[6] = true; px.weaponIdx = 6;         // 6 = Lanciarazzi (vedi WEAPONS)
   py.x = px.x + 40; py.y = px.y; py.health = 100;
   let killed = false;
   for (let i = 0; i < 30 && !killed; i++) {

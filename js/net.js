@@ -302,10 +302,10 @@ function netDestroyCar(c) { if (netActive() && c && c.netId) netSendEvt({ t: 'go
 // ganci chiamati dal gameplay quando il giocatore locale attacca
 function netShotFired(w) {
   netSendEvt({ t: 'shot', x: player.x, y: player.y, a: player.aim, n: w.pellets || 1,
-               sp: w.spread, spd: w.spd, life: w.life, dmg: w.dmgCar, pdmg: w.pvp || 8 });
+               sp: w.spread, spd: w.spd, life: w.life, dmg: w.dmgCar, pdmg: w.pvp || 8, fk: w.fire ? 1 : 0 });
 }
 function netPunched() { netSendEvt({ t: 'punch', x: player.x, y: player.y, a: player.aim }); }
-function netRocketFired(c) { netSendEvt({ t: 'rocket', x: c.x, y: c.y, a: c.turretA }); }
+function netRocketFired(c) { netSendEvt({ t: 'rocket', x: c.x, y: c.y, a: c.turretA, spd: c.spd, life: c.life, pw: c.pw, gr: c.grenade ? 1 : 0 }); }
 
 // ---------- Ricezione: applica lo stato/gli eventi di un rivale ----------
 function netApplyRemote(id, m) {
@@ -396,10 +396,10 @@ function netSpawnShot(id, m) {
     const a = m.a + rnd(-(m.sp || 0), m.sp || 0);
     bullets.push({ x: m.x + Math.cos(a) * 14, y: m.y + Math.sin(a) * 14,
                    vx: Math.cos(a) * (m.spd || 12), vy: Math.sin(a) * (m.spd || 12),
-                   life: m.life || 50, fromPlayer: false, fromNet: id, dmg: m.dmg, pdmg: m.pdmg });
+                   life: m.life || 50, fromPlayer: false, fromNet: id, dmg: m.dmg, pdmg: m.pdmg, flame: !!m.fk });
   }
   spawnMuzzle(m.x + Math.cos(m.a) * 14, m.y + Math.sin(m.a) * 14, m.a);
-  const h = hear(m.x, m.y, 850); if (h) sfx.copShoot(h);
+  const h = hear(m.x, m.y, 850); if (h) { if (m.fk) sfx.whoosh(); else sfx.copShoot(h); }
 }
 // pugno di un rivale: conta solo se raggiunge il giocatore locale (vittima autoritativa)
 function netPunchAt(id, m) {
@@ -415,9 +415,10 @@ function netPunchAt(id, m) {
 }
 function netSpawnRocket(id, m) {
   if (!started) return;
+  const spd = m.spd || 6.5, life = m.life || 120;
   rockets.push({ x: m.x + Math.cos(m.a) * 44, y: m.y + Math.sin(m.a) * 44,
-                 vx: Math.cos(m.a) * 6.5, vy: Math.sin(m.a) * 6.5, life: 120, src: null, fromNet: id });
-  const h = hear(m.x, m.y, 1000); if (h) sfx.rocket();
+                 vx: Math.cos(m.a) * spd, vy: Math.sin(m.a) * spd, life, pw: m.pw, grenade: !!m.gr, src: null, fromNet: id });
+  const h = hear(m.x, m.y, 1000); if (h) { if (m.gr) sfx.whoosh(); else sfx.rocket(); }
 }
 
 // ---------- Kill credit (vittima autoritativa) ----------
@@ -591,8 +592,8 @@ function netOnSnapshot(m) {
   }
   for (const id of net.wpeds.keys()) if (!seenP.has(id)) net.wpeds.delete(id);
   // --- proiettili e razzi (estrapolati localmente tra gli snapshot) ---
-  net.wbullets = m.bul.map(b => ({ x: b.x, y: b.y, vx: Math.cos(b.a) * 12, vy: Math.sin(b.a) * 12, hostile: b.hostile }));
-  net.wrockets = m.rkt.map(r => ({ x: r.x, y: r.y, vx: Math.cos(r.a) * 6.5, vy: Math.sin(r.a) * 6.5 }));
+  net.wbullets = m.bul.map(b => ({ x: b.x, y: b.y, vx: Math.cos(b.a) * 12, vy: Math.sin(b.a) * 12, hostile: b.hostile, flame: !!b.fl }));
+  net.wrockets = m.rkt.map(r => ({ x: r.x, y: r.y, vx: Math.cos(r.a) * 6.5, vy: Math.sin(r.a) * 6.5, grenade: !!r.gr }));
   // --- monete e incendi (statici: ricostruiti a ogni snapshot) ---
   coins.length = 0; for (const k of m.coins) coins.push({ x: k.x, y: k.y, val: k.v, spin: rnd(0, TAU), bob: rnd(0, TAU) });
   fires.length = 0; for (const f of m.fires) fires.push({ x: f.x, y: f.y, r: 20, hp: 100 });

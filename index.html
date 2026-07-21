@@ -36,6 +36,7 @@
   /* ---- Pannello stato (in alto a destra) ---- */
   #status { position:absolute; top:12px; right:14px; z-index:5; text-align:right;
     display:flex; flex-direction:column; align-items:flex-end; gap:6px; }
+  #score { font-size:23px; font-weight:bold; color:#ffd23a; text-shadow:0 2px 3px #000; letter-spacing:.5px; }
   #cash { font-size:26px; font-weight:bold; color:#5ee06a; text-shadow:0 2px 3px #000; }
   #health { width:190px; height:16px; background:rgba(0,0,0,.5); border:2px solid rgba(255,255,255,.25);
     border-radius:9px; overflow:hidden; }
@@ -285,6 +286,7 @@
   body.touch #status { top:8px; right:10px; flex-direction:row; flex-wrap:wrap;
     justify-content:flex-end; align-items:center; gap:4px 8px; max-width:44vw; }
   body.touch #cash { font-size:18px; }
+  body.touch #score { font-size:16px; }
   body.touch #health { width:104px; height:12px; }
   body.touch #weapon, body.touch #gear { font-size:11px; padding:2px 7px; }
   body.touch #timer { font-size:12px; padding:2px 8px; }
@@ -371,6 +373,7 @@
   <div id="bountyBadge" class="hidden"></div>
 
   <div id="status">
+    <div id="score">🏆 0</div>
     <div id="cash">$0</div>
     <div id="timer" class="hidden">⏱ 0:00</div>
     <div id="health"><div id="healthBar"></div></div>
@@ -417,6 +420,7 @@
   <div id="pause" class="hidden">
     <h2>⏸ Pausa</h2>
     <button id="resumeBtn" class="mbtn">▶ Riprendi</button>
+    <button id="pauseSave" class="mbtn hidden">💾 Salva partita</button>
     <button id="pauseShare" class="mbtn hidden">📤 Invita un amico</button>
     <button id="quitBtn" class="mbtn">🏁 Termina e salva il punteggio</button>
   </div>
@@ -487,6 +491,7 @@
     <div id="menuPanel" class="panel hidden">
       <div id="menuHello">Ciao, <b id="menuName"></b>!</div>
       <button id="playBtn" class="mbtn">▶ Giocatore singolo</button>
+      <button id="loadBtn" class="mbtn hidden">💾 Riprendi partita</button>
       <button id="mpBtn" class="mbtn">🌐 Multigiocatore</button>
       <button id="settingsBtn" class="mbtn">⚙️ Impostazioni</button>
       <button id="scoresBtn" class="mbtn">🏆 Classifica</button>
@@ -681,6 +686,7 @@
   <script src="js/render.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/net.js"></script>
+  <script src="js/save.js"></script>
   <script src="js/ui.js"></script>
 
   <!-- PWA: service worker (offline + installazione) e pulsante "Installa l'app" -->

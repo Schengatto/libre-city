@@ -24,15 +24,15 @@ function updateRockets() {
   for (let i = rockets.length - 1; i >= 0; i--) {
     const r = rockets[i];
     r.x += r.vx; r.y += r.vy; r.life--;
-    parts.push({ x: r.x - r.vx, y: r.y - r.vy, vx: rnd(-0.3, 0.3), vy: rnd(-0.6, -0.1),
-                 life: rndi(10, 22), color: '#9aa0a8', size: rnd(2.5, 5), kind: 'smoke' });
+    if (!r.grenade) parts.push({ x: r.x - r.vx, y: r.y - r.vy, vx: rnd(-0.3, 0.3), vy: rnd(-0.6, -0.1),
+                 life: rndi(10, 22), color: '#9aa0a8', size: rnd(2.5, 5), kind: 'smoke' });   // scia di fumo (solo i razzi)
     let boom = r.life <= 0 || r.x < 0 || r.y < 0 || r.x > WORLD_W || r.y > WORLD_H;
     if (!boom && solidTile(Math.floor(r.x / T), Math.floor(r.y / T))) boom = true;
     if (!boom) for (const c of cars) {
       if (c === r.src) continue;
       if (Math.abs(r.x - c.x) < c.w / 2 && Math.abs(r.y - c.y) < c.h / 2 + 5) {
         if (r.fromNet && c.driver === 'player') netRegisterHit(r.fromNet);   // razzo di un rivale sul nostro mezzo
-        damageCar(c, 95, Math.atan2(r.vy, r.vx));     // colpo diretto: quasi sempre fatale
+        damageCar(c, 95 * (r.pw || 1), Math.atan2(r.vy, r.vx));     // colpo diretto: quasi sempre fatale (le granate meno, pw<1)
         boom = true; break;
       }
     }
@@ -47,31 +47,34 @@ function updateRockets() {
   }
 }
 function explodeRocket(r) {
+  const pw = r.pw || 1;                          // < 1 per le granate: onda d'urto più piccola e meno letale
+  const pedR = 72 * pw, carR = 85 * pw;
   spawnExplosion(r.x, r.y);
-  shake(7, 9); sfx.boom();
+  shake(7 * pw, Math.round(9 * pw)); sfx.boom();
   // l'onda d'urto sbalza i pedoni e scheggia i veicoli intorno
   // (se il razzo è di un RIVALE in multigiocatore — r.fromNet — i suoi crimini
   //  non sono affar nostro: niente stelle né allarme militare per noi)
-  for (const p of peds) if (!p.ko && dist(p.x, p.y, r.x, r.y) < 72) {
-    knockPed(p, Math.atan2(p.y - r.y, p.x - r.x), 8);
+  for (const p of peds) if (!p.ko && dist(p.x, p.y, r.x, r.y) < pedR) {
+    knockPed(p, Math.atan2(p.y - r.y, p.x - r.x), 8 * pw);
     if (r.fromNet) continue;
+    addScore(pedScore(p), p.x, p.y);
     if (p.role === 'cop') commitCrime(1.2, '🚨 Hai bombardato un poliziotto!');
     else if (p.role === 'soldier') armyAlertT = ARMY_ALERT_T;   // l'esercito non la prende bene
     else if (p.role !== 'robber') commitCrime(0.7, '🚨 Hai bombardato un passante!');
   }
   eachActivePlayer(v => {
     const px = v.car ? v.car.x : v.x, py = v.car ? v.car.y : v.y;
-    if (r.fromNet && dist(px, py, r.x, r.y) < 85) netRegisterHit(r.fromNet);   // firma del tiratore (client)
+    if (r.fromNet && dist(px, py, r.x, r.y) < carR) netRegisterHit(r.fromNet);   // firma del tiratore (client)
     const dd = !v.car ? dist(v.x, v.y, r.x, r.y) : Infinity;
-    if (dd < 72) {
-      const dmg = Math.round(120 - 85 * (dd / 72));   // ~120 in pieno (letale) → ~35 ai margini
+    if (dd < pedR) {
+      const dmg = Math.round((120 - 85 * (dd / pedR)) * pw);   // ~120·pw in pieno → ~35·pw ai margini
       const wasDown = v.downT > 0, vb = v.bounty | 0;
       asPlayer(v, () => hurtPlayer(dmg, Math.atan2(v.y - r.y, v.x - r.x)));
-      // razzo di un giocatore (lanciarazzi): l'uccisione di un ALTRO player fa punti e taglia
+      // razzo/granata di un giocatore: l'uccisione di un ALTRO player fa punti e taglia
       if (!wasDown && v.downT > 0 && r.owner && v !== r.owner && typeof creditKill === 'function') creditKill(r.owner, v, vb);
     }
   });
-  for (const o of [...cars]) if (o !== r.src && dist(o.x, o.y, r.x, r.y) < 85) damageCar(o, 45);
+  for (const o of [...cars]) if (o !== r.src && dist(o.x, o.y, r.x, r.y) < carR) damageCar(o, 45 * pw);
 }
 // i cingoli non perdonano: l'auto che finisce sotto il carro esplode sul colpo
 function tankCrush(c) {

@@ -35,6 +35,7 @@ const coins = [];      // monetine sparse per la città
 const fires = [];      // incendi da spegnere con l'autopompa
 const water = [];      // gocce d'acqua sparate dall'idrante
 const rockets = [];    // razzi sparati dal carro armato
+const pops = [];       // numeretti volanti del punteggio ("+50") sul punto dell'azione
 
 // ---------- Semafori ----------
 const LIGHT_G = 60 * 7, LIGHT_Y = 46;                  // durata verde / giallo (frame)
@@ -88,12 +89,20 @@ const CAR_COLORS = ['#d23a3a','#3a72d2','#e0a92a','#37a05a','#8a3ad2','#e06a2a',
 // pvp = danno per colpo a un ALTRO GIOCATORE in multigiocatore (vedi js/net.js)
 const WEAPONS = [
   { name: 'Pugni',          icon: '👊', price: 0,   cd: 22, auto: false, melee: true, range: 34, knock: 5, dmgCar: 2, sfx: 'punch' },
-  { name: 'Pistola',        icon: '🔫', price: 50,  cd: 20, auto: false, spd: 13, life: 52, spread: 0.03,  knock: 4, dmgCar: 10, pvp: 10, sfx: 'shoot' },
-  { name: 'Mitra',          icon: '⚡', price: 300, cd: 8,  auto: true,  spd: 13, life: 44, spread: 0.09,  knock: 3, dmgCar: 6,  pvp: 6,  sfx: 'smg' },
-  { name: 'Fucile a pompa', icon: '💥', price: 500, cd: 46, auto: false, spd: 11, life: 26, spread: 0.22,  knock: 7, dmgCar: 8,  pvp: 8,  pellets: 6, shake: 4, sfx: 'shotgun' },
+  { name: 'Pistola',        icon: '🔫', price: 10,  cd: 20, auto: false, spd: 13, life: 52, spread: 0.03,  knock: 4, dmgCar: 10, pvp: 10, sfx: 'shoot' },
+  { name: 'Mitra',          icon: '⚡', price: 30,  cd: 8,  auto: true,  spd: 13, life: 44, spread: 0.09,  knock: 3, dmgCar: 6,  pvp: 6,  sfx: 'smg' },
+  { name: 'Fucile a pompa', icon: '💥', price: 50,  cd: 46, auto: false, spd: 11, life: 26, spread: 0.22,  knock: 7, dmgCar: 8,  pvp: 8,  pellets: 6, shake: 4, sfx: 'shotgun' },
+  // Granate: un ordigno LANCIATO che vola per un tratto breve (fuse = life) e poi esplode
+  // ad area — onda d'urto ridotta rispetto al razzo (pw < 1). Riusa i razzi: vedi
+  // playerThrowGrenade/updateRockets/explodeRocket.
+  { name: 'Granate',        icon: '💣', price: 80,  cd: 55, auto: false, grenade: true, spd: 7.5, life: 26, pw: 0.72, knock: 8, dmgCar: 60, pvp: 30, shake: 5, sfx: 'whoosh' },
+  // Lanciafiamma: getto continuo a cortissimo raggio (raffica di "fiammelle" a vita
+  // brevissima) — poco danno a colpo ma cadenza altissima, e incendia i veicoli.
+  // Vedi playerShoot (flag `fire`) e updateBullets (`flame`).
+  { name: 'Lanciafiamma',   icon: '🔥', price: 100, cd: 3,  auto: true,  spd: 5.5, life: 8,  spread: 0.30, knock: 1, dmgCar: 4, pvp: 5, pellets: 3, fire: true, shake: 1, sfx: 'flame' },
   // Lanciarazzi: spara un RAZZO che esplode all'impatto — onda d'urto ad area
   // (vedi playerShoot/updateRockets). Ricarica lenta, ma devastante in PvP.
-  { name: 'Lanciarazzi',    icon: '🚀', price: 1200, cd: 85, auto: false, rocket: true, spd: 7, life: 120, knock: 12, dmgCar: 95, pvp: 40, shake: 8, sfx: 'rocket' },
+  { name: 'Lanciarazzi',    icon: '🚀', price: 500, cd: 85, auto: false, rocket: true, spd: 7, life: 120, knock: 12, dmgCar: 95, pvp: 40, shake: 8, sfx: 'rocket' },
 ];
 
 // `let` (non `const`): sul server autoritativo la glue rilega `player` al

@@ -75,11 +75,12 @@ function updatePlayerFoot() {
 }
 function playerShoot(w) {
   if (w.rocket) { playerFireRocket(w); return; }      // il lanciarazzi spara un razzo esplosivo
+  if (w.grenade) { playerThrowGrenade(w); return; }   // le granate lanciano un ordigno che esplode ad area
   for (let i = 0; i < (w.pellets || 1); i++) {        // il fucile a pompa spara una rosa di pallini
     const a = player.aim + rnd(-w.spread, w.spread);
     const bx = player.x + Math.cos(a) * 14, by = player.y + Math.sin(a) * 14;
     bullets.push({ x: bx, y: by, vx: Math.cos(a) * w.spd, vy: Math.sin(a) * w.spd,
-                   life: w.life, fromPlayer: true, dmg: w.dmgCar, knock: w.knock, owner: player, pvp: w.pvp || 8 });
+                   life: w.life, fromPlayer: true, dmg: w.dmgCar, knock: w.knock, owner: player, pvp: w.pvp || 8, flame: w.fire });
   }
   spawnMuzzle(player.x + Math.cos(player.aim) * 14, player.y + Math.sin(player.aim) * 14, player.aim);
   shake(w.shake || 2, 3);
@@ -97,6 +98,18 @@ function playerFireRocket(w) {
   shake(w.shake || 6, 6);
   (sfx[w.sfx] || sfx.rocket)();
   netRocketFired({ x: player.x, y: player.y, turretA: a });   // Fase 1: i rivali vedono il razzo volare
+}
+// le granate: un ordigno lanciato che vola per un tratto breve e poi esplode ad area
+// (fuse = w.life; scoppia anche prima all'impatto, come i razzi). Riusa il sistema dei
+// razzi con onda d'urto ridotta via `pw` (< 1). `owner` firma il colpo per punti/taglie.
+function playerThrowGrenade(w) {
+  const a = player.aim, spd = w.spd || 7.5, life = w.life || 26, pw = w.pw || 0.72;
+  const bx = player.x + Math.cos(a) * 16, by = player.y + Math.sin(a) * 16;
+  rockets.push({ x: bx, y: by, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
+                 life, pw, grenade: true, src: player.car || player, owner: player });
+  shake(w.shake || 4, 5);
+  (sfx[w.sfx] || sfx.whoosh)();
+  netRocketFired({ x: player.x, y: player.y, turretA: a, spd, life, pw, grenade: true });
 }
 
 // ---------- Pugni: attacco ravvicinato — al terzo colpo il pedone va al tappeto ----------
@@ -141,6 +154,7 @@ function punchPed(p, w) {
   sfx.punch();
   if (p.punches >= PUNCH_KILL) {                      // terzo pugno: steso
     knockPed(p, player.aim, w.knock);
+    addScore(pedScore(p), p.x, p.y);
     if (p.role === 'cop') commitCrime(1.2, '🚨 Hai steso un poliziotto a pugni!');
     else if (p.role === 'soldier') armyAlertT = ARMY_ALERT_T;
     else if (p.role !== 'robber') { cash += 3; commitCrime(0.6, '🚨 Hai steso un passante a pugni!'); }
@@ -230,6 +244,7 @@ function runOver(c, byPlayer) {
       knockPed(p, c.angle, sp);
       if (byPlayer && p.role !== 'robber') {          // fermare il ladro non è reato
         cash += 5;
+        addScore(pedScore(p), p.x, p.y);
         commitCrime(p.role === 'cop' ? 1.1 : 0.7,
           p.role === 'cop' ? '🚨 Hai investito un poliziotto!' : '🚨 Hai investito un passante!');
       }
@@ -780,6 +795,7 @@ function updateBullets() {
         if (p.ko) continue;
         if (dist(b.x, b.y, p.x, p.y) < p.r + 3) {
           knockPed(p, Math.atan2(b.vy, b.vx), b.knock || 4);
+          asPlayer(b.owner || player, () => addScore(pedScore(p), p.x, p.y));
           if (p.role === 'cop') commitCrime(1.2, '🚨 Hai sparato a un poliziotto!');
           else if (p.role === 'soldier') armyAlertT = ARMY_ALERT_T;   // sparare ai soldati li scatena
           else if (p.role !== 'robber') { asPlayer(b.owner || player, () => { cash += 3; }); commitCrime(0.6, '🚨 Hai sparato a un passante!'); }
@@ -807,7 +823,9 @@ function updateBullets() {
       if (!hit) for (const c of cars) {
         if (c.driver === 'player') continue;
         if (Math.abs(b.x - c.x) < c.w / 2 && Math.abs(b.y - c.y) < c.h / 2 + 4) {
-          damageCar(c, b.dmg || 10, Math.atan2(b.vy, b.vx)); spawnSparks(b.x, b.y, 3); sfx.clank(hear(b.x, b.y, 700)); hit = true; break;
+          damageCar(c, b.dmg || 10, Math.atan2(b.vy, b.vx)); spawnSparks(b.x, b.y, 3); sfx.clank(hear(b.x, b.y, 700));
+          if (b.flame && !c.burning && Math.random() < 0.25) igniteCar(c);   // il lanciafiamma dà fuoco ai mezzi
+          hit = true; break;
         }
       }
     } else if (!hit && !b.fromPlayer) {
@@ -834,13 +852,13 @@ function updateBullets() {
     if (hit || b.life <= 0 || b.x < 0 || b.y < 0 || b.x > WORLD_W || b.y > WORLD_H) bullets.splice(i, 1);
   }
 }
-function damageCar(c, dmg, angle) {
+function damageCar(c, dmg, angle, chain = 0) {
   c.health -= dmg;
   if (c.health <= 30 && !c.smoking) c.smoking = true;
   if (c.smoking && frame % 4 === 0) parts.push({ x: c.x + rnd(-10, 10), y: c.y + rnd(-8, 8), vx: rnd(-0.4, 0.4), vy: rnd(-1.4, -0.5), life: rndi(20, 40), color: '#555', size: rnd(4, 8), kind: 'smoke' });
   // molto malridotta: può prendere fuoco — da lì in poi si consuma da sola (updateBurningCars)
   if (!c.burning && c.health > 0 && c.health <= 25 && (c.health <= 12 || Math.random() < 0.35)) igniteCar(c);
-  if (c.health <= 0) explodeCar(c);
+  if (c.health <= 0) explodeCar(c, chain);
 }
 // il veicolo prende fuoco: miccia accesa, conviene allontanarsi
 function igniteCar(c) {
@@ -873,26 +891,77 @@ function updateBurningCars() {
     if (c.health <= 0) explodeCar(c);
   }
 }
-function explodeCar(c) {
+function explodeCar(c, chain = 0) {
   if (c.exploded) return; c.exploded = true;   // guardia anti doppio-botto nelle reazioni a catena
   netDestroyCar(c);                            // multigiocatore: togli la sagoma ferma dagli altri schermi
   const i = cars.indexOf(c); if (i >= 0) cars.splice(i, 1);
   spawnExplosion(c.x, c.y);
   shake(9, 12); sfx.boom();
-  // onda d'urto: sbalza pedoni e player vicini
-  for (const p of peds) if (!p.ko && dist(p.x, p.y, c.x, c.y) < 90) knockPed(p, Math.atan2(p.y - c.y, p.x - c.x), 7);
+  // punti: solo l'innesco e i primi anelli della catena (niente farming nei parcheggi)
+  // e mai per la TUA stessa auto che salta in aria
+  const scoring = chain < SCORE.chainMax;
+  if (scoring && c.driver !== 'player') addScore(carScore(c), c.x, c.y);
+  // onda d'urto: sbalza pedoni e player vicini (i passanti travolti fanno punti a parte)
+  for (const p of peds) if (!p.ko && dist(p.x, p.y, c.x, c.y) < 90) {
+    knockPed(p, Math.atan2(p.y - c.y, p.x - c.x), 7);
+    if (scoring) addScore(pedScore(p), p.x, p.y);
+  }
   // dentro il carro armato si è al riparo dall'onda d'urto (se a scoppiare non è lui)
   eachActivePlayer(v => {
     if (v.car && v.car.isTank && v.car !== c) return;
     if (dist(v.x, v.y, c.x, c.y) < 90) asPlayer(v, () => hurtPlayer(28, Math.atan2(v.y - c.y, v.x - c.x)));
   });
   // ...e scheggia le auto accanto, che a loro volta possono incendiarsi: reazione a catena!
-  for (const o of [...cars]) if (dist(o.x, o.y, c.x, c.y) < 95) damageCar(o, 26);
+  for (const o of [...cars]) if (dist(o.x, o.y, c.x, c.y) < 95) damageCar(o, 26, undefined, chain + 1);
   if (player.car === c) { player.car = null; engineGain(0); }
 }
 
+// ---------- Punteggio d'azione: crimini, esplosioni e missioni ----------
+// Punti che il giocatore accumula per ciò che combina in città. Il kill di un
+// ALTRO giocatore (KILL_POINTS) resta la ricompensa più alta; le missioni pagano
+// bene ma senza rischio, quindi valgono meno del PvP.
+const SCORE = {
+  civ: 10, cop: 50, soldier: 75,      // persone stese (a pugni, sparate, investite, bombardate)
+  car: 25, carSpecial: 40,            // veicolo fatto esplodere (volante/mezzo militare valgono di più)
+  chainMax: 3,                        // quante auto di una reazione a catena danno punti (niente farming)
+  mission: { taxi: 150, pizza: 150, ambulance: 200, patrol: 200, fire: 250 },
+};
+// punti per una persona stesa, in base al ruolo (il ladro è bersaglio di missione, non "vittima")
+function pedScore(p) {
+  if (p.role === 'robber') return 0;
+  if (p.role === 'cop') return SCORE.cop;
+  if (p.role === 'soldier') return SCORE.soldier;
+  return SCORE.civ;
+}
+// punti per un veicolo distrutto (volante o mezzo dell'esercito valgono di più)
+function carScore(c) {
+  const special = c.role === 'police' || c.wasPolice || c.role === 'armycar' ||
+                  c.isTank || c.livery === 'army' || c.serviceType === 'army' || c.serviceType === 'armyjeep';
+  return special ? SCORE.carSpecial : SCORE.car;
+}
+// accredita `n` punti a un giocatore e mostra un "+N" volante sul punto dell'azione
+function awardScore(pl, n, x, y) {
+  if (!pl || !n) return;
+  pl.score = (pl.score | 0) + n;
+  scorePop(n, x, y);
+}
+// come sopra ma sul giocatore corrente (global `player`, come fa `cash += …`)
+function addScore(n, x, y) { awardScore(player, n, x, y); }
+// numeretto volante del punteggio: solo sul client che renderizza (sul server MP è inutile)
+function scorePop(n, x, y) {
+  if (MP || !n) return;
+  pops.push({ x, y: y - 6, vy: -0.45, life: 55, text: '+' + n });
+  if (pops.length > 40) pops.shift();
+}
+function updatePops() {
+  for (let i = pops.length - 1; i >= 0; i--) {
+    const q = pops[i]; q.y += q.vy; q.life--;
+    if (q.life <= 0) pops.splice(i, 1);
+  }
+}
+
 // ---------- Punteggio, serie di uccisioni e taglie (PvP multigiocatore) ----------
-const KILL_POINTS = 100;                          // punti base per un'uccisione
+const KILL_POINTS = 500;                          // punti per stendere un ALTRO giocatore (la ricompensa più alta)
 // nomi delle serie ravvicinate, per il messaggio a schermo
 const STREAK_NAME = { 2: 'Doppia uccisione!', 3: 'Tripla uccisione!', 4: 'Quadrupla!',
                       5: 'Scatenato!', 7: 'Inarrestabile!', 10: 'LEGGENDARIO!' };
@@ -1160,6 +1229,7 @@ function update() {
   updateBullets();
   updateRockets();
   updateParts();
+  updatePops();
   updateCoins();
   updateTaxi();
   updatePizza();

@@ -33,6 +33,7 @@ function startRide() {
 function completeRide() {
   const tip = taxi.timer > 0 ? Math.ceil(taxi.pay * 0.5 / 5) * 5 : 0;
   cash += taxi.pay + tip; updateCash(); sfx.coin();
+  addScore(SCORE.mission.taxi, player.x, player.y);
   taxi.rides++;
   toast(tip > 0 ? `💰 Corsa completata! +$${taxi.pay} · mancia +$${tip} ⏱️`
                 : `💰 Corsa completata! +$${taxi.pay}`);
@@ -94,6 +95,7 @@ function pickupFood() {
 function completeDelivery() {
   const tip = pizza.timer > 0 ? Math.ceil(pizza.pay * 0.5 / 5) * 5 : 0;
   cash += pizza.pay + tip; updateCash(); sfx.coin();
+  addScore(SCORE.mission.pizza, player.x, player.y);
   pizza.jobs++;
   toast(tip > 0 ? `💰 Consegnata calda! +$${pizza.pay} · mancia +$${tip} 🔥`
                 : `💰 Pizza consegnata! +$${pizza.pay}`);
@@ -156,6 +158,7 @@ function loadPatient() {
 function completeRescue() {
   const tip = rescue.timer > 0 ? Math.ceil(rescue.pay * 0.5 / 5) * 5 : 0;
   cash += rescue.pay + tip; updateCash(); sfx.coin();
+  addScore(SCORE.mission.ambulance, player.x, player.y);
   rescue.jobs++;
   toast(tip > 0 ? `💰 Paziente salvo! +$${rescue.pay} · bonus soccorso +$${tip} ⏱️`
                 : `💰 Paziente consegnato! +$${rescue.pay}`);
@@ -211,6 +214,7 @@ function spawnCrime() {
 function completeArrest(hard) {
   const bonus = patrol.timer > patrol.timer0 * 0.5 ? 20 : 0;   // preso al volo → bonus
   cash += patrol.pay + bonus; updateCash(); sfx.coin();
+  addScore(SCORE.mission.patrol, player.x, player.y);
   patrol.arrests++;
   toast(hard ? `🚔 Ladro steso e refurtiva recuperata! +$${patrol.pay}${bonus ? ` · bonus +$${bonus} ⏱️` : ''}`
              : `🚔 Ladro arrestato! +$${patrol.pay}${bonus ? ` · bonus rapidità +$${bonus} ⏱️` : ''}`);
@@ -257,6 +261,7 @@ function spawnFire() {
 function completeFirejob() {
   const bonus = firejob.timer > firejob.timer0 * 0.5 ? 20 : 0;   // spento al volo → bonus
   cash += firejob.pay + bonus; updateCash(); sfx.coin();
+  addScore(SCORE.mission.fire, player.x, player.y);
   firejob.jobs++;
   toast(bonus ? `💧 Incendio spento! +$${firejob.pay} · bonus rapidità +$${bonus} ⏱️`
               : `💧 Incendio spento! +$${firejob.pay}`);

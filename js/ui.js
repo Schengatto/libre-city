@@ -14,6 +14,12 @@ function updateStars() {
 }
 function updateHealth() { const b = $('#healthBar'); if (b) b.style.width = clamp(player.health, 0, 100) + '%'; }
 function updateCash() { const c = $('#cash'); if (c) c.textContent = '$' + cash; }
+// punteggio d'azione: in multigiocatore è quello autoritativo del server (net.score),
+// in singolo quello del player locale
+function updateScore() {
+  const el = $('#score'); if (!el) return;
+  el.textContent = '🏆 ' + (netActive() ? (net.score | 0) : (player.score | 0));
+}
 // cronometro della partita a tempo (nascosto in modalità senza limiti)
 function updateTimer() {
   const el = $('#timer'); if (!el) return;
@@ -70,7 +76,7 @@ function loop(nowT) {
   let n = 0;
   while (_loopAcc >= LOGIC_STEP && n < LOGIC_MAX) { update(); _loopAcc -= LOGIC_STEP; n++; }
   render();                             // un disegno per frame, a QUALSIASI fps
-  if ((frame & 7) === 0) updateCash();
+  if ((frame & 7) === 0) { updateCash(); updateScore(); }
   if ((frame & 3) === 0) updateGear();
   updateToast();
 }
@@ -85,6 +91,7 @@ function showPanel(id) {
 }
 function showMenu() {
   const nm = $('#menuName'); if (nm) nm.textContent = playerName;
+  const lb = $('#loadBtn'); if (lb) lb.classList.toggle('hidden', !hasSave());   // 💾 solo se c'è un salvataggio
   showPanel('menuPanel');
 }
 
@@ -131,6 +138,8 @@ function togglePause() {
   paused = !paused;
   const el = $('#pause'); if (el) el.classList.toggle('hidden', !paused);
   const pc = $('#pauseShare'); if (pc) pc.classList.toggle('hidden', !netActive());   // invito in multigiocatore
+  const ps = $('#pauseSave');                                                         // 💾 salva: solo in singolo
+  if (ps) { ps.classList.toggle('hidden', netActive()); ps.textContent = '💾 Salva partita'; ps.disabled = false; }
   if (paused) { engineGain(0); for (const k in keys) keys[k] = false; mDownL = false; }
 }
 
@@ -144,7 +153,8 @@ function endGame(reason) {
   const lad = $('#ladder'); if (lad) lad.classList.add('hidden');
   const rank = saveScore();
   const t = $('#goTitle'); if (t) t.textContent = reason === 'time' ? '⏱ Tempo scaduto!' : '🏁 Partita terminata';
-  const s = $('#goScore'); if (s) s.textContent = '$' + cash;
+  const sc = netActive() ? (net.score | 0) : (player.score | 0);
+  const s = $('#goScore'); if (s) s.textContent = `🏆 ${sc} · $${cash}`;
   const r = $('#goRank');
   const glw = $('#goLadderWrap');
   if (netActive()) {
@@ -163,22 +173,28 @@ function endGame(reason) {
 }
 
 // ---- avvio partita (singolo, host o ospite appena entrato) ----
-function startMatch() {
+// resume=true → partita ripresa da un salvataggio: tempo e punteggio sono già stati
+// applicati da applySave(), non vanno azzerati.
+function startMatch(resume) {
   if (started) return;
   initAudio();
   $('#start').style.display = 'none';
   started = true;
-  timeLeft = gameMinutes * 60 * 60;              // minuti → frame (~60 fps)
-  if (netActive() && net.clockLeft != null) timeLeft = net.clockLeft;   // orologio autoritativo del server
-  updateStars(); updateHealth(); updateCash(); updateWeapon(); updateTimer();
+  if (!resume) {
+    timeLeft = gameMinutes * 60 * 60;            // minuti → frame (~60 fps)
+    if (netActive() && net.clockLeft != null) timeLeft = net.clockLeft;   // orologio autoritativo del server
+    player.score = 0;                            // partita nuova: punteggio azzerato (in MP conta net.score)
+  }
+  updateStars(); updateHealth(); updateCash(); updateScore(); updateWeapon(); updateTimer();
   const hi = usingTouch ? 'Avvicinati a un\'auto e tocca 🚗' : 'Ruba un\'auto con E';
   const mp = netActive() ? (usingTouch ? ' · 🏆 per la classifica' : ' · Tab per la classifica') : '';
-  toast(`Benvenuto a Libre City, ${playerName}! 🏙️  ${hi}${mp}`);
+  toast(resume ? `Bentornato a Libre City, ${playerName}! 🏙️ Partita ripresa.`
+               : `Benvenuto a Libre City, ${playerName}! 🏙️  ${hi}${mp}`);
   _loopLast = 0; _loopAcc = 0;                    // riparti puliti (niente recupero dal match precedente)
   loop();
 }
 const playBtn = $('#playBtn');
-if (playBtn) playBtn.onclick = startMatch;
+if (playBtn) playBtn.onclick = () => startMatch(false);
 
 // ---- navigazione dei pannelli ----
 function onClick(id, fn) { const el = $('#' + id); if (el) el.onclick = fn; }
@@ -202,6 +218,26 @@ onClick('scoresBack', showMenu);
 onClick('howtoBtn', () => showPanel('howtoPanel'));
 onClick('howtoBack', showMenu);
 onClick('resumeBtn', togglePause);
+// 💾 salva la partita in corso (solo in singolo): feedback sul pulsante stesso
+onClick('pauseSave', () => {
+  const ok = saveGame();
+  const ps = $('#pauseSave');
+  if (ps) { ps.textContent = ok ? '✅ Partita salvata' : '⚠️ Salvataggio non riuscito'; ps.disabled = ok; }
+  if (ok) toast('💾 Partita salvata');
+});
+// 💾 riprendi la partita salvata: rigenera la città giusta (reload su #room=…) e applica lo stato
+onClick('loadBtn', () => {
+  const s = store.get('save', null);
+  if (!hasSave() || !s) { toast('Nessuna partita salvata'); return; }
+  if (s.code === ROOM_CODE) {                     // città già giusta: applica e via
+    if (applySave(s)) startMatch(true);
+    return;
+  }
+  // città diversa: memorizza l'intento e ricarica sul seme salvato (al ritorno si applica sotto)
+  store.set('loadIntent', true);
+  location.hash = 'room=' + s.code;
+  location.reload();
+});
 onClick('quitBtn', () => { paused = false; endGame('quit'); });
 onClick('backToMenu', () => location.reload());
 bindBtn('btnPause', togglePause);
@@ -312,17 +348,30 @@ onClick('nameOk', confirmName);
 const nameInput = $('#nameInput');
 if (nameInput) nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') confirmName(); });
 
-// ritorno dal reload di creazione stanza (host): la mappa della taglia scelta è
-// ormai generata dal seme del codice → crea davvero la stanza e mostra l'invito
-const hostIntent = store.get('hostIntent', null);
-if (hostIntent && ROOM_FROM_URL === hostIntent.code) {
+// all'avvio decidiamo QUALE schermata mostrare in base a cosa ci ha portato qui
+// (un reload di "Riprendi partita", la creazione di una stanza, un link d'invito…).
+const _loadIntent = store.get('loadIntent', null);
+const _save = store.get('save', null);
+const _hostIntent = store.get('hostIntent', null);
+if (_loadIntent && _save && _save.code && ROOM_FROM_URL === _save.code) {
+  // ritorno dal reload di "Riprendi partita" (singolo): la città è ormai rigenerata dal
+  // seme salvato → applica lo stato e riprendi. Ripulisce l'hash #room= così un refresh
+  // successivo torna al normale singolo (il salvataggio conserva comunque il suo codice).
+  store.set('loadIntent', null);
+  history.replaceState(null, '', location.pathname + location.search);
+  if (applySave(_save)) startMatch(true);
+  else showMenu();
+}
+else if (_hostIntent && ROOM_FROM_URL === _hostIntent.code) {
+  // ritorno dal reload di creazione stanza (host): la mappa della taglia scelta è
+  // ormai generata dal seme del codice → crea davvero la stanza e mostra l'invito
   store.set('hostIntent', null);
-  if (hostIntent.name) { playerName = hostIntent.name; store.set('name', playerName); }
-  gameMinutes = hostIntent.mins;
+  if (_hostIntent.name) { playerName = _hostIntent.name; store.set('name', playerName); }
+  gameMinutes = _hostIntent.mins;
   showPanel('invitePanel');
   const c = $('#inviteCode'); if (c) c.textContent = ROOM_CODE;
   const l = $('#inviteLink'); if (l) l.value = inviteLink();
-  netStartHost(hostIntent.pass, hostIntent.maxP, err => {
+  netStartHost(_hostIntent.pass, _hostIntent.maxP, err => {
     if (err) {
       showPanel('hostPanel');
       const st = $('#hostStatus'); if (st) st.textContent = netErrText(err);
