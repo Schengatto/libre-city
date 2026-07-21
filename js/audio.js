@@ -44,7 +44,7 @@ function hear(x, y, range) {
   return { v: k * k, pan: clamp((x - player.x) / 520, -0.85, 0.85) };
 }
 // anti-spam: cooldown (in frame, decrementati in update) per i suoni che scatterebbero a raffica
-const sfxCd = { scream: 0, yell: 0, chat: 0, horn: 0, skid: 0, rico: 0, clank: 0, whistle: 0 };
+const sfxCd = { scream: 0, yell: 0, chat: 0, horn: 0, rico: 0, clank: 0, whistle: 0 };
 // motore continuo — sintesi procedurale a "scoppi": un vero motore non è una nota,
 // ma una serie di combustioni ripetute (i cilindri che sparano) + rumore meccanico.
 // Modello: rumore di combustione in loop + un sub per il peso, entrambi tagliuzzati
@@ -125,10 +125,6 @@ const sfx = {
   clank(h)   { if (!h || sfxCd.clank) return; sfxCd.clank = 3;
                tone(rnd(190, 260), 0.07, 'square', 0.16 * h.v, 90, 0, h.pan); noise(0.05, 0.1 * h.v, 1200, 0, h.pan); },
   ignition() { noise(0.14, 0.1, 420, 0.1); tone(46, 0.5, 'sawtooth', 0.18, 130, 0.12); },
-  skid(h)    { if (sfxCd.skid) return; sfxCd.skid = 24;
-               const v = h ? h.v : 1, pan = h ? h.pan : 0;
-               // stridìo di gomma: soffio morbido e lungo + squillo calante (non un colpo secco)
-               noise(0.42, 0.05 * v, 1500, 0, pan); tone(rnd(560, 680), 0.4, 'sawtooth', 0.03 * v, rnd(360, 440), 0, pan); },
   // clacson: ogni veicolo suona con la propria voce (frequenza e carattere)
   horn(h, c) { if (!h || sfxCd.horn) return; sfxCd.horn = 40;
                const f = (c && c.hornF) || pick([300, 340, 375]);
@@ -156,6 +152,11 @@ const sfx = {
                for (let i = 0; i < 3; i++) tone(f * rnd(0.85, 1.2), 0.05, 'triangle', 0.045 * h.v, null, i * 0.08, h.pan); },
   whistle(h) { if (!h || sfxCd.whistle) return; sfxCd.whistle = 90;
                tone(2050, 0.09, 'sine', 0.07 * h.v, 2350, 0, h.pan); tone(2050, 0.11, 'sine', 0.07 * h.v, 2400, 0.12, h.pan); },
+  // treno: rombo grave e continuo delle ruote sui binari; `horn` all'ingresso
+  train(h, horn) { const v = h.v, pan = h.pan;
+                   noise(0.5, 0.05 * v, 260, 0, pan);                       // sferragliamento
+                   tone(58, 0.34, 'sawtooth', 0.09 * v, 46, 0, pan);        // basso delle ruote
+                   if (horn) { tone(150, 0.7, 'sawtooth', 0.13 * v, 140, 0, pan); tone(198, 0.7, 'sawtooth', 0.1 * v, 188, 0, pan); } },
   thud()     { tone(120, 0.14, 'sine', 0.28, 50); noise(0.1, 0.2, 400); },
   punch()    { noise(0.04, 0.2, 900); tone(170, 0.09, 'sine', 0.24, 70); },
   whoosh()   { noise(0.08, 0.09, 2600); },

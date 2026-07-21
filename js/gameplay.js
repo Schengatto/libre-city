@@ -194,8 +194,6 @@ function updateDrive(c) {
   c.speed = clamp(c.speed, -c.top * 0.45, c.top);
   if (Math.abs(c.speed) > 0.25)
     c.angle += steer * (c.isBike ? 0.075 : c.isTank ? 0.045 : 0.06) * Math.sign(c.speed) * clamp(Math.abs(c.speed) / 3, 0.45, 1);
-  // sgommata: solo sterzata al limite (quasi a tutto gas) o frenata brusca ad alta velocità
-  if ((Math.abs(steer) > 0.5 && Math.abs(c.speed) > c.top * 0.92) || (down && c.speed > 4.2)) sfx.skid();
   moveBox(c, Math.cos(c.angle) * c.speed, Math.sin(c.angle) * c.speed, c.colH, c.colH);
   if ((c.hitX || c.hitY) && Math.abs(c.speed) > 2.6) { crashCar(c); c.speed *= 0.28; }
   applyKnockback(c);                                    // rimbalzo residuo dagli urti
@@ -554,6 +552,9 @@ function updateCar(c) {
   // precedenza al traffico che attraversa l'incrocio (niente collisioni fra auto AI)
   const yg = crossingYield(c, nodeAheadIdx, distNode);
   if (yg !== Infinity) cap = Math.min(cap, yg);
+  // passaggio a livello: al treno il traffico si ferma (le volanti in caccia no,
+  // updatePoliceCar non passa di qui; anche l'esercito prosegue)
+  if (trainBlocking(c)) cap = 0;
   // accelerazione/frenata morbida (lo spunto dipende dal mezzo)
   c.speed += clamp(cap - c.speed, -0.6, c.accel * 1.4);
   if (c.speed < 0) c.speed = 0;
@@ -1139,6 +1140,7 @@ function update() {
   if (player.hurtCd > 0) player.hurtCd--;
   if (flashT > 0) flashT--;
   updateLights();
+  updateTrains(true);                            // treno: cinematica + urti (schiaccia le auto)
   if (player.car) updateDrive(player.car); else updatePlayerFoot();
   for (const c of cars) updateCar(c);
   resolveCarCollisions();
