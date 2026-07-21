@@ -59,7 +59,10 @@ const MAX_ROOM_MS = 35 * 60_000;
 // autoritativo a metà velocità (74 px/s invece di 148) e, con il client che predice
 // a 60Hz, lo faceva sbattere indietro a ogni snapshot (rubber-band). Deve stare a 60.
 const SIM_HZ = 60;                // = rate del movimento/SP/predizione client (NON toccare senza rifare la fisica in dt)
-const SNAP_EVERY = 4;             // uno snapshot ogni N tick → ~15/s (banda invariata)
+const SNAP_EVERY = 2;             // uno snapshot ogni N tick → ~30/s. Raddoppiato da 15/s per
+                                 // dimezzare il ritardo con cui i rivali/il mondo appaiono "nel
+                                 // passato" (col client a INTERP_MS=50). Banda ~2x ma compressa
+                                 // da permessage-deflate e limitata dall'AOI per-giocatore.
 const MAX_PLAYERS_CAP = 8;        // tetto assoluto di giocatori per stanza
 const SHIRTS = 8;                 // maglie disponibili (vedi NET_SHIRTS nel client)
 const MAX_PAYLOAD = 64 * 1024;    // un messaggio di stato è ~qualche centinaio di byte
