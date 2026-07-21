@@ -45,30 +45,51 @@ function hear(x, y, range) {
 }
 // anti-spam: cooldown (in frame, decrementati in update) per i suoni che scatterebbero a raffica
 const sfxCd = { scream: 0, yell: 0, chat: 0, horn: 0, skid: 0, rico: 0, clank: 0, whistle: 0 };
-// motore continuo — modello a più voci per un suono di combustione realistico
-// invece del singolo sawtooth "sega": una fondamentale + una sub-ottava di corpo,
-// entrambe filtrate da un lowpass risonante che si apre con i giri (sordo al minimo,
-// più "aperto" e ringhioso in accelerazione).
+// motore continuo — sintesi procedurale a "scoppi": un vero motore non è una nota,
+// ma una serie di combustioni ripetute (i cilindri che sparano) + rumore meccanico.
+// Modello: rumore di combustione in loop + un sub per il peso, entrambi tagliuzzati
+// da una modulazione d'ampiezza alla frequenza di scoppio (= giri) → "brap-brap-brap".
+// Più giri = scoppi più fitti, filtro più aperto e chop che si fonde in un ruggito.
 function makeEngine(out) {
-  const o1 = AC.createOscillator();          // fondamentale (i "colpi" del motore)
-  const o2 = AC.createOscillator();          // sub-ottava: dà corpo e profondità
-  o1.type = 'sawtooth'; o2.type = 'triangle';
-  o1.frequency.value = 55; o2.frequency.value = 27.5;
-  const lp = AC.createBiquadFilter();        // toglie la durezza acuta del sawtooth
-  lp.type = 'lowpass'; lp.frequency.value = 200; lp.Q.value = 7;   // Q → "growl"
+  // rumore di combustione: buffer bianco in loop, è la "grana" del motore
+  const len = Math.max(1, Math.floor(AC.sampleRate * 1.5));
+  const buf = AC.createBuffer(1, len, AC.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  const src = AC.createBufferSource(); src.buffer = buf; src.loop = true;
+  const nbp = AC.createBiquadFilter(); nbp.type = 'bandpass'; nbp.frequency.value = 320; nbp.Q.value = 0.7;
+  const nAmt = AC.createGain(); nAmt.gain.value = 0.6;
+
+  // sub: il "thump" pesante di ogni scoppio
+  const sub = AC.createOscillator(); sub.type = 'triangle'; sub.frequency.value = 52;
+  const sAmt = AC.createGain(); sAmt.gain.value = 0.7;
+
+  // modulazione d'ampiezza alla frequenza di scoppio → i singoli colpi del motore
+  const am = AC.createGain(); am.gain.value = 0.5;               // livello medio del chop
+  const lfo = AC.createOscillator(); lfo.type = 'sawtooth'; lfo.frequency.value = 52;
+  const depth = AC.createGain(); depth.gain.value = 0.42;        // profondità del chop
+  lfo.connect(depth).connect(am.gain);
+
+  // corpo/silenziatore: scalda l'insieme e toglie il sibilo acuto
+  const body = AC.createBiquadFilter(); body.type = 'lowpass'; body.frequency.value = 500; body.Q.value = 1.2;
   const g = AC.createGain(); g.gain.value = 0;
-  o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(out);
-  o1.start(); o2.start();
-  return { o1, o2, lp, g };
+
+  src.connect(nbp).connect(nAmt).connect(am);
+  sub.connect(sAmt).connect(am);
+  am.connect(body).connect(g).connect(out);
+  src.start(); sub.start(); lfo.start();
+  return { lfo, sub, nbp, depth, body, g };
 }
-// aggiorna una voce motore: freq della fondamentale, sub un'ottava sotto,
-// cutoff del filtro proporzionale ai giri (bright = più giri)
+// aggiorna una voce motore: ritmo degli scoppi = giri; agli alti giri apre i filtri
+// e attenua il chop (i colpi si fondono in un ruggito continuo)
 function driveEngine(e, vol, freq, smooth) {
-  const t = AC.currentTime, f = freq || 55, s = smooth || 0.08;
-  e.g.gain.setTargetAtTime(vol || 0, t, s);
-  e.o1.frequency.setTargetAtTime(f, t, s * 0.75);
-  e.o2.frequency.setTargetAtTime(f * 0.5, t, s * 0.75);
-  e.lp.frequency.setTargetAtTime(clamp(f * 3.4 + 110, 110, 1500), t, s * 0.75);
+  const t = AC.currentTime, f = freq || 52, s = smooth || 0.1;
+  const rev = clamp((f - 45) / 190, 0, 1);                       // 0 al minimo → 1 su di giri
+  e.g.gain.setTargetAtTime((vol || 0) * 1.4, t, s);
+  e.lfo.frequency.setTargetAtTime(f, t, s * 0.6);               // scoppi al secondo = giri
+  e.sub.frequency.setTargetAtTime(f, t, s * 0.6);
+  e.nbp.frequency.setTargetAtTime(280 + rev * 900, t, s * 0.6); // più giri = più brillante
+  e.body.frequency.setTargetAtTime(420 + rev * 1600, t, s * 0.6);
+  e.depth.gain.setTargetAtTime(0.42 - rev * 0.26, t, s * 0.6);  // agli alti giri il chop si fonde
 }
 function engineGain(vol, freq) {
   if (!AC) return;
