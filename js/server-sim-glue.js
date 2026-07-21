@@ -130,8 +130,14 @@ function tickWorld() {
     __curInput = pl.input;
     mDownL = pl.input.fireHeld; mClicked = pl.input.fireEdge;
     if (pl.hurtCd > 0) pl.hurtCd--;
-    if (downT > 0) updateDown();
-    else {
+    if (downT > 0) {
+      const wasDown = downT;
+      updateDown();                              // allo scadere respawna in ospedale/centrale (sposta player.x/y)
+      // appena respawnato: la posizione la comanda il SERVER finché il client non si
+      // riallinea al punto di respawn. Senza, al tick dopo pl.rx/pl.ry (ancora il punto
+      // di MORTE riportato dal client) sovrascriverebbe il respawn → si riparte dov'è morto.
+      if (wasDown > 0 && downT === 0) pl.teleHold = true;
+    } else {
       // i flag one-shot vanno azzerati PRIMA di agire: se l'azione lancia
       // un'eccezione, il flag non resta "incastrato" a rifar throw ogni tick
       if (pl.input.weapon != null) { const w = pl.input.weapon; pl.input.weapon = null; weaponKey(w); }
@@ -141,7 +147,14 @@ function tickWorld() {
       // CLIENT-AUTHORITATIVE: la posizione la decide il client. Sovrascrivo quella
       // simulata dal server (il movimento del server è scartato; lo sparo/le interazioni
       // qui sopra sono già avvenuti dalla posizione riportata). Solo da vivo.
-      if (pl.hasReport) {
+      if (pl.hasReport && pl.teleHold) {
+        // dopo un respawn il client riporta ancora il punto di morte: ignoralo finché
+        // non combacia col punto di respawn (il client, ricevendo lo snapshot, ci si
+        // teletrasporta e ricomincia a riportare quella posizione). Soglia SOPRA quella
+        // di teletrasporto del client (300, net.js): così quando il client è abbastanza
+        // vicino da NON teletrasportarsi, qui sblocchiamo comunque (niente stallo).
+        if (dist(pl.rx, pl.ry, pl.x, pl.y) < 320) pl.teleHold = false;
+      } else if (pl.hasReport) {
         pl.x = pl.rx; pl.y = pl.ry;
         if (pl.car && pl.rcx != null) { pl.car.x = pl.rcx; pl.car.y = pl.rcy;
           if (pl.rca != null) pl.car.angle = pl.rca; if (pl.rcsp != null) pl.car.speed = pl.rcsp; }
@@ -227,7 +240,11 @@ function snapshotFor(id) {
     players: [], cars: [], peds: [], bul: [], rkt: [], coins: [], fires: [], fx: [],
   };
   for (const e of __fx) if (near(e.x, e.y)) out.fx.push(e);
-  for (const p of players) if (p !== me && near(p.x, p.y)) out.players.push(playerView(p));
+  // I GIOCATORI si propagano SEMPRE, a qualunque distanza (NIENTE filtro AOI): sono
+  // pochissimi (<=8) e la loro posizione serve a tutti per la minimappa/indicatori e per
+  // non "congelare" il ghost del rivale quando ci si allontana. Solo il mondo condiviso
+  // (traffico/pedoni/proiettili) resta filtrato per AOI, che è dove sta il vero costo.
+  for (const p of players) if (p !== me) out.players.push(playerView(p));
   for (const c of cars) if (c.driver !== 'player' && near(c.x, c.y)) out.cars.push(carPayload(c));
   for (const p of peds) if (near(p.x, p.y)) out.peds.push(pedPayload(p));
   for (const b of bullets) if (near(b.x, b.y)) out.bul.push({ x: R2(b.x), y: R2(b.y), a: Math.atan2(b.vy, b.vx), hostile: !b.fromPlayer, fl: b.flame ? 1 : 0 });
