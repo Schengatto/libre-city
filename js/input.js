@@ -7,7 +7,8 @@ let mouseX = 0, mouseY = 0, mDownL = false, mClicked = false;   // mClicked: fro
 addEventListener('keydown', e => {
   // nei campi del menu (nome, impostazioni) la tastiera scrive, non gioca
   if (e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
-  if (e.code === 'Escape') { togglePause(); return; }
+  if (e.code === 'Escape') { if (mapFullOpen) { closeMapFull(); return; } togglePause(); return; }
+  if (e.code === 'KeyM' && e.shiftKey && !e.repeat && started) { openMapFull(); return; }
   if (e.code === 'Tab' && started) {                 // classifica della partita (multigiocatore)
     e.preventDefault();
     toggleLadder();

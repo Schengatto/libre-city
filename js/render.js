@@ -1137,16 +1137,16 @@ cityMini.width = MAP_W; cityMini.height = MAP_H;
 })();
 const miniEl = document.getElementById('mini');
 const mctx = miniEl ? miniEl.getContext('2d') : null;
-function drawMinimap() {
-  if (!mctx) return;
-  if (frame % 3 !== 0) return;                    // ~20 Hz: la minimappa non serve a 60 fps, resta l'ultimo disegno
-  // scala UNIFORME + centratura (letterbox): così le mappe non quadrate (media
-  // 184×368) non vengono stirate e i pallini restano allineati alla città.
-  const S = miniEl.width, sc = S / Math.max(MAP_W, MAP_H);
-  const ox = (S - MAP_W * sc) / 2, oy = (S - MAP_H * sc) / 2;
-  mctx.clearRect(0, 0, S, S);
-  mctx.drawImage(cityMini, 0, 0, MAP_W, MAP_H, ox, oy, MAP_W * sc, MAP_H * sc);
-  const dot = (wx, wy, col, r) => { mctx.fillStyle = col; mctx.beginPath(); mctx.arc(ox + wx / T * sc, oy + wy / T * sc, r, 0, TAU); mctx.fill(); };
+// Disegna la mappa (città + pallini live + riquadro vista) su un canvas qualsiasi.
+// Scala UNIFORME + centratura (letterbox): così le mappe non quadrate (media
+// 184×368) non vengono stirate e i pallini restano allineati alla città.
+function paintMinimap(el, g) {
+  const W = el.width, H = el.height, sc = Math.min(W / MAP_W, H / MAP_H);
+  const ox = (W - MAP_W * sc) / 2, oy = (H - MAP_H * sc) / 2;
+  const rk = sc / (160 / Math.max(MAP_W, MAP_H));   // scala i pallini rispetto alla minimappa 160px
+  g.clearRect(0, 0, W, H);
+  g.drawImage(cityMini, 0, 0, MAP_W, MAP_H, ox, oy, MAP_W * sc, MAP_H * sc);
+  const dot = (wx, wy, col, r) => { g.fillStyle = col; g.beginPath(); g.arc(ox + wx / T * sc, oy + wy / T * sc, r * rk, 0, TAU); g.fill(); };
   for (const c of cars) if (c.role === 'police') dot(c.x, c.y, '#3a7bff', 2.2);
   for (const p of peds) if (p.role === 'cop') dot(p.x, p.y, '#3a7bff', 1.8);
   for (const c of cars) if (c.role === 'armycar') dot(c.x, c.y, '#7da03e', 2.2);
@@ -1156,10 +1156,51 @@ function drawMinimap() {
   if (rescueActive()) { const t = rescueTarget(); if (t) dot(t.x, t.y, rescue.phase === 'pickup' ? '#ff6a6a' : '#6ad0ff', 2.6); }
   if (patrolActive() && patrol.robber) dot(patrol.robber.x, patrol.robber.y, '#4a8aff', 2.6);
   for (const f of fires) dot(f.x, f.y, frame % 20 < 10 ? '#ff8a2a' : '#ffd23a', 2.6);
-  if (netActive()) for (const g of net.players.values()) if (!g.down) dot(g.x, g.y, '#5ad0ff', 2.6);
+  if (netActive()) for (const g2 of net.players.values()) if (!g2.down) dot(g2.x, g2.y, '#5ad0ff', 2.6);
   dot(player.x, player.y, '#7dff5a', 2.6);
   // riquadro vista
-  mctx.strokeStyle = 'rgba(255,255,255,.5)'; mctx.lineWidth = 1;
-  mctx.strokeRect(ox + camX / T * sc, oy + camY / T * sc, vw / T * sc, vh / T * sc);
+  g.strokeStyle = 'rgba(255,255,255,.5)'; g.lineWidth = Math.max(1, rk);
+  g.strokeRect(ox + camX / T * sc, oy + camY / T * sc, vw / T * sc, vh / T * sc);
 }
+function drawMinimap() {
+  if (frame % 3 !== 0) return;                    // ~20 Hz: la minimappa non serve a 60 fps, resta l'ultimo disegno
+  if (mctx) paintMinimap(miniEl, mctx);
+  if (mapFullOpen && mfctx) paintMinimap(miniFull, mfctx);
+}
+
+// ---------- Mappa a schermo intero ----------
+const mapFullEl = document.getElementById('mapFull');
+const miniFull = document.getElementById('miniFull');
+const mfctx = miniFull ? miniFull.getContext('2d') : null;
+let mapFullOpen = false;
+function sizeMapFull() {
+  if (!miniFull || !mapFullEl) return;
+  // spazio disponibile = viewport meno il padding dell'overlay
+  const cs = getComputedStyle(mapFullEl);
+  const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+  const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+  const maxW = innerWidth - padX, maxH = innerHeight - padY, ar = MAP_W / MAP_H;
+  let w = maxW, h = w / ar;
+  if (h > maxH) { h = maxH; w = h * ar; }
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  miniFull.style.width = w + 'px'; miniFull.style.height = h + 'px';
+  miniFull.width = Math.round(w * dpr); miniFull.height = Math.round(h * dpr);
+}
+function openMapFull() {
+  if (!mapFullEl || mapFullOpen || !started) return;
+  mapFullOpen = true;
+  sizeMapFull();
+  mapFullEl.classList.remove('hidden');
+  if (mfctx) paintMinimap(miniFull, mfctx);        // disegno immediato, senza aspettare il frame
+}
+function closeMapFull() {
+  if (!mapFullOpen) return;
+  mapFullOpen = false;
+  if (mapFullEl) mapFullEl.classList.add('hidden');
+}
+if (miniEl) miniEl.addEventListener('click', openMapFull);
+const mapCloseBtn = document.getElementById('mapClose');
+if (mapCloseBtn) mapCloseBtn.addEventListener('click', closeMapFull);
+if (mapFullEl) mapFullEl.addEventListener('click', e => { if (e.target === mapFullEl || e.target === miniFull) closeMapFull(); });
+addEventListener('resize', () => { if (mapFullOpen) { sizeMapFull(); if (mfctx) paintMinimap(miniFull, mfctx); } });
 

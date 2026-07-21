@@ -336,3 +336,10 @@ if (hostIntent && ROOM_FROM_URL === hostIntent.code) {
 else if (ROOM_FROM_URL) showJoinPanel();
 else if (playerName) showMenu();
 else { showPanel('namePanel'); if (nameInput) nameInput.focus(); }
+
+// ---- HI-SCORE da cabinato nella schermata iniziale (miglior punteggio salvato) ----
+(function () {
+  const el = $('#hiScore'); if (!el) return;
+  const best = store.get('scores', [])[0];
+  if (best) el.textContent = `HI-SCORE  $${best.score} — ${String(best.name).toUpperCase()}`;
+})();

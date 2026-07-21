@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Libre City">
 <meta name="application-name" content="Libre City">
-<meta name="theme-color" content="#0d0b28">
+<meta name="theme-color" content="#0a0a12">
 <!-- PWA: installabile da browser (manifest + service worker in fondo al body) -->
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
@@ -52,7 +52,19 @@
   /* ---- Minimappa (in basso a destra) ---- */
   #mini { position:absolute; bottom:14px; right:14px; z-index:5; width:160px; height:160px;
     border:3px solid rgba(255,255,255,.25); border-radius:12px; background:#222;
-    box-shadow:0 6px 20px rgba(0,0,0,.5); }
+    box-shadow:0 6px 20px rgba(0,0,0,.5); cursor:pointer; }
+
+  /* ---- Mappa a schermo intero ---- */
+  #mapFull { position:fixed; inset:0; z-index:45; display:flex; align-items:center; justify-content:center;
+    background:rgba(5,6,12,.82); backdrop-filter:blur(2px);
+    padding:calc(12px + env(safe-area-inset-top,0px)) 12px calc(12px + env(safe-area-inset-bottom,0px)); }
+  #miniFull { background:#222; border:3px solid rgba(255,255,255,.2); border-radius:14px;
+    box-shadow:0 10px 40px rgba(0,0,0,.6); max-width:100%; max-height:100%; touch-action:none; cursor:pointer; }
+  #mapClose { position:absolute; top:calc(14px + env(safe-area-inset-top,0px)); right:14px; z-index:1;
+    width:46px; height:46px; border-radius:50%; border:2px solid rgba(255,255,255,.3);
+    background:rgba(0,0,0,.55); color:#fff; font-size:20px; font-weight:bold; line-height:1; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; }
+  #mapClose:hover { background:rgba(0,0,0,.75); }
 
   /* ---- Aiuto comandi (in basso a sinistra): compatto, H o un clic apre la guida ---- */
   #hint { position:absolute; bottom:14px; left:14px; z-index:5; font-size:13px; line-height:1.6;
@@ -95,195 +107,145 @@
   .hidden { display:none !important; }
 
   /* ==========================================================
-     Schermata iniziale — diorama della città al crepuscolo.
-     Palette: notte #0d0b28 · crepuscolo #35205c · tramonto #ff8a50
-              oro #ffd23a · cielo #8fd6ff · asfalto #0b0c16
+     Schermata iniziale — sala giochi. Insegna al neon, griglia
+     synthwave e scanline da cabinato anni '90.
+     Palette: nero #0a0a12 · viola #221040 · magenta #ff3ea5
+              ciano #33e0ff · oro #ffd23a · fosforo #3dff9e
      ========================================================== */
   #start { position:absolute; inset:0; z-index:50; display:flex; flex-direction:column;
-    align-items:center; justify-content:center; text-align:center; background:#0d0b28;
-    --road-h:clamp(84px,15vh,140px);
-    padding:36px 12px calc(var(--road-h) + 30px); }
-  #start > *:not(#scene) { position:relative; z-index:1; }
+    align-items:center; justify-content:center; text-align:center; background:#0a0a12;
+    padding:56px 12px 76px; }
+  /* i figli "fissi" (scena, barra hi-score, ticker, credits) restano fuori dal flusso */
+  #start > *:not(#scene):not(#arcTop):not(#ticker):not(#credits) { position:relative; z-index:1; }
 
-  /* la scena resta fissa dietro ai menu anche quando la pagina scorre */
-  #scene { position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
-  #scene .sky { position:absolute; inset:0;
-    background:
-      radial-gradient(115% 55% at 50% 88%, rgba(255,140,70,.5), rgba(255,140,70,0) 58%),
-      linear-gradient(180deg,#0d0b28 0%,#1c1444 30%,#35205c 52%,#5b2d67 66%,#93425f 78%,#d5654a 88%,#ff8a50 97%); }
-  #scene .sky::after { content:''; position:absolute; top:8%; right:13%; width:52px; height:52px;
-    border-radius:50%; background:#fdf3d0; box-shadow:0 0 36px 8px rgba(255,244,200,.35); opacity:.9; }
-  #scene .stars { position:absolute; inset:0; }
-  #scene .stars::before, #scene .stars::after { content:''; position:absolute; width:3px; height:3px;
-    border-radius:50%; background:#fff; opacity:.8; animation:twinkle 3.4s ease-in-out infinite alternate;
-    box-shadow:5vw 8vh #fff,12vw 4vh #ffd,18vw 14vh #fff,26vw 6vh #ffe9c9,33vw 11vh #fff,
-      41vw 5vh #dfe9ff,49vw 9vh #fff,57vw 4vh #fff,63vw 13vh #ffe9c9,71vw 7vh #fff,
-      79vw 12vh #dfe9ff,87vw 5vh #fff,93vw 10vh #fff,9vw 18vh #dfe9ff,68vw 18vh #fff,84vw 20vh #ffd; }
-  #scene .stars::after { transform:translate(2vw,2vh); opacity:.5;
-    animation-duration:4.7s; animation-delay:-1.6s;
-    box-shadow:8vw 12vh #fff,21vw 9vh #dfe9ff,37vw 15vh #fff,53vw 7vh #ffd,
-      61vw 17vh #fff,76vw 4vh #dfe9ff,91vw 15vh #fff,45vw 19vh #ffe9c9; }
-  @keyframes twinkle { from { opacity:.25 } to { opacity:.9 } }
+  /* la scena resta fissa dietro ai menu anche quando la pagina scorre:
+     bagliore viola dell'insegna, griglia prospettica e scanline sottili */
+  #scene { position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden;
+    background:radial-gradient(130% 100% at 50% 0%, #241245 0%, #12081f 46%, #0a0a12 78%); }
+  #scene .grid { position:absolute; left:-15%; right:-15%; bottom:-12px; height:36vh; opacity:.5;
+    background-image:
+      repeating-linear-gradient(90deg, rgba(51,224,255,.30) 0 2px, transparent 2px 64px),
+      repeating-linear-gradient(0deg, rgba(255,62,165,.28) 0 2px, transparent 2px 38px);
+    transform:perspective(340px) rotateX(58deg); transform-origin:50% 0; }
+  #scene .scan { position:absolute; inset:0;
+    background:repeating-linear-gradient(0deg, rgba(0,0,0,.16) 0 2px, transparent 2px 5px),
+               radial-gradient(120% 100% at 50% 50%, transparent 55%, rgba(0,0,0,.55) 100%); }
 
-  .skyline { position:absolute; left:0; width:100%; }
-  .skyline.far  { bottom:calc(var(--road-h) + 6px); height:clamp(110px,26vh,240px); }
-  .skyline.near { bottom:calc(var(--road-h) - 2px); height:clamp(90px,20vh,200px); }
-  .skyline .blink { animation:blink 2.2s infinite; }
-  .skyline .blink.b2 { animation-delay:-1.1s; }
-  @keyframes blink { 0%,72%,100% { opacity:.15 } 76%,94% { opacity:1 } }
-  .skyline .flk { animation:flick 5s infinite; }
-  .skyline .flk.f2 { animation-delay:-2.3s; }
-  .skyline .flk.f3 { animation-delay:-3.7s; }
-  @keyframes flick { 0%,90%,100% { opacity:.9 } 93%,97% { opacity:.05 } }
+  /* ---- Barra da cabinato: HI-SCORE a sinistra, crediti a destra ---- */
+  #arcTop { position:fixed; top:0; left:0; right:0; z-index:2; display:flex; gap:12px;
+    justify-content:space-between; padding:calc(10px + env(safe-area-inset-top,0px)) 18px 8px;
+    font:bold 12px 'Courier New',monospace; letter-spacing:.14em; color:#33e0ff;
+    text-shadow:0 0 8px rgba(51,224,255,.7); pointer-events:none; white-space:nowrap; }
+  #arcTop .hi { color:#ffd23a; text-shadow:0 0 8px rgba(255,210,58,.7);
+    overflow:hidden; text-overflow:ellipsis; }
 
-  /* ---- Strada in primo piano ---- */
-  #scene .road { position:absolute; left:0; right:0; bottom:0; height:var(--road-h);
-    background:linear-gradient(#20222e,#14161f 30%,#101218); border-top:4px solid #2c2f3d; }
-  #scene .road::before { content:''; position:absolute; left:0; right:0; top:-16px; height:10px;
-    background:linear-gradient(#3a3e52,#262a3a); border-top:2px solid #4a4f66; }
-  #scene .road::after { content:''; position:absolute; left:0; right:0; top:47%; height:5px;
-    border-radius:3px; opacity:.5;
-    background:repeating-linear-gradient(90deg,#d9c86a 0 46px,transparent 46px 96px); }
+  /* ---- Ticker in fondo: l'attract mode del cabinato ---- */
+  #ticker { position:fixed; left:0; right:0; bottom:0; z-index:2; height:30px; overflow:hidden;
+    display:flex; align-items:center; background:rgba(0,0,0,.72);
+    border-top:1px solid rgba(51,224,255,.35); pointer-events:none; }
+  #ticker span { white-space:nowrap; font:bold 11px 'Courier New',monospace;
+    letter-spacing:.2em; color:#9aa3c8; animation:ticker 30s linear infinite; }
+  @keyframes ticker { from { transform:translateX(3vw) } to { transform:translateX(-100%) } }
 
-  /* ---- Veicoli del gioco che attraversano la scena ---- */
-  .car { position:absolute; left:0; width:112px; height:22px; border-radius:6px 16px 5px 5px;
-    background:var(--c,#b48ae0);
-    box-shadow:inset 0 3px 0 rgba(255,255,255,.25), inset 0 -4px 0 rgba(0,0,0,.28); }
-  .car.near { bottom:12px; animation:driveNear var(--d,18s) linear infinite; animation-delay:var(--dl,0s); }
-  .car.far  { bottom:calc(52% + 4px); filter:brightness(.72) saturate(.85);
-    animation:driveFar var(--d,22s) linear infinite; animation-delay:var(--dl,0s); }
-  @keyframes driveNear { from { transform:translateX(calc(100vw + 200px)) scaleX(-1); }
-                         to   { transform:translateX(-240px) scaleX(-1); } }
-  @keyframes driveFar  { from { transform:translateX(-240px) scale(.62); }
-                         to   { transform:translateX(calc(100vw + 200px)) scale(.62); } }
-  .car .top { position:absolute; top:-13px; left:24px; width:54px; height:15px;
-    border:3px solid var(--c,#b48ae0); border-bottom:none; border-radius:8px 12px 0 0;
-    background:linear-gradient(90deg,#16233b 0 44%, var(--c,#b48ae0) 44% 56%, #16233b 56%); }
-  .car .wA, .car .wB { position:absolute; bottom:-8px; width:17px; height:17px; border-radius:50%;
-    background:#191b24; border:3px solid #383c4c; box-shadow:inset 0 0 0 2px #14151c; }
-  .car .wA { left:12px; } .car .wB { right:14px; }
-  .car::before { content:''; position:absolute; right:-2px; top:5px; width:5px; height:9px;
-    border-radius:2px; background:#fff3c4; box-shadow:0 0 9px 2px rgba(255,240,180,.8); }
-  .car::after { content:''; position:absolute; left:-1px; top:6px; width:4px; height:8px;
-    border-radius:2px; background:#ff5040; box-shadow:0 0 7px 1px rgba(255,60,40,.7); }
-  .car .beam { position:absolute; top:2px; right:-60px; width:62px; height:26px;
-    clip-path:polygon(0 30%,100% 0,100% 100%,0 70%);
-    background:linear-gradient(90deg,rgba(255,236,170,.45),rgba(255,236,170,0) 88%); }
-  .car .sig { position:absolute; }
-  .car.taxi { --c:#ffc832;
-    background:repeating-linear-gradient(90deg,#1d1f2a 0 7px,#f5f2e8 7px 14px) 0 60%/100% 5px no-repeat, #ffc832; }
-  .car.taxi .sig { top:-21px; left:40px; width:22px; height:9px; border-radius:3px;
-    background:#ffc832; border:2px solid #6b4a08; }
-  .car.polizia { --c:#f2f5fa;
-    background:linear-gradient(180deg,#f2f5fa 0 8px,#2a5fd0 8px 15px,#f2f5fa 15px); }
-  .car.ambulanza { --c:#f5f8fc;
-    background:
-      linear-gradient(#d92f25 0 0) 30% 55%/12px 4px no-repeat,
-      linear-gradient(#d92f25 0 0) 30% 55%/4px 12px no-repeat,
-      linear-gradient(180deg,#f5f8fc,#dfe8f2); }
-  .car.autopompa { --c:#e04434; width:150px;
-    background:linear-gradient(#c9ccd4 0 0) 60% 15%/74% 4px no-repeat, #e04434; }
-  .car.autopompa .top { left:16px; }
-  .car.polizia .sig, .car.ambulanza .sig, .car.autopompa .sig { top:-19px; left:34px;
-    width:26px; height:7px; border-radius:3px;
-    background:linear-gradient(90deg,#ff4a3a 0 50%,#3a7bff 50%);
-    animation:beacon .55s steps(1) infinite; }
-  @keyframes beacon {
-    0%,49%  { box-shadow:-7px -2px 13px 3px rgba(255,60,40,.95); }
-    50%,100%{ box-shadow: 7px -2px 13px 3px rgba(60,120,255,.95); } }
-  .car.scooter { width:56px; height:15px; border-radius:8px 10px 4px 4px; --c:#3ec6b0; }
-  .car.scooter .top { display:none; }
-  .car.scooter .sig { top:-13px; left:4px; width:16px; height:13px; border-radius:3px;
-    background:#ffc832; border:2px solid #6b4a08; }
-  .car.scooter .wA, .car.scooter .wB { width:12px; height:12px; bottom:-7px; }
-  .car.scooter .wA { left:6px; } .car.scooter .wB { right:6px; }
-
-  /* ---- Titolo ---- */
+  /* ---- Titolo: insegna al neon ---- */
   #start h1 { font-family:'Bungee','Trebuchet MS',sans-serif; font-weight:normal;
-    font-size:clamp(42px,9vw,96px); color:#ffd23a; letter-spacing:.02em; line-height:.95;
+    font-size:clamp(42px,9vw,92px); color:#fff; letter-spacing:.02em; line-height:.95;
     animation:titleIn .7s cubic-bezier(.2,.9,.3,1.15) both;
-    text-shadow:0 1px 0 #c78f1c, 0 3px 0 #9a6a10, 0 5px 0 #7a5410, 0 7px 0 #5c3f0e,
-      0 16px 34px rgba(0,0,0,.65), 0 0 46px rgba(255,180,60,.35); }
+    text-shadow:0 0 6px #fff, 0 0 18px #ff3ea5, 0 0 44px #ff3ea5, 3px 3px 0 #7c1150; }
   @keyframes titleIn { 0% { transform:translateY(-30px) scale(.92); opacity:0 }
     60% { transform:translateY(4px) scale(1.02); opacity:1 } 100% { transform:none; opacity:1 } }
-  #start .tag { color:#8fd6ff; font-size:clamp(12px,2vw,17px); margin-top:10px;
-    letter-spacing:.32em; text-transform:uppercase; text-shadow:0 2px 6px rgba(0,0,0,.8);
-    animation:tagIn .6s ease .3s both; }
+  #start .tag { margin-top:10px; font-family:'Courier New',monospace; font-weight:bold;
+    font-size:clamp(10px,1.9vw,14px); letter-spacing:.34em; text-transform:uppercase;
+    color:#33e0ff; text-shadow:0 0 10px rgba(51,224,255,.8); animation:tagIn .6s ease .3s both; }
   @keyframes tagIn { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:none } }
   #start p { margin-top:18px; opacity:.92; max-width:560px; line-height:1.7; font-size:15px; }
   #start .keys { margin-top:16px; display:grid; grid-template-columns:auto auto; gap:6px 20px;
-    font-size:14px; text-align:left; background:rgba(0,0,0,.3); padding:14px 20px; border-radius:12px; }
+    font-size:14px; text-align:left; background:rgba(0,0,0,.4); padding:14px 20px;
+    border:1px solid rgba(51,224,255,.25); border-radius:12px; }
   #start .keys b { color:#ffd23a; }
-  /* La monetina del gioco gira accanto alla voce evidenziata (niente chiavi in stile GTA) */
-  .mbtn:not(.back)::before { content:'★'; position:absolute; left:14px; top:50%;
-    width:26px; height:26px; margin-top:-13px; border-radius:50%;
-    background:radial-gradient(circle at 35% 30%,#fff3ae,#ffd23a 45%,#e8a616 70%,#9a6a10);
-    box-shadow:inset 0 0 0 2px #b8860b, inset 0 0 0 4px #ffdf6b, 0 2px 6px rgba(0,0,0,.5);
-    color:#8a6508; font-size:14px; line-height:26px; text-align:center;
-    opacity:0; transition:opacity .15s; }
+  /* Il cursore ▶ del cabinato lampeggia accanto alla voce evidenziata */
+  .mbtn:not(.back)::before { content:'▶'; position:absolute; left:16px; top:50%;
+    transform:translateY(-50%); color:#33e0ff; font-size:13px;
+    text-shadow:0 0 8px rgba(51,224,255,.9); opacity:0; transition:opacity .15s; }
   .mbtn:not(.back):hover::before, .mbtn:not(.back):focus-visible::before {
-    opacity:1; animation:coinSpin .8s linear infinite; }
-  @keyframes coinSpin { from { transform:rotateY(0deg) } to { transform:rotateY(360deg) } }
+    opacity:1; animation:blinkSel 1s steps(2) infinite; }
+  @keyframes blinkSel { 0%,49% { opacity:1 } 50%,100% { opacity:.15 } }
 
-  /* ---- Pannelli del menu principale ---- */
-  .panel { margin-top:26px; display:flex; flex-direction:column; align-items:center; gap:12px;
-    min-width:min(420px,92vw); background:rgba(12,13,26,.72); border:1px solid rgba(255,210,58,.2);
-    border-radius:22px; padding:24px 28px 26px; backdrop-filter:blur(10px);
-    -webkit-backdrop-filter:blur(10px); box-shadow:0 18px 50px rgba(0,0,0,.45);
+  /* ---- Pannelli del menu: la plancia comandi del cabinato ---- */
+  .panel { position:relative; margin-top:24px; display:flex; flex-direction:column; align-items:center;
+    gap:12px; min-width:min(420px,92vw); background:linear-gradient(#2b2140,#171126);
+    border:3px solid #33e0ff; border-radius:18px; padding:24px 28px 26px;
+    box-shadow:0 0 24px rgba(51,224,255,.28), inset 0 0 40px rgba(0,0,0,.5);
     animation:panelIn .35s ease both; }
+  /* viti agli angoli della plancia */
+  .panel::before, .panel::after { content:''; position:absolute; top:9px; width:8px; height:8px;
+    border-radius:50%; background:radial-gradient(circle at 35% 30%,#cfd6e4,#5a6274); }
+  .panel::before { left:9px; } .panel::after { right:9px; }
   @keyframes panelIn { from { opacity:0; transform:translateY(10px) } to { opacity:1; transform:none } }
   .panel h2 { font-family:'Bungee','Trebuchet MS',sans-serif; font-weight:normal;
-    color:#ffd23a; font-size:20px; letter-spacing:.03em; text-shadow:0 2px 0 #9a6a10; }
+    color:#ff3ea5; font-size:20px; letter-spacing:.03em; text-shadow:0 0 12px rgba(255,62,165,.8); }
   button:focus-visible, input:focus-visible, select:focus-visible {
-    outline:3px solid #8fd6ff; outline-offset:2px; }
+    outline:3px solid #33e0ff; outline-offset:2px; }
 
   /* ---- Credit in fondo alla pagina ---- */
-  #start #credits { position:fixed; left:0; right:0; bottom:8px; z-index:2;
-    font-size:12px; letter-spacing:.06em; color:rgba(255,255,255,.78);
+  #start #credits { position:fixed; left:0; right:0; bottom:36px; z-index:2;
+    font-size:12px; letter-spacing:.06em; color:rgba(255,255,255,.72);
     text-shadow:0 1px 3px rgba(0,0,0,.85); }
-  #start #credits a { color:#8fd6ff; text-decoration:none;
-    border-bottom:1px solid rgba(143,214,255,.45); }
+  #start #credits a { color:#33e0ff; text-decoration:none;
+    border-bottom:1px solid rgba(51,224,255,.45); }
   #start #credits a:hover { color:#ffd23a; border-color:#ffd23a; }
   @media (prefers-reduced-motion:reduce) {
-    #scene .car, #scene .stars::before, #scene .stars::after, .skyline .blink, .skyline .flk,
-    .car .sig, #start h1, #start .tag, .panel, .mbtn::before { animation:none !important; }
-    /* diorama statico: un mezzo per corsia, parcheggiato in scena */
-    .car.near { transform:translateX(20vw) scaleX(-1); }
-    .car.far  { transform:translateX(58vw) scale(.62); }
-    .car.near ~ .car.near, .car.far ~ .car.far { display:none; } }
-  .mbtn { position:relative; font-size:18px; font-weight:bold; padding:13px 0; width:min(320px,84vw);
-    border:none; border-radius:14px; background:rgba(255,255,255,.09); color:#fff; cursor:pointer;
-    border:2px solid rgba(255,255,255,.22); transition:background .15s, transform .1s; }
-  .mbtn:hover { background:rgba(255,210,58,.18); border-color:#ffd23a; }
-  .mbtn:active { transform:translateY(2px); }
-  .mbtn.back { background:none; border-color:transparent; opacity:.75; font-size:15px; padding:8px 0; }
-  .mbtn.back:hover { opacity:1; }
-  #menuHello { font-size:17px; opacity:.9; }
-  #menuHello b { color:#8fd6ff; }
+    #start h1, #start .tag, .panel, .mbtn::before, #ticker span,
+    #pause h2, #goTitle, .roomcode { animation:none !important; } }
+  .mbtn { position:relative; font-family:'Bungee','Trebuchet MS',sans-serif; font-weight:normal;
+    font-size:15px; letter-spacing:.05em; padding:12px 0; width:min(320px,84vw); color:#fff;
+    background:linear-gradient(#31195e,#1b0e38); border:3px solid #ff3ea5; border-radius:13px;
+    cursor:pointer; box-shadow:0 5px 0 #7c1150, 0 0 16px rgba(255,62,165,.35);
+    transition:transform .08s, box-shadow .08s, border-color .15s; }
+  .mbtn:hover { transform:translateY(2px); box-shadow:0 3px 0 #7c1150, 0 0 18px rgba(255,62,165,.55); }
+  .mbtn:active { transform:translateY(4px); box-shadow:0 1px 0 #7c1150, 0 0 12px rgba(255,62,165,.4); }
+  .mbtn.back { font-family:inherit; font-weight:bold; background:none; border-color:transparent;
+    box-shadow:none; opacity:.75; font-size:14px; padding:8px 0; }
+  .mbtn.back:hover { opacity:1; transform:none; box-shadow:none; }
+  #menuHello { font:bold 14px 'Courier New',monospace; letter-spacing:.12em; opacity:.95; }
+  #menuHello b { color:#33e0ff; text-shadow:0 0 8px rgba(51,224,255,.6); }
   .field { display:flex; flex-direction:column; gap:6px; align-items:flex-start; width:min(320px,84vw); }
-  .field label { font-size:13px; letter-spacing:1px; text-transform:uppercase; color:#8fd6ff; }
-  .field input, .field select { width:100%; font-family:inherit; font-size:18px; padding:11px 14px;
-    border-radius:12px; border:2px solid rgba(255,255,255,.25); background:rgba(0,0,0,.35);
-    color:#fff; outline:none; }
-  .field input:focus, .field select:focus { border-color:#ffd23a; }
-  .field select option { background:#1a1c24; }
-  #scoreTable { border-collapse:collapse; width:min(420px,92vw); font-size:15px;
-    background:rgba(0,0,0,.3); border-radius:12px; overflow:hidden; }
-  #scoreTable th { font-size:12px; letter-spacing:1px; text-transform:uppercase; color:#8fd6ff;
-    padding:9px 12px; border-bottom:1px solid rgba(255,255,255,.15); }
-  #scoreTable td { padding:8px 12px; text-align:center; border-bottom:1px solid rgba(255,255,255,.07); }
-  #scoreTable td.nm { text-align:left; font-weight:bold; }
-  #scoreTable td.sc { color:#5ee06a; font-weight:bold; }
+  .field label { font:bold 10px 'Courier New',monospace; letter-spacing:.24em; text-transform:uppercase;
+    color:#33e0ff; text-shadow:0 0 6px rgba(51,224,255,.5); }
+  .field input, .field select { width:100%; font-family:'Courier New',monospace; font-weight:bold;
+    font-size:17px; letter-spacing:.1em; padding:10px 13px; border-radius:9px;
+    border:2px solid #1d4436; background:#050a08; color:#3dff9e;
+    text-shadow:0 0 8px rgba(61,255,158,.7); outline:none; }
+  .field input::placeholder { color:#1f5c44; text-shadow:none; }
+  .field input:focus, .field select:focus { border-color:#3dff9e; box-shadow:0 0 10px rgba(61,255,158,.35); }
+  .field select option { background:#0d0d18; color:#3dff9e; }
+  #scoreTable { border-collapse:collapse; width:min(440px,92vw); font-family:'Courier New',monospace;
+    font-weight:bold; font-size:13px; letter-spacing:.08em; background:rgba(0,0,0,.45);
+    border:2px solid #1d4436; border-radius:10px; overflow:hidden; }
+  #scoreTable th { font-size:10px; letter-spacing:.28em; text-transform:uppercase; color:#ff3ea5;
+    text-shadow:0 0 8px rgba(255,62,165,.7); padding:9px 10px; border-bottom:1px solid rgba(51,224,255,.25); }
+  #scoreTable td { padding:8px 10px; text-align:center; color:#c9cde8; border-bottom:1px solid rgba(255,255,255,.06); }
+  #scoreTable td.nm { text-align:left; }
+  #scoreTable td.sc { color:#3dff9e; text-shadow:0 0 8px rgba(61,255,158,.6); }
+  /* oro, argento e bronzo sulle prime tre righe, come in ogni hall of fame */
+  #scoreTable tbody tr:nth-child(1) td { color:#ffd23a; text-shadow:0 0 8px rgba(255,210,58,.6); }
+  #scoreTable tbody tr:nth-child(2) td { color:#e4e9f2; }
+  #scoreTable tbody tr:nth-child(3) td { color:#ff9a5a; }
   #scoreEmpty { opacity:.7; font-size:15px; }
 
-  /* ---- Overlay pausa e fine partita ---- */
+  /* ---- Overlay pausa e fine partita: neon su scanline ---- */
   #pause, #gameOver { position:absolute; inset:0; z-index:45; display:flex; flex-direction:column;
-    align-items:center; justify-content:center; gap:14px; background:rgba(10,11,16,.82); }
-  #pause h2, #goTitle { font-size:clamp(30px,6vw,52px); font-weight:bold; color:#ffd23a;
-    letter-spacing:2px; text-shadow:0 4px 0 #9a6a10, 0 10px 26px rgba(0,0,0,.8); }
-  #goScore { font-size:clamp(40px,9vw,80px); font-weight:bold; color:#5ee06a;
-    text-shadow:0 4px 0 #1a5a24, 0 8px 20px rgba(0,0,0,.7); }
-  #goRank { font-size:18px; color:#8fd6ff; }
+    align-items:center; justify-content:center; gap:14px;
+    background:repeating-linear-gradient(0deg, rgba(0,0,0,.15) 0 2px, transparent 2px 5px), rgba(8,6,16,.86); }
+  #pause h2, #goTitle { font-family:'Bungee','Trebuchet MS',sans-serif; font-weight:normal;
+    font-size:clamp(30px,6vw,52px); letter-spacing:.02em; animation:neonFlick 3.2s infinite; }
+  #pause h2 { color:#33e0ff; text-shadow:0 0 8px #33e0ff, 0 0 30px #33e0ff, 3px 3px 0 #0d3f52; }
+  #goTitle { color:#ff3ea5; text-shadow:0 0 8px #ff3ea5, 0 0 30px #ff3ea5, 3px 3px 0 #7c1150; }
+  @keyframes neonFlick { 0%,92%,100% { opacity:1 } 93%,95% { opacity:.4 } 96%,98% { opacity:.85 } }
+  #goScore { font-family:'Courier New',monospace; font-weight:bold; font-size:clamp(36px,8vw,68px);
+    letter-spacing:.14em; color:#ffd23a; text-shadow:0 0 18px rgba(255,210,58,.8); }
+  #goRank { font:bold 14px 'Courier New',monospace; letter-spacing:.1em; color:#33e0ff;
+    text-shadow:0 0 8px rgba(51,224,255,.6); }
 
   /* ---- Controlli touch (visibili solo su dispositivi touch) ---- */
   #touchUI { display:none; }
@@ -344,10 +306,9 @@
   #start { overflow-y:auto; }
   /* su schermi bassi (telefono in orizzontale) niente centratura: si scorre dall'alto */
   @media (max-height:560px) {
-    #start { justify-content:flex-start; --road-h:60px;
-      padding:20px 10px calc(var(--road-h) + 20px); }
+    #start { justify-content:flex-start; padding:44px 10px 50px; }
     #start p { margin-top:10px; }
-    .skyline.far { height:90px; } .skyline.near { height:70px; }
+    #ticker { height:24px; }
   }
   body.touch #start .desc { display:none; }
   body.touch #start .keys.kb { display:none; }
@@ -369,24 +330,29 @@
   @keyframes bountyPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(255,90,42,.5); } 50%{ box-shadow:0 0 12px 3px rgba(255,90,42,.7); } }
   body.touch #bountyBadge { top:auto; bottom:calc(40px + env(safe-area-inset-bottom,0px));
     left:calc(12px + env(safe-area-inset-left,0px)); transform:none; font-size:11px; padding:2px 10px; }
-  .roomcode { font-size:38px; font-weight:bold; letter-spacing:8px; color:#ffd23a;
-    background:rgba(0,0,0,.35); padding:8px 22px; border-radius:14px; text-shadow:0 2px 0 #9a6a10; }
-  .mpstatus { min-height:18px; font-size:14px; color:#ff8a6a; }
+  /* il codice stanza brilla su un display LED verde fosforo */
+  .roomcode { font-family:'Courier New',monospace; font-weight:bold; font-size:36px;
+    letter-spacing:.28em; color:#3dff9e; background:#050a08; border:2px solid #1d4436;
+    padding:10px 14px 8px 24px; border-radius:10px; text-shadow:0 0 14px rgba(61,255,158,.9); }
+  .mpstatus { min-height:18px; font:bold 12px 'Courier New',monospace; letter-spacing:.08em; color:#ff6a5a; }
   .mpnote { font-size:13px; opacity:.8; max-width:440px; line-height:1.5; }
-  #lobbyLine { font-size:16px; }
-  #lobbyLine b { color:#5ee06a; }
+  #lobbyLine { font:bold 13px 'Courier New',monospace; letter-spacing:.1em; }
+  #lobbyLine b { color:#3dff9e; text-shadow:0 0 8px rgba(61,255,158,.6); }
   /* classifica della partita (Tab / 🏆) */
   #ladder { position:absolute; inset:0; z-index:46; display:flex; align-items:center; justify-content:center;
     background:rgba(10,11,16,.45); pointer-events:none; }
-  #ladder .lbox { background:rgba(13,15,23,.94); border:2px solid rgba(255,210,58,.45); border-radius:16px;
+  #ladder .lbox { background:linear-gradient(#2b2140,#171126); border:3px solid #33e0ff; border-radius:16px;
+    box-shadow:0 0 24px rgba(51,224,255,.3), inset 0 0 40px rgba(0,0,0,.5);
     padding:20px 26px; display:flex; flex-direction:column; align-items:center; gap:12px; max-width:96vw; overflow-x:auto; }
-  #ladder h2 { color:#ffd23a; font-size:22px; letter-spacing:1px; }
-  .ladtab { border-collapse:collapse; min-width:min(480px,92vw); font-size:15px; }
-  .ladtab th { font-size:11px; letter-spacing:1px; text-transform:uppercase; color:#8fd6ff;
-    padding:7px 9px; border-bottom:1px solid rgba(255,255,255,.18); }
-  .ladtab td { padding:7px 9px; text-align:center; border-bottom:1px solid rgba(255,255,255,.07); }
-  .ladtab td:nth-child(2) { text-align:left; font-weight:bold; }
-  .ladtab tr.me td { color:#ffd23a; }
+  #ladder h2 { font-family:'Bungee','Trebuchet MS',sans-serif; font-weight:normal; color:#ff3ea5;
+    font-size:20px; letter-spacing:.02em; text-shadow:0 0 12px rgba(255,62,165,.8); }
+  .ladtab { border-collapse:collapse; min-width:min(480px,92vw);
+    font-family:'Courier New',monospace; font-weight:bold; font-size:13px; letter-spacing:.06em; }
+  .ladtab th { font-size:10px; letter-spacing:.24em; text-transform:uppercase; color:#ff3ea5;
+    text-shadow:0 0 8px rgba(255,62,165,.6); padding:7px 9px; border-bottom:1px solid rgba(51,224,255,.25); }
+  .ladtab td { padding:7px 9px; text-align:center; color:#c9cde8; border-bottom:1px solid rgba(255,255,255,.07); }
+  .ladtab td:nth-child(2) { text-align:left; }
+  .ladtab tr.me td { color:#33e0ff; text-shadow:0 0 8px rgba(51,224,255,.7); }
   .ladhint { font-size:12px; opacity:.65; }
   #goLadderWrap { max-height:220px; overflow-y:auto; background:rgba(0,0,0,.3); border-radius:12px; }
   #btnLadder { display:none; left:calc(12px + env(safe-area-inset-left,0px)); top:152px; width:44px; height:44px; font-size:19px; }
@@ -412,7 +378,13 @@
     <div id="gear" class="hidden">⚙️ 1ª</div>
   </div>
 
-  <canvas id="mini" width="160" height="160"></canvas>
+  <canvas id="mini" width="160" height="160" title="Tocca per aprire la mappa a schermo intero"></canvas>
+
+  <!-- Mappa a schermo intero: si apre toccando la minimappa, si chiude con ✕/Esc/tap fuori -->
+  <div id="mapFull" class="hidden">
+    <canvas id="miniFull"></canvas>
+    <button id="mapClose" aria-label="Chiudi mappa" title="Chiudi (Esc)">✕</button>
+  </div>
 
   <div id="hint" title="Mostra o nascondi la guida completa">
     <b>WASD / frecce</b> muovi &amp; guida · <b>Mouse</b> mira · <b>Click sx</b> pugni/spari<br>
@@ -486,68 +458,20 @@
   </div>
 
   <div id="start">
-    <!-- Diorama animato: cielo, stelle, skyline e i mezzi del gioco sulla strada -->
+    <!-- Scena da sala giochi: bagliore dell'insegna, griglia synthwave, scanline -->
     <div id="scene" aria-hidden="true">
-      <div class="sky"></div>
-      <div class="stars"></div>
-      <svg class="skyline far" viewBox="0 0 1440 240" preserveAspectRatio="none">
-        <path fill="#2c2057" d="M0 240 V150 H40 V96 H92 V170 H130 V120 H190 V180 H225 V70 H285
-          V160 H330 V110 H390 V190 H430 V58 H478 V44 H500 V58 H520 V150 H585 V100 H645 V175
-          H690 V80 H755 V150 H805 V34 H835 V26 H855 V34 H880 V140 H945 V95 H1010 V170 H1055
-          V60 H1120 V150 H1170 V105 H1235 V185 H1275 V75 H1340 V150 H1395 V110 H1440 V240 Z"/>
-      </svg>
-      <svg class="skyline near" viewBox="0 0 1440 200" preserveAspectRatio="none">
-        <defs>
-          <pattern id="winG" width="18" height="22" patternUnits="userSpaceOnUse">
-            <rect x="4" y="5" width="7" height="10" fill="#ffd97a"/>
-          </pattern>
-          <pattern id="winB" width="22" height="26" patternUnits="userSpaceOnUse">
-            <rect x="5" y="6" width="8" height="11" fill="#9fd8ff"/>
-          </pattern>
-        </defs>
-        <rect x="0" y="60" width="120" height="140" fill="#0b0c16"/>
-        <rect x="10" y="72" width="100" height="118" fill="url(#winG)" opacity=".75"/>
-        <rect x="140" y="90" width="90" height="110" fill="#0b0c16"/>
-        <rect x="148" y="100" width="74" height="92" fill="url(#winB)" opacity=".6"/>
-        <rect x="308" y="6" width="4" height="26" fill="#0b0c16"/>
-        <circle class="blink" cx="310" cy="5" r="4" fill="#ff5a4a"/>
-        <rect x="250" y="30" width="130" height="170" fill="#0b0c16"/>
-        <rect x="260" y="42" width="110" height="148" fill="url(#winG)" opacity=".8"/>
-        <rect x="400" y="110" width="80" height="90" fill="#0b0c16"/>
-        <rect x="408" y="120" width="64" height="72" fill="url(#winG)" opacity=".5"/>
-        <rect x="500" y="55" width="120" height="145" fill="#0b0c16"/>
-        <rect x="510" y="66" width="100" height="126" fill="url(#winB)" opacity=".7"/>
-        <rect x="640" y="85" width="100" height="115" fill="#0b0c16"/>
-        <rect x="648" y="95" width="84" height="97" fill="url(#winG)" opacity=".65"/>
-        <rect x="828" y="4" width="4" height="26" fill="#0b0c16"/>
-        <circle class="blink b2" cx="830" cy="4" r="4" fill="#ff5a4a"/>
-        <rect x="760" y="26" width="150" height="174" fill="#0b0c16"/>
-        <rect x="770" y="38" width="130" height="154" fill="url(#winB)" opacity=".8"/>
-        <rect x="930" y="95" width="90" height="105" fill="#0b0c16"/>
-        <rect x="938" y="105" width="74" height="87" fill="url(#winG)" opacity=".6"/>
-        <rect x="1040" y="45" width="120" height="155" fill="#0b0c16"/>
-        <rect x="1050" y="57" width="100" height="135" fill="url(#winG)" opacity=".75"/>
-        <rect x="1180" y="105" width="100" height="95" fill="#0b0c16"/>
-        <rect x="1188" y="115" width="84" height="77" fill="url(#winB)" opacity=".55"/>
-        <rect x="1300" y="60" width="140" height="140" fill="#0b0c16"/>
-        <rect x="1310" y="72" width="120" height="120" fill="url(#winG)" opacity=".7"/>
-        <rect class="flk" x="286" y="70" width="8" height="11" fill="#fff2b8"/>
-        <rect class="flk f2" x="808" y="66" width="9" height="12" fill="#d8f0ff"/>
-        <rect class="flk f3" x="1082" y="88" width="8" height="11" fill="#fff2b8"/>
-      </svg>
-      <div class="road">
-        <!-- stessa velocità per corsia + partenze sfalsate = i mezzi non si sovrappongono mai -->
-        <div class="car far ambulanza" style="--d:24s;--dl:-3s"><i class="top"></i><i class="sig"></i><i class="wA"></i><i class="wB"></i><i class="beam"></i></div>
-        <div class="car far scooter" style="--d:24s;--dl:-11s"><i class="top"></i><i class="sig"></i><i class="wA"></i><i class="wB"></i></div>
-        <div class="car far" style="--d:24s;--dl:-19s"><i class="top"></i><i class="wA"></i><i class="wB"></i></div>
-        <div class="car near taxi" style="--d:16s;--dl:-1s"><i class="top"></i><i class="sig"></i><i class="wA"></i><i class="wB"></i><i class="beam"></i></div>
-        <div class="car near polizia" style="--d:16s;--dl:-6.3s"><i class="top"></i><i class="sig"></i><i class="wA"></i><i class="wB"></i><i class="beam"></i></div>
-        <div class="car near autopompa" style="--d:16s;--dl:-11.6s"><i class="top"></i><i class="sig"></i><i class="wA"></i><i class="wB"></i><i class="beam"></i></div>
-      </div>
+      <div class="grid"></div>
+      <div class="scan"></div>
+    </div>
+
+    <!-- Barra da cabinato: il miglior punteggio salvato (riempita da ui.js) -->
+    <div id="arcTop" aria-hidden="true">
+      <span class="hi" id="hiScore">HI-SCORE&nbsp; $0</span>
+      <span>CREDITI&nbsp;1</span>
     </div>
 
     <h1>LIBRE CITY</h1>
-    <div class="tag">Corri, consegna, soccorri — la città è tua</div>
+    <div class="tag">Corri · Consegna · Soccorri</div>
 
     <!-- Primo avvio: chiede il nome del giocatore -->
     <div id="namePanel" class="panel hidden">
@@ -735,6 +659,9 @@
 
     <div id="credits">Realizzato da <a href="https://enricoschintu.com" target="_blank"
       rel="noopener">Enrico Schintu</a> · © 2026</div>
+
+    <!-- Attract mode: il ticker racconta i mestieri della città -->
+    <div id="ticker" aria-hidden="true"><span>🚕 PORTA I CLIENTI A DESTINAZIONE · 🍕 CONSEGNA LA PIZZA FINCHÉ È CALDA · 🚑 SOCCORRI I FERITI · 🚒 SPEGNI GLI INCENDI · 🪙 RACCOGLI LE MONETINE NEI VICOLI · 🚔 OCCHIO ALLE STELLE: LA POLIZIA NON DIMENTICA · 🪖 LA CASERMA È PIENA DI SOLDATI (E DI CARRI ARMATI) · 🚕 PORTA I CLIENTI A DESTINAZIONE · 🍕 CONSEGNA LA PIZZA FINCHÉ È CALDA · 🚑 SOCCORRI I FERITI · 🚒 SPEGNI GLI INCENDI · 🪙 RACCOGLI LE MONETINE NEI VICOLI</span></div>
   </div>
 
   <!-- Multigiocatore: indirizzo del server WebSocket (vedi server/). Lascialo
