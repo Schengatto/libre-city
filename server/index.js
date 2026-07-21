@@ -49,6 +49,11 @@ const HOST = process.env.HOST || '0.0.0.0';
 const STATIC_DIR = process.env.STATIC_DIR ? path.resolve(process.env.STATIC_DIR) : '';
 const GRACE_MS = 30_000;          // finestra di riaggancio dopo una caduta di rete
 const HEARTBEAT_MS = 30_000;      // ping applicativo per scovare le socket morte
+// Tetto di vita ASSOLUTO della stanza: qualunque istanza viene abbattuta 35 min
+// dopo la creazione, a prescindere dai minuti di partita, dai riagganci o dai
+// giocatori ancora connessi. Evita le stanze "fantasma" che restano in RAM a
+// simulare (sim a 60Hz = CPU) per ore quando nessuno le chiude davvero.
+const MAX_ROOM_MS = 35 * 60_000;
 // La sim (movimento/fisica) è a PASSO FISSO tarato su 60Hz, come il single-player e
 // come la predizione del client: simulare a 30Hz faceva girare TUTTO il mondo
 // autoritativo a metà velocità (74 px/s invece di 148) e, con il client che predice
@@ -132,8 +137,19 @@ function scheduleEnd(room) {
   const ms = Math.max(0, room.minutes * 60_000 - (now() - room.startAt));
   room.endTimer = setTimeout(() => broadcast(room, { t: 'end' }), ms);
 }
+// abbattimento forzato allo scadere del tetto di vita: avvisa chi è ancora
+// connesso (così la UI chiude la partita) e poi libera tutto.
+function scheduleReaper(room) {
+  clearTimeout(room.reaperTimer);
+  room.reaperTimer = setTimeout(() => {
+    log('room reaped', room.code, `(vita > ${Math.round(MAX_ROOM_MS / 60_000)}min)`);
+    broadcast(room, { t: 'end' });
+    destroyRoom(room);
+  }, MAX_ROOM_MS);
+}
 function destroyRoom(room) {
   clearTimeout(room.endTimer);
+  clearTimeout(room.reaperTimer);
   stopSim(room);
   for (const p of room.players.values()) clearTimeout(p.dropTimer);
   rooms.delete(room.code);
@@ -224,6 +240,7 @@ function handleCreate(ws, m) {
   };
   rooms.set(code, room);
   scheduleEnd(room);
+  scheduleReaper(room);                      // tetto di vita assoluto: 35 min poi via
   startSim(room);                            // Fase 2: avvia la città autoritativa della stanza
   log('room created', code, 'by', String(m.name || '?'), `(${room.minutes}min, max ${room.max}, sim ${room.sim ? 'on' : 'off'})`);
   addPlayer(ws, room, m.name);
