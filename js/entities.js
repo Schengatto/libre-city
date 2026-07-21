@@ -70,6 +70,7 @@ let playerName  = store.get('name', '');       // vuoto = primo avvio: chiedi il
 let gameMinutes = store.get('minutes', 0);     // durata partita in minuti · 0 = senza limiti
 let timeLeft = 0;                              // frame rimanenti (solo con durata impostata)
 let camX = 0, camY = 0;
+let cameraActive = false;   // true solo sul client che renderizza (mai sul server headless): abilita lo spawn attorno al centro inquadratura
 let shakeT = 0, shakeMag = 0;
 let flashT = 0;        // lampo rosso quando il player è colpito
 let downT = 0;         // frame rimanenti di "fuori gioco" (morto o arrestato)

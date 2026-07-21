@@ -1002,6 +1002,15 @@ function managePopulation() {
   const despawnR = Math.max(vw, vh) * 1.3 + 300;
   const nP = MP ? Math.max(1, MP.length) : 1;    // scala la densità col numero di giocatori
   const fp = spawnFocus();                        // giocatore attorno a cui spawnare (a rotazione)
+  // Centro dell'inquadratura: sul client segue la camera (che può essere "incollata"
+  // ai bordi del mondo, quindi il player NON è al centro), sul server headless coincide
+  // col giocatore. Spawnare attorno a QUESTO centro, oltre la semi-diagonale della vista,
+  // garantisce che nessuna entità nasca dentro il rettangolo visibile: niente pop-in in campo.
+  const scx = cameraActive ? camX + vw / 2 : fp.x;
+  const scy = cameraActive ? camY + vh / 2 : fp.y;
+  const viewDiag = Math.hypot(vw, vh) / 2;         // distanza dal centro all'angolo visibile più lontano
+  const inMin = viewDiag + 80;                     // appena FUORI dall'angolo dell'inquadratura
+  const inMax = viewDiag + Math.max(vw, vh) * 0.5; // fascia di spawn subito oltre il bordo (entro il raggio di despawn)
   // rimuove entità morte o troppo lontane da OGNI giocatore
   for (let i = peds.length - 1; i >= 0; i--) {
     const p = peds[i];
@@ -1028,19 +1037,19 @@ function managePopulation() {
     if (c.isDelivery) nDeliv++;
   }
   // civili
-  if (nCiv < 26 * nP && frame % 8 === 0) { const p = randomWalkNear(fp.x, fp.y, vw * 0.55, vw * 0.8); if (p) peds.push(makePed(p.x, p.y, 'civ')); }
+  if (nCiv < 26 * nP && frame % 8 === 0) { const p = randomWalkNear(scx, scy, inMin, inMax); if (p) peds.push(makePed(p.x, p.y, 'civ')); }
   // traffico in movimento
-  if (nTraf < 14 * nP && frame % 12 === 0) { const c = spawnTrafficNear(fp.x, fp.y, vw * 0.55, vw * 0.9); if (c) cars.push(c); }
+  if (nTraf < 14 * nP && frame % 12 === 0) { const c = spawnTrafficNear(scx, scy, inMin, inMax); if (c) cars.push(c); }
   // auto parcheggiate
-  if (nPark < 14 * nP && frame % 16 === 0) { const p = randomParkingNear(fp.x, fp.y, vw * 0.5, vw * 0.9); if (p) cars.push(makeParked(p.x, p.y, p.angle)); }
+  if (nPark < 14 * nP && frame % 16 === 0) { const p = randomParkingNear(scx, scy, inMin, inMax); if (p) cars.push(makeParked(p.x, p.y, p.angle)); }
   // qualche taxi in giro per la città, sempre
   if (frame % 40 === 0 && nTaxi < 3 * nP) {
-    const c = spawnTrafficNear(fp.x, fp.y, vw * 0.55, vw * 0.9);
+    const c = spawnTrafficNear(scx, scy, inMin, inMax);
     if (c) { makeTaxi(c); cars.push(c); }
   }
   // ...e almeno un paio di moto delle consegne
   if (frame % 40 === 20 && nDeliv < 2 * nP) {
-    const c = spawnTrafficNear(fp.x, fp.y, vw * 0.55, vw * 0.9);
+    const c = spawnTrafficNear(scx, scy, inMin, inMax);
     if (c) { makeDeliveryMoto(c); cars.push(c); }
   }
   // rimpiazza (fuori campo) i mezzi di servizio davanti a ogni struttura speciale
@@ -1062,18 +1071,18 @@ function managePopulation() {
   }
   // monetine sparse + qualche monetina nascosta nei vicoli
   const wantCoins = 2 * nP;
-  if (coins.length < wantCoins && frame % 40 === 0) spawnCoinNear(fp.x, fp.y, vw * 0.35, vw * 0.9);
-  if (coins.length < wantCoins && frame % 120 === 0) spawnAlleyCoin(fp.x, fp.y, vw * 0.9);
+  if (coins.length < wantCoins && frame % 40 === 0) spawnCoinNear(scx, scy, inMin, inMax);
+  if (coins.length < wantCoins && frame % 120 === 0) spawnAlleyCoin(scx, scy, inMax);
   // ALLARME MILITARE: finché è attivo, soldati e jeep armate danno la caccia
   if (armyAlertT > 0) {
-    if (nSoldier < 3 * nP && frame % 40 === 0) { const p = randomWalkNear(fp.x, fp.y, vw * 0.5, vw * 0.75); if (p) peds.push(makeSoldier(p.x, p.y)); }
-    if (nArmy < 2 * nP && frame % 60 === 0) { const p = randomRoadNear(fp.x, fp.y, vw * 0.55, vw * 0.9); if (p) cars.push(makeArmyCar(p.x, p.y)); }
+    if (nSoldier < 3 * nP && frame % 40 === 0) { const p = randomWalkNear(scx, scy, inMin, inMax); if (p) peds.push(makeSoldier(p.x, p.y)); }
+    if (nArmy < 2 * nP && frame % 60 === 0) { const p = randomRoadNear(scx, scy, inMin, inMax); if (p) cars.push(makeArmyCar(p.x, p.y)); }
   }
   // POLIZIA in base al livello ricercato (heat di stanza condiviso in multigiocatore)
   const wantCops = wanted * nP;                  // poliziotti a piedi
   const wantCopCars = Math.max(0, wanted - 1) * nP;   // volanti
-  if (wanted > 0 && nCop < wantCops && frame % 30 === 0) { const p = randomWalkNear(fp.x, fp.y, vw * 0.5, vw * 0.75); if (p) peds.push(makePed(p.x, p.y, 'cop')); }
-  if (wanted >= 2 && nPolice < wantCopCars && frame % 50 === 0) { const p = randomRoadNear(fp.x, fp.y, vw * 0.55, vw * 0.9); if (p) { const c = makeCar(p.x, p.y, 'police'); c.wasPolice = true; cars.push(c); } }
+  if (wanted > 0 && nCop < wantCops && frame % 30 === 0) { const p = randomWalkNear(scx, scy, inMin, inMax); if (p) peds.push(makePed(p.x, p.y, 'cop')); }
+  if (wanted >= 2 && nPolice < wantCopCars && frame % 50 === 0) { const p = randomRoadNear(scx, scy, inMin, inMax); if (p) { const c = makeCar(p.x, p.y, 'police'); c.wasPolice = true; cars.push(c); } }
 }
 
 // ---------- Particelle / effetti ----------
@@ -1114,6 +1123,7 @@ function shake(mag, t) { if (mag > shakeMag) { shakeMag = mag; shakeT = t; } }
 
 // ---------- Camera ----------
 function updateCamera() {
+  cameraActive = true;
   const tx = player.x, ty = player.y;
   camX = clamp(tx - vw / 2, 0, Math.max(0, WORLD_W - vw));
   camY = clamp(ty - vh / 2, 0, Math.max(0, WORLD_H - vh));
