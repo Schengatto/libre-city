@@ -149,6 +149,7 @@ function updateArmy() {
   // klaxon della base finché l'allarme è attivo
   const lm = nearestArmyBase();
   if (armyAlertT > 0 && frame % 90 === 0 && lm) { const h = hear(lm.cx, lm.cy, 1100); if (h) sfx.alarm(h); }
+  updateTurrets();                                   // le torrette agli angoli sparano agli intrusi
 }
 // (makeSoldier e makeArmyCar stanno in js/entities.js con le altre fabbriche:
 //  servono già allo spawn iniziale del mondo, che gira al caricamento di quel file)
@@ -229,4 +230,57 @@ function updateArmyCar(c) {
   runOverPlayer(c, true);                             // la jeep può investire un player a piedi
   runOver(c, false);
 }
+
+// ---------- Torrette agli angoli della caserma 🗼 ----------
+// ai quattro angoli del recinto c'è una postazione fortificata con un soldato di
+// vedetta: apre il fuoco su CHIUNQUE metta piede dentro l'area (non serve
+// l'allarme generale — le torrette difendono il perimetro da sole). Sono fisse.
+const turrets = [];
+const TURRET_RANGE = 540;                             // raggio d'ingaggio: copre l'intera area dall'angolo
+function buildTurrets() {
+  turrets.length = 0;
+  for (let i = 0; i < landmarks.length; i++) {
+    const lm = landmarks[i];
+    if (lm.type !== 'army') continue;
+    // appena dentro il recinto, uno per angolo
+    const corners = [[lm.x0 + 1, lm.y0 + 1], [lm.x1 - 1, lm.y0 + 1],
+                     [lm.x0 + 1, lm.y1 - 1], [lm.x1 - 1, lm.y1 - 1]];
+    for (const [tx, ty] of corners) {
+      const x = (tx + 0.5) * T, y = (ty + 0.5) * T;
+      turrets.push({ x, y, baseLm: i, cd: rndi(20, 60),
+                     ang: Math.atan2(lm.cy - y, lm.cx - x) });   // a riposo guarda il piazzale
+    }
+  }
+}
+// bersaglio: il giocatore attivo più vicino, ma solo se è ENTRATO nell'area
+function turretTarget(tr) {
+  const lm = landmarks[tr.baseLm];
+  let tp = null, bd = TURRET_RANGE;
+  eachActivePlayer(v => {
+    if (v.downT > 0 || (lm && !playerInBase(lm, v))) return;
+    const d = dist(tr.x, tr.y, v.x, v.y);
+    if (d < bd) { bd = d; tp = v; }
+  });
+  return tp;
+}
+function updateTurrets() {
+  for (const tr of turrets) {
+    if (tr.cd > 0) tr.cd--;
+    const tp = turretTarget(tr);
+    if (!tp) continue;                                // nessun intruso: la torretta tace
+    const aim = Math.atan2(tp.y - tr.y, tp.x - tr.x);
+    tr.ang = steerToward(tr.ang, aim, 0.16);          // la mitragliatrice ruota verso il bersaglio
+    if (tr.cd === 0 && Math.abs(angDiff(tr.ang, aim)) < 0.3 && lineClear(tr.x, tr.y, tp.x, tp.y)) {
+      turretShoot(tr); tr.cd = rndi(24, 40);
+    }
+  }
+}
+function turretShoot(tr) {
+  const a = tr.ang + rnd(-0.05, 0.05);
+  bullets.push({ x: tr.x + Math.cos(a) * 16, y: tr.y + Math.sin(a) * 16,
+                 vx: Math.cos(a) * 13, vy: Math.sin(a) * 13, life: 46, fromPlayer: false });
+  spawnMuzzle(tr.x + Math.cos(a) * 16, tr.y + Math.sin(a) * 16, a);
+  sfx.copShoot(hear(tr.x, tr.y, 760));
+}
+buildTurrets();                                       // postazioni ricavate dagli angoli delle basi
 

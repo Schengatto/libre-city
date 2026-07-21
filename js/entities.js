@@ -405,8 +405,8 @@ function spawnAlleyCoin(cx, cy, rmax) {
     for (let k = 0; k < (SERVICE_COUNT[lm.type] || 1); k++) parkServiceCar(lm);
   // la base è presidiata: jeep sparse nel piazzale e guarnigione di guardie
   for (const lm of landmarks) if (lm.type === 'army') {
-    for (let k = 0; k < 3; k++) parkArmyJeep(lm);
-    for (let k = 0; k < 8; k++) { const g = makeGuard(lm); if (g) peds.push(g); }
+    for (let k = 0; k < 2; k++) parkArmyJeep(lm);
+    for (let k = 0; k < 3; k++) { const g = makeGuard(lm); if (g) peds.push(g); }   // meno guardie: le 4 torrette agli angoli fanno il grosso
   }
 })();
 

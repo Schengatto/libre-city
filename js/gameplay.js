@@ -1135,9 +1135,9 @@ function managePopulation() {
       const tanks = cars.filter(c => c.role === 'parked' && c.serviceType === 'army' && dist(c.x, c.y, lm.cx, lm.cy) < 600).length;
       for (let k = tanks; k < (SERVICE_COUNT.army || 1); k++) parkServiceCar(lm);
       const jeeps = cars.filter(c => c.role === 'parked' && c.serviceType === 'armyjeep' && dist(c.x, c.y, lm.cx, lm.cy) < 600).length;
-      for (let k = jeeps; k < 3; k++) parkArmyJeep(lm);
+      for (let k = jeeps; k < 2; k++) parkArmyJeep(lm);
       const guards = peds.filter(p => p.guard && dist(p.x, p.y, lm.cx, lm.cy) < 600).length;
-      for (let k = guards; k < 8; k++) { const g = makeGuard(lm); if (g) peds.push(g); }
+      for (let k = guards; k < 3; k++) { const g = makeGuard(lm); if (g) peds.push(g); }   // presidio ridotto: difendono soprattutto le torrette
       continue;
     }
     const has = cars.some(c => c.role === 'parked' && c.serviceType === lm.type &&

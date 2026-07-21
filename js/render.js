@@ -508,6 +508,30 @@ function drawLandmarks() {
     }
   }
 }
+// torrette agli angoli della caserma: nido di sacchi di sabbia + soldato con
+// mitragliatrice che ruota verso l'intruso (l'angolo è cosmetico, il fuoco
+// autoritativo arriva dalla sim in army.js)
+function drawTurrets() {
+  if (typeof turrets === 'undefined') return;
+  for (const tr of turrets) {
+    const sx = tr.x - camX, sy = tr.y - camY;
+    if (sx < -30 || sy < -30 || sx > vw + 30 || sy > vh + 30) continue;
+    const tp = turretTarget(tr);                      // bersaglio nel raggio (o null)
+    if (tp) tr.ang = steerToward(tr.ang, Math.atan2(tp.y - tr.y, tp.x - tr.x), 0.16);
+    // nido di sacchi di sabbia
+    ctx.fillStyle = '#6f6142';
+    for (let i = 0; i < 7; i++) { const a = i / 7 * TAU; ctx.beginPath(); ctx.arc(sx + Math.cos(a) * 12, sy + Math.sin(a) * 12, 5, 0, TAU); ctx.fill(); }
+    ctx.fillStyle = '#847252'; ctx.beginPath(); ctx.arc(sx, sy, 11, 0, TAU); ctx.fill();
+    // soldato di vedetta
+    ctx.fillStyle = '#3d5226'; ctx.beginPath(); ctx.arc(sx, sy, 6, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#2a2a1e'; ctx.beginPath(); ctx.arc(sx, sy, 3.4, 0, TAU); ctx.fill();
+    // mitragliatrice
+    const a = tr.ang;
+    ctx.strokeStyle = '#3a3f36'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + Math.cos(a) * 19, sy + Math.sin(a) * 19); ctx.stroke();
+    if (tp) { ctx.fillStyle = '#ffd24a'; ctx.beginPath(); ctx.arc(sx + Math.cos(a) * 20, sy + Math.sin(a) * 20, 2.2, 0, TAU); ctx.fill(); }
+  }
+}
 // croce pulsante davanti agli ospedali: passaci sopra per curarti
 function drawHealPads() {
   for (const lm of landmarks) {
@@ -1110,6 +1134,7 @@ function render() {
   drawPickups();
   drawCoins();
   drawFires();
+  drawTurrets();                               // postazioni fisse agli angoli della caserma
   // ordina le entità per Y così quelle più in basso stanno davanti
   // (array riusato tra i frame: niente allocazione nel loop di rendering)
   const ents = renderEnts; ents.length = 0;
