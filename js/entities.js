@@ -371,8 +371,8 @@ function spawnAlleyCoin(cx, cy, rmax) {
   for (let i = 0; i < 16; i++) { const c = spawnTrafficNear(player.x, player.y, 200, 2200); if (c) cars.push(c); }
   for (let i = 0; i < 14; i++) { const p = randomParkingNear(player.x, player.y, 150, 1800); if (p) cars.push(makeParked(p.x, p.y, p.angle)); }
   for (let i = 0; i < 26; i++) { const p = randomWalkNear(player.x, player.y, 120, 1500); if (p) peds.push(makePed(p.x, p.y, 'civ')); }
-  for (let i = 0; i < 5; i++) spawnCoinNear(player.x, player.y, 120, 1800);
-  for (let i = 0; i < 4; i++) spawnAlleyCoin(player.x, player.y, 1800);
+  for (let i = 0; i < 2; i++) spawnCoinNear(player.x, player.y, 120, 1800);
+  for (let i = 0; i < 2; i++) spawnAlleyCoin(player.x, player.y, 1800);
   const near = spawnTrafficNear(player.x, player.y, 50, 300);
   if (near) cars.push(near);
   // un taxi parcheggiato vicino allo spawn, per provare subito le missioni

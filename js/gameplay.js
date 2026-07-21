@@ -1061,7 +1061,7 @@ function managePopulation() {
     if (!has) parkServiceCar(lm);
   }
   // monetine sparse + qualche monetina nascosta nei vicoli
-  const wantCoins = 6 * nP;
+  const wantCoins = 2 * nP;
   if (coins.length < wantCoins && frame % 40 === 0) spawnCoinNear(fp.x, fp.y, vw * 0.35, vw * 0.9);
   if (coins.length < wantCoins && frame % 120 === 0) spawnAlleyCoin(fp.x, fp.y, vw * 0.9);
   // ALLARME MILITARE: finché è attivo, soldati e jeep armate danno la caccia
