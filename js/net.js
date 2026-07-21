@@ -726,6 +726,7 @@ function netSendInput() {
 
 // il loop del client autoritativo (chiamato da update() al posto della simulazione)
 function updateNetClient() {
+  applyTouchInput();                                   // mobile: riversa gli stick su tasti virtuali/mira/fuoco (no-op su desktop)
   if (mClicked) net.firePending = true;                // ricorda il click (lo sparo lo fa il server)
   updateTrainKinematics();                             // treno: solo cinematica (gli urti li decide il server)
   netInterpWorld();                                    // mondo (traffico/pedoni) dagli snapshot
