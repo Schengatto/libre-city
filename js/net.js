@@ -175,6 +175,25 @@ function netOnJoined(m) {
     net.dropped = false; toast('🌐 Riconnesso alla partita');
   }
   netRefreshBadge();
+  // il server ha una build diversa dalla nostra → invita a ricaricare il client
+  if (m.build && window.LC_BUILD && m.build !== window.LC_BUILD) netUpdatePrompt();
+}
+
+// Mostra un avviso persistente quando il client in esecuzione è più vecchio del
+// server (tipicamente: pagina aperta da prima di un deploy). Un clic ricarica.
+// Idempotente: al riaggancio il server rimanda `ok`, ma il banner resta unico.
+function netUpdatePrompt() {
+  if (net.updatePrompted) return;
+  net.updatePrompted = true;
+  let el = document.getElementById('updateBanner');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'updateBanner';
+    el.textContent = '🔄 Nuova versione disponibile — tocca per aggiornare';
+    el.addEventListener('click', () => location.reload());
+    document.body.appendChild(el);
+  }
+  el.classList.add('show');
 }
 
 // smista i messaggi del server dopo l'ingresso
@@ -728,8 +747,7 @@ function updateNetClient() {
   // audio d'ambiente derivato dallo stato autoritativo (il motore lo fa già updateDrive)
   if (wanted > 0 && frame % 26 === 0) sfx.siren((frame / 26) % 2 < 1);
   if (playerSirenOn(player.car) && frame % 24 === 0) sfx.emergency(player.car.livery === 'ambulance', (frame / 24) % 2 < 1);
-  // NB: updateCamera() NON qui — la camera segue la posizione INTERPOLATA al momento del
-  // render (vedi loop in ui.js), altrimenti seguirebbe i passi logici discreti e sobbalzerebbe.
+  updateCamera();                                      // il proprio player si disegna alla posizione ESATTA (reattivo), niente interpolazione
   frame++;
   if (frame % 30 === 0 && ladderEl && !ladderEl.classList.contains('hidden')) renderLadder();
 }

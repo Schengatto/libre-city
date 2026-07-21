@@ -69,22 +69,7 @@ function loop(nowT) {
   _loopLast = t;
   let n = 0;
   while (_loopAcc >= LOGIC_STEP && n < LOGIC_MAX) { update(); _loopAcc -= LOGIC_STEP; n++; }
-  // RENDER INTERPOLATION (client autoritativo): il player si muove a passi logici discreti;
-  // disegnarlo così sobbalza quando un frame fa 0 o 2 passi. Lo disegno alla posizione
-  // interpolata tra gli ultimi due passi (alpha = frazione dell'accumulatore residuo), poi
-  // ripristino la posizione logica (la logica e l'invio al server restano esatti).
-  let _ri = null;
-  if (authClient() && player._prevX != null) {
-    const a = _loopAcc / LOGIC_STEP;
-    _ri = { x: player.x, y: player.y, cx: player.car ? player.car.x : 0, cy: player.car ? player.car.y : 0 };
-    player.x = player._prevX + (player.x - player._prevX) * a;
-    player.y = player._prevY + (player.y - player._prevY) * a;
-    if (player.car) { player.car.x = player.car._prevX + (player.car.x - player.car._prevX) * a;
-                      player.car.y = player.car._prevY + (player.car.y - player.car._prevY) * a; }
-    updateCamera();                     // la camera segue la posizione interpolata → fluida
-  }
   render();                             // un disegno per frame, a QUALSIASI fps
-  if (_ri) { player.x = _ri.x; player.y = _ri.y; if (player.car) { player.car.x = _ri.cx; player.car.y = _ri.cy; } }
   if ((frame & 7) === 0) updateCash();
   if ((frame & 3) === 0) updateGear();
   updateToast();

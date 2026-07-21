@@ -102,6 +102,7 @@ const versionCheck = `
 // ricarica la pagina una sola volta (guardia in sessionStorage → no loop).
 (function(){
   var BUILD='${BUILD_ID}';
+  window.LC_BUILD=BUILD;   // usata da net.js per l'avviso "aggiorna" al mismatch col server
   fetch('version.json?ts='+Date.now(),{cache:'no-store'})
     .then(function(r){return r.json();})
     .then(function(v){
