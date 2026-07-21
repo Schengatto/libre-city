@@ -294,8 +294,10 @@
   body.touch #toast { top:auto; bottom:calc(100px + env(safe-area-inset-bottom,0px));
     font-size:13px; padding:7px 14px; max-width:92vw; white-space:normal; text-align:center; }
   /* gli elementi passivi non devono rubare i tocchi agli stick virtuali */
-  body.touch #wanted, body.touch #status, body.touch #mpBadge, body.touch #mini {
+  body.touch #wanted, body.touch #status, body.touch #mpBadge {
     pointer-events:none; }
+  /* la minimappa resta toccabile: un tap apre la mappa a schermo intero */
+  body.touch #mini { pointer-events:auto; }
   /* telefono in verticale: armi sotto la riga stelle/stato, il resto scala */
   @media (max-width:640px) {
     body.touch #wpnBar { top:56px; }

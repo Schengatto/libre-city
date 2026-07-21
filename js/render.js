@@ -1229,7 +1229,11 @@ function closeMapFull() {
   mapFullOpen = false;
   if (mapFullEl) mapFullEl.classList.add('hidden');
 }
-if (miniEl) miniEl.addEventListener('click', openMapFull);
+if (miniEl) {
+  miniEl.addEventListener('click', openMapFull);
+  // su touch il click non arriva in modo affidabile: apri col tocco e non far filtrare l'evento allo stick di mira
+  miniEl.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); openMapFull(); }, { passive: false });
+}
 const mapCloseBtn = document.getElementById('mapClose');
 if (mapCloseBtn) mapCloseBtn.addEventListener('click', closeMapFull);
 if (mapFullEl) mapFullEl.addEventListener('click', e => { if (e.target === mapFullEl || e.target === miniFull) closeMapFull(); });
