@@ -58,9 +58,10 @@ function explodeRocket(r) {
     knockPed(p, Math.atan2(p.y - r.y, p.x - r.x), 8 * pw);
     if (r.fromNet) continue;
     addScore(pedScore(p), p.x, p.y);
-    if (p.role === 'cop') commitCrime(1.2, '🚨 Hai bombardato un poliziotto!');
+    // crimine attribuito a chi ha lanciato (l'esplosione è nella fase mondo condivisa)
+    if (p.role === 'cop') asPlayer(r.owner || player, () => commitCrime(1.2, '🚨 Hai bombardato un poliziotto!'));
     else if (p.role === 'soldier') armyAlertT = ARMY_ALERT_T;   // l'esercito non la prende bene
-    else if (p.role !== 'robber') commitCrime(0.7, '🚨 Hai bombardato un passante!');
+    else if (p.role !== 'robber') asPlayer(r.owner || player, () => commitCrime(0.7, '🚨 Hai bombardato un passante!'));
   }
   eachActivePlayer(v => {
     const px = v.car ? v.car.x : v.x, py = v.car ? v.car.y : v.y;
@@ -86,8 +87,11 @@ function tankCrush(c) {
     if (Math.abs(dx * ca + dy * sa) < c.w / 2 && Math.abs(-dx * sa + dy * ca) < c.h / 2) {
       explodeCar(o);
       shake(6, 7);
-      commitCrime(o.role === 'police' || o.wasPolice ? 1.2 : 0.5,
-        o.role === 'police' || o.wasPolice ? '🚨 Hai schiacciato una volante!' : '🚨 Hai schiacciato un\'auto!');
+      // il crimine è di chi guida il carro (in locale: il player unico); un carro
+      // dell'esercito senza guidatore-player non fa diventare ricercato nessuno
+      const by = MP ? c.owner : player;
+      if (by || !MP) asPlayer(by, () => commitCrime(o.role === 'police' || o.wasPolice ? 1.2 : 0.5,
+        o.role === 'police' || o.wasPolice ? '🚨 Hai schiacciato una volante!' : '🚨 Hai schiacciato un\'auto!'));
     }
   }
 }

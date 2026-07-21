@@ -79,5 +79,29 @@ console.log('3) chi stende un giocatore con la taglia la INCASSA (punti + soldi)
   ok(px.bounty === 0 && px.streak === 0, 'morendo, la preda azzera serie e taglia');
 }
 
+console.log('4) il livello RICERCATO è PER-GIOCATORE (crimine di uno ≠ stelle per l\'altro)');
+{
+  const sim = createRoomSim('WANTED1');
+  const X = sim.addPlayer('Bandito', 0), Y = sim.addPlayer('Innocente', 1);
+  const px = sim._player(X), py = sim._player(Y);
+  px.owned[1] = true; px.weaponIdx = 1;            // pistola
+  // Y sta ben lontano e non fa nulla
+  py.x = px.x + 4000; py.y = px.y + 4000;
+  // X spara a un passante che gli mettiamo davanti (aim = 0 → verso +x)
+  let crimeDone = false;
+  for (let i = 0; i < 60 && !crimeDone; i++) {
+    sim._spawnPed(px.x + 26, px.y, 'civ');         // bersaglio a tiro ogni tick
+    py.x = px.x + 4000; py.y = px.y + 4000;        // tieni Y lontano e fermo
+    sim.applyInput(X, { aim: 0, b: 2 });           // fuoco semi-auto
+    sim.tick();
+    if ((sim.playerState(X).wanted | 0) > 0) crimeDone = true;
+  }
+  const wx = sim.playerState(X).wanted, wy = sim.playerState(Y).wanted;
+  console.log('   ricercato → X:', wx, '· Y:', wy);
+  ok(crimeDone, 'sparare a un passante rende ricercato chi ha sparato (X)');
+  ok(wy === 0, "l'altro giocatore (Y) NON diventa ricercato per il crimine di X");
+  ok(px.wanted > 0 && py.wanted === 0, 'lo stato ricercato è memorizzato sul singolo player');
+}
+
 console.log(`\n${fail === 0 ? '✅' : '❌'}  ${pass} ok, ${fail} fail`);
 process.exit(fail === 0 ? 0 : 1);

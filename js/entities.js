@@ -153,17 +153,26 @@ function playerTouching(x, y, r) {
 }
 // un giocatore attorno a cui centrare gli spawn del popolamento (ruota tra i player)
 function spawnFocus() { return MP ? (MP[frame % MP.length] || player) : player; }
-// esegue fn con i globali del player (player, downT, downKind, cash) RILEGATI alla
-// vittima v, poi ripristina: così le funzioni di danno/morte/credito esistenti
-// (hurtPlayer, arrestPlayer, startDown, cash+=…) agiscono sul giocatore giusto.
+// esegue fn con i globali del player (player, downT, downKind, cash, wanted…)
+// RILEGATI alla vittima/autore v, poi ripristina: così le funzioni di danno/morte/
+// credito/crimine esistenti (hurtPlayer, startDown, cash+=…, commitCrime) agiscono
+// sul giocatore giusto. `v` può essere l'oggetto player o il suo id (es. car.owner).
 function asPlayer(v, fn) {
   if (!MP) return fn();                            // locale: i globali SONO già del player unico
+  if (typeof v === 'string') { let f = null; for (const q of MP) if (q.id === v) { f = q; break; } v = f; }
+  if (!v) return fn();                             // autore sconosciuto: nessuna rilegatura
   // sul server marshaliamo SEMPRE (anche se v è il player già legato): downT/downKind/
-  // cash sono globali separati dall'oggetto, e startDown/die scrivono su quelli.
-  const sp = player, sdt = downT, sdk = downKind, sc = cash;
+  // cash e il livello ricercato sono globali separati dall'oggetto, e le funzioni
+  // (startDown/die/commitCrime) scrivono su quelli.
+  const sp = player, sdt = downT, sdk = downKind, sc = cash, swh = wantedHeat, sw = wanted, scc = crimeCd;
   player = v; downT = v.downT | 0; downKind = v.downKind; cash = v.cash | 0;
+  wantedHeat = v.wantedHeat || 0; wanted = v.wanted | 0; crimeCd = v.crimeCd | 0;
   try { return fn(); }
-  finally { v.downT = downT; v.downKind = downKind; v.cash = cash; player = sp; downT = sdt; downKind = sdk; cash = sc; }
+  finally {
+    v.downT = downT; v.downKind = downKind; v.cash = cash;
+    v.wantedHeat = wantedHeat; v.wanted = wanted; v.crimeCd = crimeCd;
+    player = sp; downT = sdt; downKind = sdk; cash = sc; wantedHeat = swh; wanted = sw; crimeCd = scc;
+  }
 }
 
 // ---------- Fabbriche di entità ----------

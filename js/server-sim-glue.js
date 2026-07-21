@@ -53,6 +53,7 @@ function makeSimPlayer(name, shirtIdx) {
     car: null, shootCd: 0, hurtCd: 0, punchT: 0,
     weaponIdx: 0, owned: WEAPONS.map(w => !w.price),
     shirt: '#e0533a', skin: '#f6c79a', hair: '#5a3a1a',
+    wanted: 0, wantedHeat: 0, crimeCd: 0,         // livello ricercato PER-GIOCATORE
     cash: 0, downT: 0, downKind: null, kills: 0, deaths: 0,
     score: 0, streak: 0, bounty: 0, events: [],   // punteggio/serie/taglia + coda messaggi (toast) del player
     input: { ax: 0, ay: 0, aim: 0, fireHeld: false, fireEdge: false, enterExit: false, horn: false, weapon: null },
@@ -60,8 +61,10 @@ function makeSimPlayer(name, shirtIdx) {
 }
 function playerById(id) { for (const p of players) if (p.id === id) return p; return null; }
 // marshalling dei globali per-giocatore (downT/downKind/cash) attorno alla sua fase
-function loadP(pl) { player = pl; downT = pl.downT | 0; downKind = pl.downKind; cash = pl.cash | 0; }
-function saveP(pl) { pl.downT = downT; pl.downKind = downKind; pl.cash = cash; }
+function loadP(pl) { player = pl; downT = pl.downT | 0; downKind = pl.downKind; cash = pl.cash | 0;
+  wantedHeat = pl.wantedHeat || 0; wanted = pl.wanted | 0; crimeCd = pl.crimeCd | 0; }
+function saveP(pl) { pl.downT = downT; pl.downKind = downKind; pl.cash = cash;
+  pl.wantedHeat = wantedHeat; pl.wanted = wanted; pl.crimeCd = crimeCd; }
 
 // ---- carjacking: sbalza fuori il guidatore (da input.js:tossDriver) ----
 // input.js NON è nel bundle del server, ma la glue lo richiama quando un giocatore
@@ -145,9 +148,16 @@ function tickWorld() {
       }
       updateHealPads();
     }
+    // decadimento del livello ricercato PER-GIOCATORE (heat individuale)
+    if (crimeCd > 0) crimeCd--;
+    else if (wantedHeat > 0) { wantedHeat = Math.max(0, wantedHeat - 0.0016); wanted = Math.floor(wantedHeat); }
     pl.input.fireEdge = false;
     saveP(pl);
   }
+  // il mondo CONDIVISO (densità polizia, reazioni dei pedoni) risponde al giocatore
+  // PIÙ ricercato presente: imposto i globali di stanza al massimo tra i player.
+  { let mh = 0, mw = 0; for (const pl of players) { if (pl.wantedHeat > mh) mh = pl.wantedHeat; if ((pl.wanted | 0) > mw) mw = pl.wanted | 0; }
+    wantedHeat = mh; wanted = mw; }
   // --- FASE MONDO CONDIVISA (funzioni della sim invariate) ---
   updateTrainKinematics();                       // treno: posizione (serve a trainBlocking negli updateCar)
   for (const c of cars) updateCar(c);
@@ -164,9 +174,6 @@ function tickWorld() {
   updateBurningCars();
   updateWater();
   managePopulation();
-  // decadimento del livello ricercato (heat di stanza)
-  if (crimeCd > 0) crimeCd--;
-  else if (wantedHeat > 0) { wantedHeat = Math.max(0, wantedHeat - 0.0016); wanted = Math.floor(wantedHeat); }
   frame++;
 }
 
@@ -213,7 +220,7 @@ function snapshotFor(id) {
   const out = {
     t: 'w', tick: frame, ack: me.input.seq || 0,
     me: { x: R2(me.x), y: R2(me.y), aim: me.aim, hp: R2(me.health), cash: me.cash,
-          wanted, down: me.downT > 0, dt: me.downT, dk: me.downKind, wp: me.weaponIdx, own: me.owned,
+          wanted: me.wanted | 0, down: me.downT > 0, dt: me.downT, dk: me.downKind, wp: me.weaponIdx, own: me.owned,
           k: me.kills, d: me.deaths, sco: me.score | 0, stk: me.streak | 0, bty: me.bounty | 0,
           ev: (me.events && me.events.length) ? me.events.splice(0) : null,   // toast in coda → li consumo qui
           car: me.car ? carPayload(me.car) : null },
@@ -261,10 +268,11 @@ var __sim = {
   tick() { tickWorld(); },
   snapshotFor,
   clearFx() { __fx.length = 0; },        // il server svuota gli fx dopo ogni giro di snapshot
-  playerState(id) { const p = playerById(id); return p ? { id: p.id, x: R2(p.x), y: R2(p.y), hp: R2(p.health), cash: p.cash, down: p.downT > 0, inCar: !!p.car, wanted } : null; },
+  playerState(id) { const p = playerById(id); return p ? { id: p.id, x: R2(p.x), y: R2(p.y), hp: R2(p.health), cash: p.cash, down: p.downT > 0, inCar: !!p.car, wanted: p.wanted | 0 } : null; },
   scores() { return players.map(p => ({ id: p.id, name: p.name, k: p.kills, d: p.deaths, c: p.cash, s: p.score | 0, b: p.bounty | 0 })); },
   playerCount() { return players.length; },
   _player(id) { return playerById(id); },   // solo per i test: riferimento diretto all'oggetto player
+  _spawnPed(x, y, role) { const p = makePed(x, y, role); peds.push(p); return p; },   // solo per i test
   // --- diagnostica per i test ---
   worldInfo() {
     let sig = 0;

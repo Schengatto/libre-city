@@ -243,10 +243,14 @@ function runOver(c, byPlayer) {
     if (Math.abs(lx) < c.w / 2 + p.r && Math.abs(ly) < c.h / 2 + p.r) {
       knockPed(p, c.angle, sp);
       if (byPlayer && p.role !== 'robber') {          // fermare il ladro non è reato
-        cash += 5;
-        addScore(pedScore(p), p.x, p.y);
-        commitCrime(p.role === 'cop' ? 1.1 : 0.7,
-          p.role === 'cop' ? '🚨 Hai investito un poliziotto!' : '🚨 Hai investito un passante!');
+        // investire è di chi guida: cash/punteggio/stelle vanno al driver, non al
+        // player globale (runOver gira nella fase mondo condivisa)
+        asPlayer(MP ? c.owner : player, () => {
+          cash += 5;
+          addScore(pedScore(p), p.x, p.y);
+          commitCrime(p.role === 'cop' ? 1.1 : 0.7,
+            p.role === 'cop' ? '🚨 Hai investito un poliziotto!' : '🚨 Hai investito un passante!');
+        });
       }
     }
   }
@@ -796,9 +800,11 @@ function updateBullets() {
         if (dist(b.x, b.y, p.x, p.y) < p.r + 3) {
           knockPed(p, Math.atan2(b.vy, b.vx), b.knock || 4);
           asPlayer(b.owner || player, () => addScore(pedScore(p), p.x, p.y));
-          if (p.role === 'cop') commitCrime(1.2, '🚨 Hai sparato a un poliziotto!');
+          // il crimine (stelle) va attribuito a CHI HA SPARATO, non al player globale
+          // corrente (i proiettili si risolvono nella fase mondo condivisa)
+          if (p.role === 'cop') asPlayer(b.owner || player, () => commitCrime(1.2, '🚨 Hai sparato a un poliziotto!'));
           else if (p.role === 'soldier') armyAlertT = ARMY_ALERT_T;   // sparare ai soldati li scatena
-          else if (p.role !== 'robber') { asPlayer(b.owner || player, () => { cash += 3; }); commitCrime(0.6, '🚨 Hai sparato a un passante!'); }
+          else if (p.role !== 'robber') asPlayer(b.owner || player, () => { cash += 3; commitCrime(0.6, '🚨 Hai sparato a un passante!'); });
           hit = true; break;
         }
       }
