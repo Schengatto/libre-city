@@ -125,9 +125,10 @@ const sfx = {
   clank(h)   { if (!h || sfxCd.clank) return; sfxCd.clank = 3;
                tone(rnd(190, 260), 0.07, 'square', 0.16 * h.v, 90, 0, h.pan); noise(0.05, 0.1 * h.v, 1200, 0, h.pan); },
   ignition() { noise(0.14, 0.1, 420, 0.1); tone(46, 0.5, 'sawtooth', 0.18, 130, 0.12); },
-  skid(h)    { if (sfxCd.skid) return; sfxCd.skid = 14;
+  skid(h)    { if (sfxCd.skid) return; sfxCd.skid = 24;
                const v = h ? h.v : 1, pan = h ? h.pan : 0;
-               noise(0.26, 0.13 * v, 2600, 0, pan); tone(rnd(820, 980), 0.22, 'sawtooth', 0.05 * v, 620, 0, pan); },
+               // stridìo di gomma: soffio morbido e lungo + squillo calante (non un colpo secco)
+               noise(0.42, 0.05 * v, 1500, 0, pan); tone(rnd(560, 680), 0.4, 'sawtooth', 0.03 * v, rnd(360, 440), 0, pan); },
   // clacson: ogni veicolo suona con la propria voce (frequenza e carattere)
   horn(h, c) { if (!h || sfxCd.horn) return; sfxCd.horn = 40;
                const f = (c && c.hornF) || pick([300, 340, 375]);

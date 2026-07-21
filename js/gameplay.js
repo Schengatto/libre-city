@@ -194,8 +194,8 @@ function updateDrive(c) {
   c.speed = clamp(c.speed, -c.top * 0.45, c.top);
   if (Math.abs(c.speed) > 0.25)
     c.angle += steer * (c.isBike ? 0.075 : c.isTank ? 0.045 : 0.06) * Math.sign(c.speed) * clamp(Math.abs(c.speed) / 3, 0.45, 1);
-  // sgommata: sterzata decisa o frenata brusca ad alta velocità
-  if ((Math.abs(steer) > 0.5 && Math.abs(c.speed) > c.top * 0.85) || (down && c.speed > 3.0)) sfx.skid();
+  // sgommata: solo sterzata al limite (quasi a tutto gas) o frenata brusca ad alta velocità
+  if ((Math.abs(steer) > 0.5 && Math.abs(c.speed) > c.top * 0.92) || (down && c.speed > 4.2)) sfx.skid();
   moveBox(c, Math.cos(c.angle) * c.speed, Math.sin(c.angle) * c.speed, c.colH, c.colH);
   if ((c.hitX || c.hitY) && Math.abs(c.speed) > 2.6) { crashCar(c); c.speed *= 0.28; }
   applyKnockback(c);                                    // rimbalzo residuo dagli urti
