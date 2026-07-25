@@ -66,6 +66,29 @@ const ROOM_CODE = ROOM_FROM_URL || (() => {
 })();
 const random = mulberry32(hashStr(ROOM_CODE));
 
+// ---------- Filtro violenza: serve GIÀ ALLA GENERAZIONE della città ----------
+// Con la violenza disattivata (solo GIOCATORE SINGOLO) la città è pacifica e NON
+// ha la zona militare: niente caserma, niente carri armati, isolati normali dove
+// starebbe la base (vedi reserveArmyZone in city.js). La scelta va quindi letta
+// PRIMA di generare, e city.js gira già al caricamento: la peschiamo da
+// localStorage, dove il pannello di creazione partita l'ha appena scritta insieme
+// al codice della mappa (spIntent in ui.js) — oppure dal salvataggio, che ricorda
+// il filtro della sua partita (save.js). Il confronto col codice dell'URL è
+// essenziale: in MULTIGIOCATORE la violenza c'è sempre, così ospiti e host
+// generano la stessa città anche se in locale hanno partite pacifiche salvate.
+// (localStorage può mancare o essere bloccato — es. sim headless del server: in
+//  quel caso la città resta quella "normale", con la caserma.)
+const PEACE_CITY = (() => {
+  try {
+    const read = k => { const v = localStorage.getItem('libreCity.' + k); return v === null ? null : JSON.parse(v); };
+    const sp = read('spIntent');
+    if (sp && sp.code === ROOM_FROM_URL) return sp.violence === false;
+    const sv = read('save');
+    if (sv && sv.code === ROOM_FROM_URL) return sv.violence === false;
+  } catch {}
+  return false;
+})();
+
 const rnd  = (a, b) => a + random() * (b - a);
 const rndi = (a, b) => Math.floor(rnd(a, b + 1));
 const pick = arr => arr[rndi(0, arr.length - 1)];

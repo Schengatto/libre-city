@@ -192,25 +192,31 @@ function carveAlleys() {
 // contenerla, quindi il generatore le riserva un'area e SOPPRIME le strade che
 // la attraverserebbero (e.dead: mai asfaltate né disegnate, il traffico le
 // ignora e gira attorno alla base)
+// FILTRO VIOLENZA (partita singola, PEACE_CITY in core.js): la città pacifica non
+// ha esercito, quindi NON si riserva niente — nessuna strada soppressa e dove
+// starebbe la base crescono isolati normali (armyZone resta null → placeArmyBase
+// esce subito, e con essa spariscono caserma, carri armati, jeep, guardie e torrette).
 const ARMY_W = 26, ARMY_H = 20;
 let armyZone = null;
 const inArmyZone = (tx, ty) => !!armyZone && tx >= armyZone.x0 && tx <= armyZone.x1 && ty >= armyZone.y0 && ty <= armyZone.y1;
 function reserveArmyZone() {
-  // mai sul centro mappa (lì nasce il player) né sulle strade di bordo
-  let x0, y0, tries = 0;
-  do { x0 = rndi(14, MAP_W - ARMY_W - 14); y0 = rndi(14, MAP_H - ARMY_H - 14); }
-  while (++tries < 30 && x0 - 12 < MAP_W / 2 && MAP_W / 2 < x0 + ARMY_W + 12 &&
-                         y0 - 12 < MAP_H / 2 && MAP_H / 2 < y0 + ARMY_H + 12);
-  armyZone = { x0, y0, x1: x0 + ARMY_W - 1, y1: y0 + ARMY_H - 1 };
-  // sopprime ogni strada che passerebbe nella zona (fascia = asfalto+marciapiede)
-  const PADPX = HALF_ROAD + 2 * T;
-  const rx0 = x0 * T - PADPX, ry0 = y0 * T - PADPX;
-  const rx1 = (armyZone.x1 + 1) * T + PADPX, ry1 = (armyZone.y1 + 1) * T + PADPX;
-  for (const e of edges) {
-    const A = nodes[e.a], B = nodes[e.b];
-    for (let s = 0; s <= 32; s++) {
-      const p = bez(A, B, e.cx, e.cy, s / 32);
-      if (p.x > rx0 && p.x < rx1 && p.y > ry0 && p.y < ry1) { e.dead = true; break; }
+  if (!PEACE_CITY) {
+    // mai sul centro mappa (lì nasce il player) né sulle strade di bordo
+    let x0, y0, tries = 0;
+    do { x0 = rndi(14, MAP_W - ARMY_W - 14); y0 = rndi(14, MAP_H - ARMY_H - 14); }
+    while (++tries < 30 && x0 - 12 < MAP_W / 2 && MAP_W / 2 < x0 + ARMY_W + 12 &&
+                           y0 - 12 < MAP_H / 2 && MAP_H / 2 < y0 + ARMY_H + 12);
+    armyZone = { x0, y0, x1: x0 + ARMY_W - 1, y1: y0 + ARMY_H - 1 };
+    // sopprime ogni strada che passerebbe nella zona (fascia = asfalto+marciapiede)
+    const PADPX = HALF_ROAD + 2 * T;
+    const rx0 = x0 * T - PADPX, ry0 = y0 * T - PADPX;
+    const rx1 = (armyZone.x1 + 1) * T + PADPX, ry1 = (armyZone.y1 + 1) * T + PADPX;
+    for (const e of edges) {
+      const A = nodes[e.a], B = nodes[e.b];
+      for (let s = 0; s <= 32; s++) {
+        const p = bez(A, B, e.cx, e.cy, s / 32);
+        if (p.x > rx0 && p.x < rx1 && p.y > ry0 && p.y < ry1) { e.dead = true; break; }
+      }
     }
   }
   // grafo superstite: niente piazzole per i nodi rimasti senza strade,
