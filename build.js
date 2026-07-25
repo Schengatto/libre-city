@@ -136,7 +136,7 @@ fs.writeFileSync(path.join(DIST, '_headers'), `/index.html
   Cache-Control: no-store
 /sw.js
   Cache-Control: no-cache, must-revalidate
-/manifest.webmanifest
+/*.webmanifest
   Cache-Control: no-cache, must-revalidate
 /js/*
   Cache-Control: public, max-age=31536000, immutable
@@ -156,7 +156,7 @@ fs.writeFileSync(path.join(DIST, '.htaccess'), `AddType application/manifest+jso
   <FilesMatch "^sw\\.js$">
     Header set Cache-Control "no-cache, must-revalidate"
   </FilesMatch>
-  <FilesMatch "^manifest\\.webmanifest$">
+  <FilesMatch "\\.webmanifest$">
     Header set Cache-Control "no-cache, must-revalidate"
   </FilesMatch>
   <FilesMatch "\\.[0-9a-f]{10}\\.js$">
@@ -175,7 +175,9 @@ fs.writeFileSync(path.join(DIST, '.htaccess'), `AddType application/manifest+jso
 // sempre dalla rete e le risorse cross-origin (font) sono in cache runtime
 // "stale-while-revalidate". Il multigiocatore usa una WebSocket verso il server
 // (vedi server/): non passa dal service worker e richiede la rete.
-fs.copyFileSync(path.join(ROOT, 'manifest.webmanifest'), path.join(DIST, 'manifest.webmanifest'));
+// due manifest, uno per lingua: js/i18n.js aggancia quello giusto al <link rel="manifest">
+const manifests = ['manifest.webmanifest', 'manifest.en.webmanifest'];
+for (const f of manifests) fs.copyFileSync(path.join(ROOT, f), path.join(DIST, f));
 
 const iconsDir = path.join(ROOT, 'icons');
 const iconFiles = fs.readdirSync(iconsDir).filter(f => /\.(png|svg)$/.test(f));
@@ -184,7 +186,7 @@ for (const f of iconFiles) fs.copyFileSync(path.join(iconsDir, f), path.join(DIS
 
 // Percorsi RELATIVI (senza slash iniziale): funzionano anche sotto un sottopercorso
 // (es. GitHub Pages di progetto). Nel service worker si risolvono rispetto a sw.js.
-const precache = ['./', 'index.html', 'manifest.webmanifest',
+const precache = ['./', 'index.html', ...manifests,
   ...hashedRels, ...iconFiles.map(f => `icons/${f}`)];
 
 const sw = `// sw.js — generato da build.js (build ${BUILD_ID}). NON modificare a mano.
@@ -251,6 +253,6 @@ self.addEventListener('fetch', (e) => {
 `;
 fs.writeFileSync(path.join(DIST, 'sw.js'), sw);
 
-console.log(`  manifest.webmanifest + ${iconFiles.length} icone → dist/  ·  sw.js (${precache.length} risorse in precache)`);
+console.log(`  ${manifests.length} manifest + ${iconFiles.length} icone → dist/  ·  sw.js (${precache.length} risorse in precache)`);
 console.log(`\nBuild ${BUILD_ID} completata: ${localScripts.length} script → dist/`);
 console.log('Deploy: carica il CONTENUTO di dist/ nella root del sito.');

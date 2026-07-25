@@ -438,23 +438,23 @@ function drawLandmarks() {
       ctx.fillStyle = '#d23434';
       ctx.fillRect(cx - s / 6, cy + 4 - s / 2, s / 3, s);
       ctx.fillRect(cx - s / 2, cy + 4 - s / 6, s, s / 3);
-      lmLabel(cx, py + 12, '✚ OSPEDALE', '#d23434');
+      lmLabel(cx, py + 12, t('lm.hospital'), '#d23434');
     } else if (lm.type === 'police') {                // cortile e distintivo
       ctx.fillStyle = 'rgba(255,255,255,.10)'; ctx.fillRect(px + 8, py + 20, w - 16, h - 28);
       ctx.fillStyle = '#ffd23a'; ctx.beginPath(); ctx.arc(cx, cy + 6, 11, 0, TAU); ctx.fill();
       ctx.fillStyle = '#2a3f66'; ctx.beginPath(); ctx.arc(cx, cy + 6, 7, 0, TAU); ctx.fill();
       ctx.fillStyle = '#ffd23a'; ctx.font = 'bold 9px Trebuchet MS'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('★', cx, cy + 6.5); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-      lmLabel(cx, py + 12, 'POLIZIA', '#fff');
+      lmLabel(cx, py + 12, t('lm.police'), '#fff');
     } else if (lm.type === 'fire') {                  // caserma: strisce gialle
       ctx.fillStyle = '#ffd23a';
       for (let i = 0; i < 3; i++) ctx.fillRect(px + 10, py + h - 14 - i * 9, w - 20, 4);
-      lmLabel(cx, py + 12, 'POMPIERI', '#ffe9a0');
+      lmLabel(cx, py + 12, t('lm.fire'), '#ffe9a0');
     } else if (lm.type === 'bank') {                  // banca: medaglione col dollaro
       ctx.fillStyle = '#ffd23a'; ctx.beginPath(); ctx.arc(cx, cy + 4, 12, 0, TAU); ctx.fill();
       ctx.fillStyle = '#7a6420'; ctx.font = 'bold 15px Trebuchet MS'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('$', cx, cy + 5); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-      lmLabel(cx, py + 12, 'BANCA', '#ffe9a0');
+      lmLabel(cx, py + 12, t('lm.bank'), '#ffe9a0');
     } else if (lm.type === 'pizzeria') {              // pizzeria: pizza gigante sul tetto
       ctx.fillStyle = '#e8b04a'; ctx.beginPath(); ctx.arc(cx, cy + 5, 14, 0, TAU); ctx.fill();     // cornicione
       ctx.fillStyle = '#e8672a'; ctx.beginPath(); ctx.arc(cx, cy + 5, 10.5, 0, TAU); ctx.fill();   // pomodoro
@@ -463,13 +463,13 @@ function drawLandmarks() {
         const a = i / 5 * TAU + 0.4;
         ctx.beginPath(); ctx.arc(cx + Math.cos(a) * 5.5, cy + 5 + Math.sin(a) * 5.5, 2.2, 0, TAU); ctx.fill();
       }
-      lmLabel(cx, py + 12, '🍕 PIZZERIA', '#ffe9a0');
+      lmLabel(cx, py + 12, t('lm.pizza'), '#ffe9a0');
     } else if (lm.type === 'gunshop') {               // armeria: bersaglio sul tetto
       ctx.fillStyle = '#f2f4f8'; ctx.beginPath(); ctx.arc(cx, cy + 5, 12, 0, TAU); ctx.fill();
       ctx.fillStyle = '#d23434'; ctx.beginPath(); ctx.arc(cx, cy + 5, 8, 0, TAU); ctx.fill();
       ctx.fillStyle = '#f2f4f8'; ctx.beginPath(); ctx.arc(cx, cy + 5, 4.5, 0, TAU); ctx.fill();
       ctx.fillStyle = '#d23434'; ctx.beginPath(); ctx.arc(cx, cy + 5, 1.8, 0, TAU); ctx.fill();
-      lmLabel(cx, py + 12, '🔫 ARMERIA', '#ffd9a0');
+      lmLabel(cx, py + 12, t('lm.gunshop'), '#ffd9a0');
     } else if (lm.type === 'army') {                  // caserma: cortile recintato
       // piazzale in terra battuta con chiazze mimetiche
       for (let i = 0; i < 9; i++) {
@@ -500,11 +500,11 @@ function drawLandmarks() {
         ctx.moveTo(sx + 3, sy); ctx.lineTo(sx + 3, sy + T); ctx.stroke();
         ctx.fillStyle = '#5a5f66'; ctx.fillRect(sx - 6, sy + T / 2 - 2, 12, 4);   // palo
       }
-      lmLabel(cx, py + 12, '🪖 CASERMA · ZONA MILITARE', '#d6e0b8');
+      lmLabel(cx, py + 12, t('lm.army'), '#d6e0b8');
     } else {                                          // mercato: lucernari a nastro
       ctx.fillStyle = 'rgba(150,220,235,.28)';
       for (let i = 0; i < 3; i++) ctx.fillRect(px + 12 + i * ((w - 24) / 3), py + 22, (w - 24) / 3 - 6, h - 34);
-      lmLabel(cx, py + 12, 'MERCATO', '#dff5ef');
+      lmLabel(cx, py + 12, t('lm.market'), '#dff5ef');
     }
   }
 }
@@ -563,10 +563,9 @@ function drawGunshopMenu() {
   if (peaceMode()) return;                            // filtro violenza: l'armeria non vende
   if (!nearGunshop()) return;
   ctx.font = 'bold 14px Trebuchet MS';
-  const title = usingTouch ? '🛒 ARMERIA — tocca l\'icona dell\'arma in alto per comprare'
-                           : '🛒 ARMERIA — premi il numero per comprare o equipaggiare';
-  const rows = WEAPONS.map((w, i) => `${i + 1} · ${w.icon} ${w.name} — ` +
-    (player.owned[i] ? (i === player.weaponIdx ? 'in uso ✔' : 'tua') : `$${w.price}`));
+  const title = t(usingTouch ? 'shop.titleTouch' : 'shop.titleKb');
+  const rows = WEAPONS.map((w, i) => `${i + 1} · ${w.icon} ${wName(w)} — ` +
+    (player.owned[i] ? t(i === player.weaponIdx ? 'shop.inUse' : 'shop.owned') : `$${w.price}`));
   let wmax = ctx.measureText(title).width;
   for (const r of rows) wmax = Math.max(wmax, ctx.measureText(r).width);
   const bw = wmax + 36, bh = 40 + rows.length * 22 + 8, bx = vw / 2 - bw / 2, by = 96;
@@ -586,15 +585,15 @@ function drawGunshopMenu() {
 function drawTaxiGuide() {
   if (!taxiActive()) return;
   const msg = taxi.phase !== 'ride' ? null
-            : taxi.timer > 0 ? `🚕 $${taxi.pay} · mancia se arrivi entro ${Math.ceil(taxi.timer / 60)}s`
-                             : `🚕 $${taxi.pay} · mancia persa`;
+            : taxi.timer > 0 ? t('taxi.boxTip', { pay: taxi.pay, s: Math.ceil(taxi.timer / 60) })
+                             : t('taxi.boxNoTip', { pay: taxi.pay });
   drawGuide(taxiTarget(), taxi.phase === 'pickup' ? '#ffd23a' : '#5ee06a', msg);
 }
 function drawPizzaGuide() {
   if (!pizzaActive()) return;
   const msg = pizza.phase !== 'deliver' ? null
-            : pizza.timer > 0 ? `🍕 $${pizza.pay} · mancia se consegni entro ${Math.ceil(pizza.timer / 60)}s`
-                              : `🍕 $${pizza.pay} · pizza fredda, niente mancia`;
+            : pizza.timer > 0 ? t('pizza.boxTip', { pay: pizza.pay, s: Math.ceil(pizza.timer / 60) })
+                              : t('pizza.boxNoTip', { pay: pizza.pay });
   drawGuide(pizzaTarget(), pizza.phase === 'pickup' ? '#ff8a3a' : '#ff5a5a', msg);
 }
 // incendi: alone bruciato a terra + lingue di fuoco tremolanti
@@ -629,18 +628,18 @@ function drawWater() {
 }
 function drawFireGuide() {
   if (!firejobActive()) return;
-  drawGuide(firejob.site, '#ff8a2a', `🚒 $${firejob.pay} · spegni l'incendio entro ${Math.ceil(firejob.timer / 60)}s!`);
+  drawGuide(firejob.site, '#ff8a2a', t('fire.box', { pay: firejob.pay, s: Math.ceil(firejob.timer / 60) }));
 }
 function drawRescueGuide() {
   if (!rescueActive()) return;
   const msg = rescue.phase !== 'deliver' ? null
-            : rescue.timer > 0 ? `🚑 $${rescue.pay} · bonus se arrivi entro ${Math.ceil(rescue.timer / 60)}s`
-                               : `🚑 $${rescue.pay} · bonus soccorso perso`;
+            : rescue.timer > 0 ? t('rescue.boxTip', { pay: rescue.pay, s: Math.ceil(rescue.timer / 60) })
+                               : t('rescue.boxNoTip', { pay: rescue.pay });
   drawGuide(rescueTarget(), rescue.phase === 'pickup' ? '#ff6a6a' : '#6ad0ff', msg);
 }
 function drawPatrolGuide() {
   if (!patrolActive()) return;
-  const msg = `🚔 $${patrol.pay} · fermalo entro ${Math.ceil(patrol.timer / 60)}s!`;
+  const msg = t('patrol.box', { pay: patrol.pay, s: Math.ceil(patrol.timer / 60) });
   drawGuide(patrol.robber, '#4a8aff', msg);
 }
 function drawGuide(tgt, col, msg) {
@@ -656,7 +655,7 @@ function drawGuide(tgt, col, msg) {
   ctx.fill(); ctx.stroke();
   ctx.restore();
   ctx.font = 'bold 11px Trebuchet MS'; ctx.textAlign = 'center';
-  const txt = Math.round(d / 10) + ' m';
+  const txt = t('hud.meters', { d: Math.round(d / 10) });
   ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillText(txt, ax + 1, ay + 21);
   ctx.fillStyle = '#fff'; ctx.fillText(txt, ax, ay + 20);
   ctx.textAlign = 'left';
@@ -699,7 +698,7 @@ function drawPlayerArrows() {
     ctx.fill(); ctx.stroke();
     ctx.restore();
     ctx.font = 'bold 11px Trebuchet MS'; ctx.textAlign = 'center';
-    const txt = Math.round(d / 10) + ' m';
+    const txt = t('hud.meters', { d: Math.round(d / 10) });
     ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillText(txt, ax + 1, ay + 21);
     ctx.fillStyle = '#fff'; ctx.fillText(txt, ax, ay + 20);
     ctx.textAlign = 'left';
@@ -882,7 +881,7 @@ function drawCar(c) {
     }
     ctx.fillStyle = '#16181e'; roundRect(-8, -4, 16, 8, 2); ctx.fill();
     ctx.fillStyle = '#ffd23a'; ctx.font = 'bold 7px Trebuchet MS'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('TAXI', 0, 0.5);
+    ctx.fillText(t('lm.taxi'), 0, 0.5);
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   }
   if (c.livery === 'ambulance') {                    // ambulanza: strisce e croce rossa

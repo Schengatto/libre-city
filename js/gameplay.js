@@ -9,8 +9,8 @@ function updateHealPads() {
   for (const lm of landmarks) {
     if (lm.type !== 'hospital' || dist(player.x, player.y, lm.door.x, lm.door.y) >= 26) continue;
     if (player.health >= 100) return;
-    if (cash >= 25) { cash -= 25; player.health = 100; updateHealth(); updateCash(); toast('🏥 Curato! (−$25)'); sfx.coin(); }
-    else if (healMsgCd === 0) { toast('🏥 Ti servono $25 per farti curare'); healMsgCd = 150; }
+    if (cash >= 25) { cash -= 25; player.health = 100; updateHealth(); updateCash(); toast(t('heal.done')); sfx.coin(); }
+    else if (healMsgCd === 0) { toast(t('heal.need')); healMsgCd = 150; }
     return;
   }
 }
@@ -30,26 +30,26 @@ function weaponKey(i) {
   if (authClient()) { net.weaponReq = i; return; }   // equipaggia/compra: lo fa il server
   const w = WEAPONS[i];
   if (player.owned[i]) {                              // già tua: la impugni
-    if (player.weaponIdx !== i) { player.weaponIdx = i; updateWeapon(); toast(`${w.icon} ${w.name} equipaggiata`); sfx.door(); }
+    if (player.weaponIdx !== i) { player.weaponIdx = i; updateWeapon(); toast(t('shop.equipped', { icon: w.icon, name: wName(w) })); sfx.door(); }
     return;
   }
   if (nearGunshop()) {
     if (cash >= w.price) {
       cash -= w.price; player.owned[i] = true; player.weaponIdx = i;
       updateCash(); updateWeapon();
-      toast(`🛒 ${w.name} acquistata! (−$${w.price})`); sfx.coin();
-    } else { toast(`💸 Ti servono $${w.price} per ${w.name}`); sfx.err(); }
-  } else { toast(`🔒 ${w.name} si compra all'ARMERIA`); sfx.err(); }
+      toast(t('shop.bought', { name: wName(w), price: w.price })); sfx.coin();
+    } else { toast(t('shop.tooPoor', { name: wName(w), price: w.price })); sfx.err(); }
+  } else { toast(t('shop.locked', { name: wName(w) })); sfx.err(); }
 }
 
 // ---------- Crimini & ricercato ----------
-function commitCrime(amount, msg) {
+function commitCrime(amount, key) {
   const before = wanted;
   wantedHeat = clamp(wantedHeat + amount, 0, 5.99);
   crimeCd = 60 * 9;
   wanted = Math.floor(wantedHeat);
   updateStars();
-  if (wanted > before) { toast(msg || '⭐ Livello ricercato: ' + wanted); flashSiren(); }
+  if (wanted > before) { toast(key ? t(key) : t('wanted.level', { n: wanted })); flashSiren(); }
 }
 function flashSiren() { shake(6, 8); }
 
@@ -157,9 +157,9 @@ function punchPed(p, w) {
   if (p.punches >= PUNCH_KILL) {                      // terzo pugno: steso
     knockPed(p, player.aim, w.knock);
     addScore(pedScore(p), p.x, p.y);
-    if (p.role === 'cop') commitCrime(1.2, '🚨 Hai steso un poliziotto a pugni!');
+    if (p.role === 'cop') commitCrime(1.2, 'crime.punchCop');
     else if (p.role === 'soldier') armyAlertT = ARMY_ALERT_T;
-    else if (p.role !== 'robber') { cash += 3; commitCrime(0.6, '🚨 Hai steso un passante a pugni!'); }
+    else if (p.role !== 'robber') { cash += 3; commitCrime(0.6, 'crime.punchPed'); }
     return;
   }
   // ferito ma ancora in piedi: barcolla via in preda al panico
@@ -167,7 +167,7 @@ function punchPed(p, w) {
   p.dir = { x: Math.cos(a), y: Math.sin(a) };
   p.speed = 2.4; p.panic = 60; p.thinkCd = 20;
   pedSay(p, SAY_PANIC, '#c22822', true);
-  if (p.role === 'cop') commitCrime(0.6, '🚨 Hai colpito un poliziotto!');
+  if (p.role === 'cop') commitCrime(0.6, 'crime.hitCop');
   else if (p.role === 'soldier') armyAlertT = ARMY_ALERT_T;
 }
 
@@ -252,7 +252,7 @@ function runOver(c, byPlayer) {
           cash += 5;
           addScore(pedScore(p), p.x, p.y);
           commitCrime(p.role === 'cop' ? 1.1 : 0.7,
-            p.role === 'cop' ? '🚨 Hai investito un poliziotto!' : '🚨 Hai investito un passante!');
+            p.role === 'cop' ? 'crime.runCop' : 'crime.runPed');
         });
       }
     }
@@ -286,19 +286,21 @@ function knockPed(p, angle, force) {
   sfx.thud();
 }
 // ---------- Frasi dei pedoni: fumetti contestuali sopra la testa ----------
-const SAY_GREET   = ['Ciao {nome}!', 'Ehi, ciao!', 'Bella giornata, eh?', 'Buongiorno!', 'Che traffico oggi…', 'Salve!', 'Hai visto che città?'];
-const SAY_WANTED  = ['È lui il ricercato!', 'Aiuto, un criminale!', 'Chiamate la polizia!', 'La polizia ti cerca!', 'Scappate, è lui!', 'Eccolo! È qui!'];
-const SAY_PANIC   = ['AAAH!', 'Attento!', 'È impazzito!', 'Aiutooo!', 'Via! Via!', 'Al pazzo!'];
-const SAY_COP     = ['FERMO!', 'Mani in alto!', 'Fermati, {nome}!', 'In nome della legge!', 'Non scappare!', 'Ti abbiamo trovato!'];
-const SAY_FARE    = ['TAXI! Sono qui!', 'Mi porti in centro?', 'Ho fretta!', 'Finalmente, il taxi!'];
-const SAY_HUNGRY  = ['Che fame!', 'La mia pizza?', 'Muoio di fame!', 'Sbrigati, si fredda!'];
-const SAY_INJURED = ['AIUTO!', 'Mi fa male tutto…', "Un'ambulanza, presto!", 'Non mi sento bene…'];
-const SAY_ROBBER  = ['Non mi prenderai mai!', 'Ah ah, addio!', 'Più veloce, sbirro!', 'Il malloppo è mio!'];
-const SAY_CARJACK = ['Al ladro! Al ladro!', 'Torna qui subito!', 'Ti ho visto, sai?!', 'Che maleducato!', 'Chiamo la polizia!', 'Fermati, brigante!', 'La mia assicurazione!'];
-// fa dire una frase al pedone; il cooldown evita che parli a raffica
-function pedSay(p, list, col, force) {
+// le frasi vivono in js/i18n.js: qui restano solo le CHIAVI delle liste
+const SAY_GREET   = 'say.greet';
+const SAY_WANTED  = 'say.wanted';
+const SAY_PANIC   = 'say.panic';
+const SAY_COP     = 'say.cop';
+const SAY_FARE    = 'say.fare';
+const SAY_HUNGRY  = 'say.hungry';
+const SAY_INJURED = 'say.injured';
+const SAY_ROBBER  = 'say.robber';
+const SAY_CARJACK = 'say.carjack';
+// fa dire una frase al pedone; il cooldown evita che parli a raffica.
+// `key` è la chiave di una lista di frasi (tList) — vedi js/i18n.js.
+function pedSay(p, key, col, force) {
   if (!force && p.sayCd > 0) return;
-  p.say = pick(list).replace('{nome}', playerName || 'tu'); p.sayCol = col || '#20242e';
+  p.say = pick(tList(key)).split('{name}').join(playerName || t('pvp.rival')); p.sayCol = col || '#20242e';
   p.sayT = 110; p.sayCd = rndi(300, 600);
 }
 // da tranquilli i pedoni preferiscono marciapiedi, prati e vicoli, non l'asfalto.
@@ -342,7 +344,7 @@ function updatePed(p) {
       if (p.getsUp) {                               // il guidatore scippato si rialza furibondo
         p.ko = false; p.getsUp = false; p.panic = 0;
         p.angryT = 60 * 6;
-        pedSay(p, [p.copDress ? 'Ehi! La volante!' : p.stolenBike ? 'Ehi! La mia moto!' : 'Ehi! La mia auto!'], '#c22822', true);
+        pedSay(p, p.copDress ? 'say.stolenPolice' : p.stolenBike ? 'say.stolenBike' : 'say.stolenCar', '#c22822', true);
         sfx.yell(hear(p.x, p.y, 700));
       } else p.dead = true;
     }
@@ -816,9 +818,9 @@ function updateBullets() {
           asPlayer(b.owner || player, () => addScore(pedScore(p), p.x, p.y));
           // il crimine (stelle) va attribuito a CHI HA SPARATO, non al player globale
           // corrente (i proiettili si risolvono nella fase mondo condivisa)
-          if (p.role === 'cop') asPlayer(b.owner || player, () => commitCrime(1.2, '🚨 Hai sparato a un poliziotto!'));
+          if (p.role === 'cop') asPlayer(b.owner || player, () => commitCrime(1.2, 'crime.shootCop'));
           else if (p.role === 'soldier') armyAlertT = ARMY_ALERT_T;   // sparare ai soldati li scatena
-          else if (p.role !== 'robber') asPlayer(b.owner || player, () => { cash += 3; commitCrime(0.6, '🚨 Hai sparato a un passante!'); });
+          else if (p.role !== 'robber') asPlayer(b.owner || player, () => { cash += 3; commitCrime(0.6, 'crime.shootPed'); });
           hit = true; break;
         }
       }
@@ -883,7 +885,7 @@ function damageCar(c, dmg, angle, chain = 0) {
 // il veicolo prende fuoco: miccia accesa, conviene allontanarsi
 function igniteCar(c) {
   c.burning = true; c.burnSeed = rnd(0, TAU); c.burnWet = 0;
-  if (c.driver === 'player') toast('🔥 La macchina è in fiamme! Scendi prima che esploda!');
+  if (c.driver === 'player') toast(t('veh.burning'));
 }
 // veicoli in fiamme: il fuoco li consuma piano piano finché non esplodono;
 // i passanti scappano dal rogo e l'idrante dell'autopompa può ancora spegnerli
@@ -983,8 +985,8 @@ function updatePops() {
 // ---------- Punteggio, serie di uccisioni e taglie (PvP multigiocatore) ----------
 const KILL_POINTS = 500;                          // punti per stendere un ALTRO giocatore (la ricompensa più alta)
 // nomi delle serie ravvicinate, per il messaggio a schermo
-const STREAK_NAME = { 2: 'Doppia uccisione!', 3: 'Tripla uccisione!', 4: 'Quadrupla!',
-                      5: 'Scatenato!', 7: 'Inarrestabile!', 10: 'LEGGENDARIO!' };
+const STREAK_KEY = { 2: 'streak.2', 3: 'streak.3', 4: 'streak.4',
+                     5: 'streak.5', 7: 'streak.7', 10: 'streak.10' };
 // più uccisioni fai senza morire, più alta è la TAGLIA sulla tua testa: chi ti
 // stende la incassa (in punti e in soldi). Diventi il bersaglio numero uno.
 function bountyForStreak(s) {
@@ -996,9 +998,13 @@ function bountyForStreak(s) {
 }
 // un messaggio per un giocatore: in locale è un toast immediato, sul server
 // autoritativo va in coda e parte col prossimo snapshot (vedi snapshotFor).
-function pushEvent(pl, text) {
-  if (!MP) { toast(text); return; }
-  (pl.events || (pl.events = [])).push(text);
+// `k` è una chiave di traduzione e `p` i suoi parametri: il TESTO lo compone il
+// client che riceve l'evento, così ognuno lo legge nella PROPRIA lingua.
+// `sk` è la chiave di un suffisso facoltativo (la serie di uccisioni), appeso con ' · '.
+function pushEvent(pl, k, p, sk) {
+  const ev = { k }; if (p) ev.p = p; if (sk) ev.s = sk;
+  if (!MP) { toast(evText(ev)); return; }
+  (pl.events || (pl.events = [])).push(ev);
 }
 // accredita a `killer` l'uccisione di `victim`. `vb` è la taglia della vittima
 // CATTURATA PRIMA del colpo (startDown l'azzera), che il killer incassa.
@@ -1008,13 +1014,13 @@ function creditKill(killer, victim, vb) {
   killer.score  = (killer.score  | 0) + KILL_POINTS;
   victim.deaths = (victim.deaths | 0) + 1;
   vb = vb | 0;
-  const streakMsg = STREAK_NAME[killer.streak] ? ' · ' + STREAK_NAME[killer.streak] : '';
-  pushEvent(killer, (vb > 0 ? `💀 Hai steso ${victim.name}! Taglia +$${vb}` : `💀 Hai steso ${victim.name}!`) + streakMsg);
-  pushEvent(victim, `☠️ ${killer.name} ti ha steso!`);
+  pushEvent(killer, vb > 0 ? 'pvp.killedBounty' : 'pvp.killed',
+            { name: victim.name, bounty: vb }, STREAK_KEY[killer.streak]);
+  pushEvent(victim, 'pvp.down', { name: killer.name });
   if (vb > 0) { asPlayer(killer, () => { cash += vb; }); killer.score += vb; }   // incassa la taglia
   // la nuova serie può alzare la taglia sulla testa del killer
   const nb = bountyForStreak(killer.streak);
-  if (nb > (killer.bounty | 0)) pushEvent(killer, `🎯 Taglia su di te: $${nb} — sei un bersaglio!`);
+  if (nb > (killer.bounty | 0)) pushEvent(killer, 'pvp.onYou', { n: nb });
   killer.bounty = nb;
 }
 
@@ -1061,7 +1067,7 @@ function startDown(kind) {
   if (el) {
     el.classList.remove('hidden');
     el.classList.toggle('busted', kind === 'busted');
-    $('#bigTitle').textContent = kind === 'busted' ? 'Arrestato' : 'Ti hanno ucciso';
+    $('#bigTitle').textContent = t(kind === 'busted' ? 'big.busted' : 'big.dead');
     $('#bigCount').textContent = '3';
   }
 }
@@ -1081,8 +1087,7 @@ function respawnPlayer() {
   const p = best ? best.door : (randomRoadNear(player.x, player.y, 500, 1100) || nodes[Math.floor(nodes.length / 2)]);
   player.x = p.x; player.y = p.y;
   const el = $('#bigMsg'); if (el) el.classList.add('hidden');
-  toast(downKind === 'busted' ? '👮 Rilasciato dalla centrale — comportati bene!'
-                              : '🏥 Rimesso in sesto dall\'ospedale');
+  toast(t(downKind === 'busted' ? 'respawn.busted' : 'respawn.dead'));
   downKind = null;
 }
 

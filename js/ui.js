@@ -33,7 +33,7 @@ function updateWeapon() {
   updateWpnBar();
   const el = $('#weapon'); if (!el) return;
   const w = WEAPONS[player.weaponIdx];
-  el.textContent = w.melee ? `${w.icon} ${w.name}` : `${w.icon} ${w.name} · ∞`;
+  el.textContent = w.melee ? `${w.icon} ${wName(w)}` : `${w.icon} ${wName(w)} · ∞`;
 }
 // marcia attuale: visibile solo alla guida (R in retromarcia)
 function updateGear() {
@@ -41,7 +41,7 @@ function updateGear() {
   const c = player.car;
   el.classList.toggle('hidden', !c);
   if (!c) return;
-  const txt = c.speed < -0.3 ? '⚙️ R' : `⚙️ ${c.gear || 1}ª`;
+  const txt = c.speed < -0.3 ? t('hud.gearR') : t('hud.gear', { g: c.gear || 1 });
   if (el.textContent !== txt) el.textContent = txt;
 }
 let toastT = 0;
@@ -84,7 +84,7 @@ function loop(nowT) {
 // =========================================================
 //  MENU PRINCIPALE · IMPOSTAZIONI · CLASSIFICA · PAUSA
 // =========================================================
-const PANELS = ['namePanel', 'menuPanel', 'spPanel', 'settingsPanel', 'scoresPanel', 'howtoPanel',
+const PANELS = ['langPanel', 'namePanel', 'menuPanel', 'spPanel', 'settingsPanel', 'scoresPanel', 'howtoPanel',
                 'mpPanel', 'hostPanel', 'invitePanel', 'joinPanel'];
 function showPanel(id) {
   for (const p of PANELS) { const el = $('#' + p); if (el) el.classList.toggle('hidden', p !== id); }
@@ -92,7 +92,14 @@ function showPanel(id) {
 function showMenu() {
   const nm = $('#menuName'); if (nm) nm.textContent = playerName;
   const lb = $('#loadBtn'); if (lb) lb.classList.toggle('hidden', !hasSave());   // 💾 solo se c'è un salvataggio
+  updateHiScore();                                                              // dopo un cambio lingua va riscritto
   showPanel('menuPanel');
+}
+// ---- HI-SCORE da cabinato nella schermata iniziale (miglior punteggio salvato) ----
+function updateHiScore() {
+  const el = $('#hiScore'); if (!el) return;
+  const best = store.get('scores', [])[0];
+  if (best) el.textContent = t('hi.score', { score: best.score, name: String(best.name).toUpperCase() });
 }
 
 // ---- classifica (top 10 in localStorage) ----
@@ -119,8 +126,8 @@ function renderScores() {
       ['', i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1],
       ['nm', s.name],
       ['sc', '$' + s.score],
-      ['', s.min > 0 ? s.min + ' min' : 'libera'],
-      ['', new Date(s.date).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' })],
+      ['', s.min > 0 ? t('common.min_short', { n: s.min }) : t('common.free')],
+      ['', new Date(s.date).toLocaleDateString(dateLocale(), { day: '2-digit', month: '2-digit' })],
     ];
     for (const [cls, txt] of cells) {
       const td = document.createElement('td');
@@ -139,7 +146,7 @@ function togglePause() {
   const el = $('#pause'); if (el) el.classList.toggle('hidden', !paused);
   const pc = $('#pauseShare'); if (pc) pc.classList.toggle('hidden', !netActive());   // invito in multigiocatore
   const ps = $('#pauseSave');                                                         // 💾 salva: solo in singolo
-  if (ps) { ps.classList.toggle('hidden', netActive()); ps.textContent = '💾 Salva partita'; ps.disabled = false; }
+  if (ps) { ps.classList.toggle('hidden', netActive()); ps.textContent = t('pause.save'); ps.disabled = false; }
   if (paused) { engineGain(0); for (const k in keys) keys[k] = false; mDownL = false; }
 }
 
@@ -152,7 +159,7 @@ function endGame(reason) {
   const bm = $('#bigMsg'); if (bm) bm.classList.add('hidden');
   const lad = $('#ladder'); if (lad) lad.classList.add('hidden');
   const rank = saveScore();
-  const t = $('#goTitle'); if (t) t.textContent = reason === 'time' ? '⏱ Tempo scaduto!' : '🏁 Partita terminata';
+  const gt = $('#goTitle'); if (gt) gt.textContent = t(reason === 'time' ? 'go.time' : 'go.quit');
   const sc = netActive() ? (net.score | 0) : (player.score | 0);
   const s = $('#goScore'); if (s) s.textContent = `🏆 ${sc} · $${cash}`;
   const r = $('#goRank');
@@ -163,10 +170,11 @@ function endGame(reason) {
     renderLadder();
     if (glw) glw.classList.remove('hidden');
     const rows = ladderRows(), my = rows.findIndex(x => x.me) + 1;
-    if (r) r.textContent = `${playerName}, sei ${my}º su ${rows.length} — 💀 ${net.kills} · ☠️ ${net.deaths}`;
+    if (r) r.textContent = t('go.mpRank', { name: playerName, rank: my, tot: rows.length,
+                                            kills: net.kills, deaths: net.deaths });
   } else {
     if (glw) glw.classList.add('hidden');
-    if (r) r.textContent = rank > 0 ? `${playerName}, sei ${rank}º in classifica! 🏆` : 'Peccato, niente top 10 stavolta…';
+    if (r) r.textContent = rank > 0 ? t('go.rank', { name: playerName, rank }) : t('go.noRank');
   }
   const go = $('#gameOver'); if (go) go.classList.remove('hidden');
   sfx.coin();
@@ -190,10 +198,10 @@ function startMatch(resume) {
   const wpn = $('#weapon'); if (wpn) wpn.style.display = peace ? 'none' : '';
   const wb = $('#wpnBar'); if (wb) wb.style.display = peace ? 'none' : '';
   updateStars(); updateHealth(); updateCash(); updateScore(); updateWeapon(); updateTimer();
-  const hi = usingTouch ? 'Avvicinati a un\'auto e tocca 🚗' : 'Ruba un\'auto con E';
-  const mp = netActive() ? (usingTouch ? ' · 🏆 per la classifica' : ' · Tab per la classifica') : '';
-  toast(resume ? `Bentornato a Libre City, ${playerName}! 🏙️ Partita ripresa.`
-               : `Benvenuto a Libre City, ${playerName}! 🏙️  ${hi}${mp}`);
+  const hi = t(usingTouch ? 'game.hintTouch' : 'game.hintKb');
+  const mp = netActive() ? t(usingTouch ? 'game.mpLadderTouch' : 'game.mpLadderKb') : '';
+  toast(resume ? t('game.welcomeBack', { name: playerName })
+               : t('game.welcome', { name: playerName, hint: hi, mp }));
   _loopLast = 0; _loopAcc = 0;                    // riparti puliti (niente recupero dal match precedente)
   loop();
 }
@@ -219,17 +227,20 @@ onClick('spGo', () => {
 // ---- navigazione dei pannelli ----
 function onClick(id, fn) { const el = $('#' + id); if (el) el.onclick = fn; }
 onClick('settingsBtn', () => {
-  const n = $('#setName'), d = $('#setDuration');
+  const n = $('#setName'), a = $('#setAudio'), l = $('#setLang');
   if (n) n.value = playerName;
-  if (d) d.value = String(gameMinutes);
+  if (a) a.value = audioOn ? 'on' : 'off';
+  if (l) l.value = LANG;
   showPanel('settingsPanel');
 });
 onClick('settingsSave', () => {
-  const n = $('#setName'), d = $('#setDuration');
+  const n = $('#setName'), a = $('#setAudio'), l = $('#setLang');
   const name = n ? n.value.trim() : '';
-  if (!name) { if (n) { n.focus(); n.placeholder = 'Serve un nome!'; } return; }
+  if (!name) { if (n) { n.focus(); n.placeholder = t('name.required'); } return; }
   playerName = name; store.set('name', playerName);
-  gameMinutes = d ? +d.value : 0; store.set('minutes', gameMinutes);
+  audioOn = a ? a.value === 'on' : true; store.set('audio', audioOn);
+  applyAudioSetting();                           // effetto immediato, anche a partita in corso
+  if (l && l.value !== LANG) setLang(l.value);   // riapplica subito tutte le scritte
   showMenu();
 });
 onClick('settingsBack', showMenu);
@@ -242,13 +253,13 @@ onClick('resumeBtn', togglePause);
 onClick('pauseSave', () => {
   const ok = saveGame();
   const ps = $('#pauseSave');
-  if (ps) { ps.textContent = ok ? '✅ Partita salvata' : '⚠️ Salvataggio non riuscito'; ps.disabled = ok; }
-  if (ok) toast('💾 Partita salvata');
+  if (ps) { ps.textContent = t(ok ? 'pause.saved' : 'pause.saveFail'); ps.disabled = ok; }
+  if (ok) toast(t('game.saved'));
 });
 // 💾 riprendi la partita salvata: rigenera la città giusta (reload su #room=…) e applica lo stato
 onClick('loadBtn', () => {
   const s = store.get('save', null);
-  if (!hasSave() || !s) { toast('Nessuna partita salvata'); return; }
+  if (!hasSave() || !s) { toast(t('game.noSave')); return; }
   if (s.code === ROOM_CODE) {                     // città già giusta: applica e via
     if (applySave(s)) startMatch(true);
     return;
@@ -266,7 +277,7 @@ bindBtn('btnPause', togglePause);
 //  MULTIGIOCATORE: crea/entra, invito, avvio (la rete è in js/net.js)
 // =========================================================
 onClick('mpBtn', () => {
-  if (!netServerUrl()) { toast('🌐 Server multigiocatore non configurato'); return; }
+  if (!netServerUrl()) { toast(t('mp.noServer')); return; }
   showPanel('mpPanel');
 });
 onClick('mpBack', showMenu);
@@ -275,16 +286,10 @@ onClick('mpJoinBtn', () => showJoinPanel());
 onClick('hostBack', () => showPanel('mpPanel'));
 onClick('joinBack', () => showPanel('mpPanel'));
 
-// messaggi d'errore della rete in italiano
+// messaggi d'errore della rete, tradotti (chiave sconosciuta → messaggio generico)
+const NET_ERRS = ['offline', 'noserver', 'pass', 'full', 'notfound', 'exists', 'badcode', 'timeout'];
 function netErrText(err) {
-  return { offline: 'Impossibile raggiungere il server — controlla la connessione',
-           noserver: 'Server multigiocatore non configurato',
-           pass: 'Password sbagliata',
-           full: 'La partita è al completo',
-           notfound: 'Partita non trovata — controlla il codice stanza',
-           exists: 'Esiste già una partita con questo codice: ricarica la pagina',
-           badcode: 'Codice stanza non valido',
-           timeout: 'Nessuna risposta dal server — riprova tra poco' }[err] || ('Errore di rete: ' + err);
+  return NET_ERRS.includes(err) ? t('net.err.' + err) : t('net.err.other', { err });
 }
 
 // ---- ospita: crea la stanza e mostra il pannello d'invito ----
@@ -306,7 +311,7 @@ onClick('hostGo', () => {
   // l'ingresso con un codice, ricarichiamo sulla stanza giusta; al ritorno,
   // riconosciuto l'hostIntent, creiamo davvero la stanza e mostriamo l'invito.
   store.set('hostIntent', { code, pass, maxP, mins, name: playerName });
-  if (st) st.textContent = 'Creazione della stanza…';
+  if (st) st.textContent = t('host.creating');
   location.hash = 'room=' + code;
   location.reload();
 });
@@ -332,8 +337,8 @@ onClick('joinGo', () => {
   const name = $('#joinName') ? $('#joinName').value.trim() : playerName;
   const code = ($('#joinCode') ? $('#joinCode').value : '').trim().toUpperCase();
   const pass = $('#joinPass') ? $('#joinPass').value : '';
-  if (!name) { const n = $('#joinName'); if (n) { n.focus(); n.placeholder = 'Serve un nome!'; } return; }
-  if (!/^[A-Z0-9]{4,12}$/.test(code)) { if (st) st.textContent = 'Codice non valido (es. K7PF2M)'; return; }
+  if (!name) { const n = $('#joinName'); if (n) { n.focus(); n.placeholder = t('name.required'); } return; }
+  if (!/^[A-Z0-9]{4,12}$/.test(code)) { if (st) st.textContent = t('join.badCode'); return; }
   playerName = name; store.set('name', playerName);
   if (code !== ROOM_CODE) {
     // la città è già stata generata con un altro seme: memorizza l'intento
@@ -344,7 +349,7 @@ onClick('joinGo', () => {
     return;
   }
   store.set('joinIntent', null);
-  if (st) st.textContent = 'Connessione…';
+  if (st) st.textContent = t('join.connecting');
   netJoin(code, pass, err => {
     if (err) { if (st) st.textContent = netErrText(err); return; }
     startMatch();
@@ -360,13 +365,24 @@ for (const id of ['joinCode', 'joinPass', 'joinName']) {
 function confirmName() {
   const inp = $('#nameInput');
   const name = inp ? inp.value.trim() : '';
-  if (!name) { if (inp) { inp.focus(); inp.placeholder = 'Serve un nome!'; } return; }
+  if (!name) { if (inp) { inp.focus(); inp.placeholder = t('name.required'); } return; }
   playerName = name; store.set('name', playerName);
   showMenu();
 }
 onClick('nameOk', confirmName);
 const nameInput = $('#nameInput');
 if (nameInput) nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') confirmName(); });
+
+// ---- primo avvio: scelta della lingua (prima di tutto il resto) ----
+// Dopo la scelta si prosegue col nome (o direttamente col menu, se il nome c'è già).
+function chooseLang(l) {
+  setLang(l);
+  if (ROOM_FROM_URL) showJoinPanel();            // arrivato da un link d'invito: prosegue lì (chiede il nome)
+  else if (playerName) showMenu();
+  else { showPanel('namePanel'); if (nameInput) nameInput.focus(); }
+}
+onClick('langItBtn', () => chooseLang('it'));
+onClick('langEnBtn', () => chooseLang('en'));
 
 // all'avvio decidiamo QUALE schermata mostrare in base a cosa ci ha portato qui
 // (un reload di "Riprendi partita", la creazione di una stanza, un link d'invito…).
@@ -412,15 +428,12 @@ else if (_hostIntent && ROOM_FROM_URL === _hostIntent.code) {
     netRefreshBadge();
   });
 }
+// primo avvio in assoluto: prima di tutto la lingua (poi nome, poi menu)
+else if (!langChosen()) showPanel('langPanel');
 // arrivati da un link d'invito (#room=…): dritti al pannello "entra in partita"
 // (che chiede anche il nome, quindi va bene pure al primo avvio)
 else if (ROOM_FROM_URL) showJoinPanel();
 else if (playerName) showMenu();
 else { showPanel('namePanel'); if (nameInput) nameInput.focus(); }
 
-// ---- HI-SCORE da cabinato nella schermata iniziale (miglior punteggio salvato) ----
-(function () {
-  const el = $('#hiScore'); if (!el) return;
-  const best = store.get('scores', [])[0];
-  if (best) el.textContent = `HI-SCORE  $${best.score} — ${String(best.name).toUpperCase()}`;
-})();
+updateHiScore();

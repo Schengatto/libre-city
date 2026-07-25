@@ -3,15 +3,25 @@
 // =========================================================
 //  AUDIO (sintesi procedurale)
 // =========================================================
-let AC = null, engine = null;
+// MASTER: rubinetto unico attraversato da OGNI suono → l'interruttore audio delle
+// impostazioni è un semplice guadagno 0/1, senza toccare il contesto né i singoli suoni.
+let AC = null, MASTER = null, engine = null;
 function initAudio() {
   if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
   try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { AC = null; }
+  if (!AC) return;
+  MASTER = AC.createGain();
+  MASTER.gain.value = audioOn ? 1 : 0;
+  MASTER.connect(AC.destination);
 }
-// uscita audio: diretta, oppure attraverso un panner stereo (suoni "nel mondo")
+// chiamata quando si salvano le impostazioni: rampa breve per non fare "click"
+function applyAudioSetting() {
+  if (AC && MASTER) MASTER.gain.setTargetAtTime(audioOn ? 1 : 0, AC.currentTime, 0.02);
+}
+// uscita audio: diretta sul master, oppure attraverso un panner stereo (suoni "nel mondo")
 function dest(pan) {
-  if (!pan || !AC.createStereoPanner) return AC.destination;
-  const p = AC.createStereoPanner(); p.pan.value = clamp(pan, -1, 1); p.connect(AC.destination);
+  if (!pan || !AC.createStereoPanner) return MASTER;
+  const p = AC.createStereoPanner(); p.pan.value = clamp(pan, -1, 1); p.connect(MASTER);
   return p;
 }
 function tone(freq, dur, type, vol, sweepTo, when, pan) {
@@ -94,7 +104,7 @@ function driveEngine(e, vol, freq, smooth) {
 }
 function engineGain(vol, freq) {
   if (!AC) return;
-  if (!engine) engine = makeEngine(AC.destination);
+  if (!engine) engine = makeEngine(MASTER);
   driveEngine(engine, vol, freq, 0.08);
 }
 // brusio dei motori del traffico: una voce persistente che segue
@@ -110,7 +120,7 @@ function updateTrafficEngine() {
     const v = h.v * 0.045 * clamp(Math.abs(c.speed) / 4, 0.35, 1);
     if (v > vol) { vol = v; freq = 44 + Math.abs(c.speed) * 11; }
   }
-  if (!trafEng) trafEng = makeEngine(AC.destination);
+  if (!trafEng) trafEng = makeEngine(MASTER);
   driveEngine(trafEng, vol, freq, 0.2);
 }
 const sfx = {

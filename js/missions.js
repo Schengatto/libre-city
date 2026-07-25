@@ -15,7 +15,7 @@ function spawnFare() {
   f.speed = 0; f.dir = { x: 0, y: 0 };
   peds.push(f);
   taxi.phase = 'pickup'; taxi.fare = f;
-  toast('🚕 Un cliente ti sta aspettando — segui la freccia!');
+  toast(t('taxi.new'));
 }
 function startRide() {
   const f = taxi.fare;
@@ -27,7 +27,7 @@ function startRide() {
   const len = dist(player.x, player.y, d.x, d.y);
   taxi.pay = 15 + Math.round(len * 0.022 / 5) * 5;                // compenso in base alla distanza
   taxi.timer = Math.round(len / 2.5) + 60 * 4;                    // arriva in tempo → mancia
-  toast('🧳 Cliente a bordo! Portalo a destinazione');
+  toast(t('taxi.aboard'));
   sfx.door();
 }
 function completeRide() {
@@ -35,8 +35,7 @@ function completeRide() {
   cash += taxi.pay + tip; updateCash(); sfx.coin();
   addScore(SCORE.mission.taxi, player.x, player.y);
   taxi.rides++;
-  toast(tip > 0 ? `💰 Corsa completata! +$${taxi.pay} · mancia +$${tip} ⏱️`
-                : `💰 Corsa completata! +$${taxi.pay}`);
+  toast(tip > 0 ? t('taxi.doneTip', { pay: taxi.pay, tip }) : t('taxi.done', { pay: taxi.pay }));
   const c = player.car;                                           // il cliente scende e se ne va
   peds.push(makePed(c.x + Math.cos(c.angle + Math.PI / 2) * 30, c.y + Math.sin(c.angle + Math.PI / 2) * 30, 'civ'));
   taxi.phase = 'idle'; taxi.dest = null; taxi.waitCd = 150;       // fra poco un altro cliente
@@ -44,16 +43,16 @@ function completeRide() {
 function cancelTaxi(msg) {
   if (taxi.fare) { taxi.fare.role = 'civ'; taxi.fare.thinkCd = 0; }   // il cliente rinuncia e passeggia
   taxi.phase = 'idle'; taxi.fare = null; taxi.dest = null; taxi.waitCd = 0;
-  if (msg) toast(msg);
+  if (msg) toast(t(msg));
 }
 function updateTaxi() {
   if (taxi.waitCd > 0 && player.car && player.car.isTaxi && --taxi.waitCd === 0) spawnFare();
   if (!taxiActive()) return;
   const c = player.car;
-  if (!c || !c.isTaxi) { cancelTaxi('🚕 Corsa annullata'); return; }   // sceso o taxi distrutto
+  if (!c || !c.isTaxi) { cancelTaxi('taxi.cancel'); return; }   // sceso o taxi distrutto
   if (taxi.phase === 'pickup') {
     const f = taxi.fare;
-    if (!f || f.ko || f.dead) { cancelTaxi('😵 Il cliente è rimasto a terra… corsa annullata'); taxi.waitCd = 240; return; }
+    if (!f || f.ko || f.dead) { cancelTaxi('taxi.lost'); taxi.waitCd = 240; return; }
     if (dist(c.x, c.y, f.x, f.y) < 62 && Math.abs(c.speed) < 0.8) startRide();
   } else if (taxi.phase === 'ride') {
     if (taxi.timer > 0) taxi.timer--;
@@ -82,14 +81,14 @@ function spawnOrder() {
   cl.speed = 0; cl.dir = { x: 0, y: 0 };
   peds.push(cl);
   pizza.phase = 'pickup'; pizza.shop = shop; pizza.client = cl;
-  toast('🍕 Nuovo ordine! Ritira il cibo alla PIZZERIA — segui la freccia');
+  toast(t('pizza.new'));
 }
 function pickupFood() {
   const len = dist(pizza.shop.door.x, pizza.shop.door.y, pizza.client.x, pizza.client.y);
   pizza.pay = 20 + Math.round(len * 0.025 / 5) * 5;   // compenso in base alla distanza
   pizza.timer = Math.round(len / 2.6) + 60 * 4;       // consegna calda → mancia
   pizza.phase = 'deliver';
-  toast('🛵 Ordine nel bauletto! Consegnalo finché è caldo');
+  toast(t('pizza.aboard'));
   sfx.door();
 }
 function completeDelivery() {
@@ -97,8 +96,7 @@ function completeDelivery() {
   cash += pizza.pay + tip; updateCash(); sfx.coin();
   addScore(SCORE.mission.pizza, player.x, player.y);
   pizza.jobs++;
-  toast(tip > 0 ? `💰 Consegnata calda! +$${pizza.pay} · mancia +$${tip} 🔥`
-                : `💰 Pizza consegnata! +$${pizza.pay}`);
+  toast(tip > 0 ? t('pizza.doneTip', { pay: pizza.pay, tip }) : t('pizza.done', { pay: pizza.pay }));
   const cl = pizza.client;                            // il cliente ringrazia e se ne va
   if (cl) { cl.role = 'civ'; cl.thinkCd = 0; }
   pizza.phase = 'idle'; pizza.shop = null; pizza.client = null;
@@ -107,15 +105,15 @@ function completeDelivery() {
 function cancelPizza(msg) {
   if (pizza.client) { pizza.client.role = 'civ'; pizza.client.thinkCd = 0; }   // il cliente ordina altrove
   pizza.phase = 'idle'; pizza.shop = null; pizza.client = null; pizza.waitCd = 0;
-  if (msg) toast(msg);
+  if (msg) toast(t(msg));
 }
 function updatePizza() {
   if (pizza.waitCd > 0 && player.car && player.car.isDelivery && --pizza.waitCd === 0) spawnOrder();
   if (!pizzaActive()) return;
   const c = player.car;
-  if (!c || !c.isDelivery) { cancelPizza('🍕 Consegna annullata'); return; }   // sceso o moto distrutta
+  if (!c || !c.isDelivery) { cancelPizza('pizza.cancel'); return; }   // sceso o moto distrutta
   const cl = pizza.client;
-  if (!cl || cl.ko || cl.dead) { cancelPizza('😵 Il cliente è rimasto a terra… consegna annullata'); pizza.waitCd = 240; return; }
+  if (!cl || cl.ko || cl.dead) { cancelPizza('pizza.lost'); pizza.waitCd = 240; return; }
   if (pizza.phase === 'pickup') {
     if (dist(c.x, c.y, pizza.shop.door.x, pizza.shop.door.y) < 70 && Math.abs(c.speed) < 0.9) pickupFood();
   } else if (pizza.phase === 'deliver') {
@@ -138,7 +136,7 @@ function spawnEmergency() {
   inj.speed = 0; inj.dir = { x: 0, y: 0 };
   peds.push(inj);
   rescue.phase = 'pickup'; rescue.patient = inj;
-  toast('🚑 Emergenza! Un ferito ha bisogno di te — segui la freccia');
+  toast(t('rescue.new'));
 }
 function loadPatient() {
   const inj = rescue.patient;
@@ -152,7 +150,7 @@ function loadPatient() {
   rescue.patient = null; rescue.phase = 'deliver'; rescue.hosp = hosp;
   rescue.pay = 30 + Math.round(hd * 0.03 / 5) * 5;    // compenso in base alla corsa
   rescue.timer = Math.round(hd / 2.5) + 60 * 4;       // arriva in fretta → bonus
-  toast('🩹 Ferito a bordo! Corri all\'OSPEDALE');
+  toast(t('rescue.aboard'));
   sfx.door();
 }
 function completeRescue() {
@@ -160,8 +158,7 @@ function completeRescue() {
   cash += rescue.pay + tip; updateCash(); sfx.coin();
   addScore(SCORE.mission.ambulance, player.x, player.y);
   rescue.jobs++;
-  toast(tip > 0 ? `💰 Paziente salvo! +$${rescue.pay} · bonus soccorso +$${tip} ⏱️`
-                : `💰 Paziente consegnato! +$${rescue.pay}`);
+  toast(tip > 0 ? t('rescue.doneTip', { pay: rescue.pay, tip }) : t('rescue.done', { pay: rescue.pay }));
   const d = rescue.hosp.door;                         // il paziente, curato, se ne va
   peds.push(makePed(d.x + rnd(-10, 10), d.y + rnd(-10, 10), 'civ'));
   rescue.phase = 'idle'; rescue.hosp = null; rescue.waitCd = 180;
@@ -169,16 +166,16 @@ function completeRescue() {
 function cancelRescue(msg) {
   if (rescue.patient) { rescue.patient.role = 'civ'; rescue.patient.thinkCd = 0; }   // si rialza da solo
   rescue.phase = 'idle'; rescue.patient = null; rescue.hosp = null; rescue.waitCd = 0;
-  if (msg) toast(msg);
+  if (msg) toast(t(msg));
 }
 function updateRescue() {
   if (rescue.waitCd > 0 && player.car && player.car.livery === 'ambulance' && --rescue.waitCd === 0) spawnEmergency();
   if (!rescueActive()) return;
   const c = player.car;
-  if (!c || c.livery !== 'ambulance') { cancelRescue('🚑 Soccorso annullato'); return; }   // sceso o mezzo distrutto
+  if (!c || c.livery !== 'ambulance') { cancelRescue('rescue.cancel'); return; }   // sceso o mezzo distrutto
   if (rescue.phase === 'pickup') {
     const inj = rescue.patient;
-    if (!inj || inj.ko || inj.dead) { cancelRescue('😵 Il ferito è stato travolto… soccorso annullato'); rescue.waitCd = 240; return; }
+    if (!inj || inj.ko || inj.dead) { cancelRescue('rescue.lost'); rescue.waitCd = 240; return; }
     if (dist(c.x, c.y, inj.x, inj.y) < 70 && Math.abs(c.speed) < 0.9) loadPatient();
   } else if (rescue.phase === 'deliver') {
     if (rescue.timer > 0) rescue.timer--;
@@ -207,8 +204,7 @@ function spawnCrime() {
   patrol.pay = 45;
   patrol.timer0 = Math.round(dist(player.x, player.y, p.x, p.y) / 2.2) + 60 * 14;
   patrol.timer = patrol.timer0;                       // scaduto il tempo, il ladro sparisce nel nulla
-  toast(lm ? (lm.type === 'bank' ? '🚨 Rapina in BANCA! Ferma il ladro in fuga' : '🚨 Furto al MERCATO! Ferma il ladro in fuga')
-           : '🚨 Scippo in strada! Ferma il ladro in fuga');
+  toast(t(lm ? (lm.type === 'bank' ? 'patrol.bank' : 'patrol.market') : 'patrol.street'));
   flashSiren();
 }
 function completeArrest(hard) {
@@ -216,8 +212,8 @@ function completeArrest(hard) {
   cash += patrol.pay + bonus; updateCash(); sfx.coin();
   addScore(SCORE.mission.patrol, player.x, player.y);
   patrol.arrests++;
-  toast(hard ? `🚔 Ladro steso e refurtiva recuperata! +$${patrol.pay}${bonus ? ` · bonus +$${bonus} ⏱️` : ''}`
-             : `🚔 Ladro arrestato! +$${patrol.pay}${bonus ? ` · bonus rapidità +$${bonus} ⏱️` : ''}`);
+  toast(hard ? t(bonus ? 'patrol.downBonus' : 'patrol.down', { pay: patrol.pay, bonus })
+             : t(bonus ? 'patrol.arrestBonus' : 'patrol.arrest', { pay: patrol.pay, bonus }));
   const r = patrol.robber;                            // portato via a sirene spiegate
   if (r && !r.ko) { const i = peds.indexOf(r); if (i >= 0) peds.splice(i, 1); }
   patrol.phase = 'idle'; patrol.robber = null; patrol.waitCd = 200;
@@ -225,17 +221,17 @@ function completeArrest(hard) {
 function cancelPatrol(msg) {
   if (patrol.robber) { patrol.robber.role = 'civ'; patrol.robber.thinkCd = 0; }   // si mescola alla folla
   patrol.phase = 'idle'; patrol.robber = null; patrol.waitCd = 0;
-  if (msg) toast(msg);
+  if (msg) toast(t(msg));
 }
 function updatePatrol() {
   if (patrol.waitCd > 0 && player.car && player.car.wasPolice && --patrol.waitCd === 0) spawnCrime();
   if (!patrolActive()) return;
   const c = player.car;
-  if (!c || !c.wasPolice) { cancelPatrol('🚔 Pattuglia interrotta'); return; }   // sceso o volante distrutta
+  if (!c || !c.wasPolice) { cancelPatrol('patrol.cancel'); return; }   // sceso o volante distrutta
   const r = patrol.robber;
   if (!r) { cancelPatrol(); return; }
   if (r.ko || r.dead) { completeArrest(true); return; }         // steso: comunque fermato
-  if (--patrol.timer <= 0) { cancelPatrol('💨 Il ladro è riuscito a fuggire…'); patrol.waitCd = 240; return; }
+  if (--patrol.timer <= 0) { cancelPatrol('patrol.escaped'); patrol.waitCd = 240; return; }
   if (dist(c.x, c.y, r.x, r.y) < 62 && Math.abs(c.speed) < 0.9) completeArrest(false);
 }
 
@@ -255,7 +251,7 @@ function spawnFire() {
   firejob.pay = 35 + Math.round(d * 0.02 / 5) * 5;
   firejob.timer0 = Math.round(d / 2.2) + 60 * 16;    // poi l'incendio sfugge di mano
   firejob.timer = firejob.timer0;
-  toast('🔥 INCENDIO in città! Corri sul posto e spegnilo con l\'idrante');
+  toast(t('fire.new'));
   flashSiren();
 }
 function completeFirejob() {
@@ -263,8 +259,7 @@ function completeFirejob() {
   cash += firejob.pay + bonus; updateCash(); sfx.coin();
   addScore(SCORE.mission.fire, player.x, player.y);
   firejob.jobs++;
-  toast(bonus ? `💧 Incendio spento! +$${firejob.pay} · bonus rapidità +$${bonus} ⏱️`
-              : `💧 Incendio spento! +$${firejob.pay}`);
+  toast(bonus ? t('fire.doneBonus', { pay: firejob.pay, bonus }) : t('fire.done', { pay: firejob.pay }));
   const i = fires.indexOf(firejob.site); if (i >= 0) fires.splice(i, 1);
   // nuvola di vapore finale
   for (let k = 0; k < 14; k++) parts.push({ x: firejob.site.x + rnd(-18, 18), y: firejob.site.y + rnd(-14, 14),
@@ -274,15 +269,15 @@ function completeFirejob() {
 function cancelFirejob(msg) {
   if (firejob.site) { const i = fires.indexOf(firejob.site); if (i >= 0) fires.splice(i, 1); }
   firejob.phase = 'idle'; firejob.site = null; firejob.waitCd = 0;
-  if (msg) toast(msg);
+  if (msg) toast(t(msg));
 }
 function updateFirejob() {
   if (firejob.waitCd > 0 && player.car && player.car.livery === 'fire' && --firejob.waitCd === 0) spawnFire();
   if (!firejobActive()) return;
   const c = player.car;
-  if (!c || c.livery !== 'fire') { cancelFirejob('🚒 Intervento annullato'); return; }   // sceso o mezzo distrutto
+  if (!c || c.livery !== 'fire') { cancelFirejob('fire.cancel'); return; }   // sceso o mezzo distrutto
   if (firejob.site.hp <= 0) { completeFirejob(); return; }
-  if (--firejob.timer <= 0) { cancelFirejob('🔥 Troppo tardi… ha dovuto pensarci un\'altra caserma'); firejob.waitCd = 240; return; }
+  if (--firejob.timer <= 0) { cancelFirejob('fire.late'); firejob.waitCd = 240; return; }
 }
 // idrante dell'autopompa: spara un getto d'acqua verso il mouse
 function sprayWater(c) {
@@ -310,7 +305,7 @@ function updateWater() {
     if (!gone) for (const c of cars) {                // l'acqua spegne anche i veicoli in fiamme
       if (c.burning && dist(w.x, w.y, c.x, c.y) < 26) {
         gone = true;
-        if (++c.burnWet >= 26) { c.burning = false; toast('💦 Fiamme spente!'); }
+        if (++c.burnWet >= 26) { c.burning = false; toast(t('fire.out')); }
         if (frame % 2 === 0) parts.push({ x: w.x, y: w.y, vx: rnd(-0.5, 0.5), vy: rnd(-1.3, -0.4),
           life: rndi(10, 22), color: '#cfd6dd', size: rnd(3, 6), kind: 'smoke' });
         break;

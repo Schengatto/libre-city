@@ -59,9 +59,9 @@ function explodeRocket(r) {
     if (r.fromNet) continue;
     addScore(pedScore(p), p.x, p.y);
     // crimine attribuito a chi ha lanciato (l'esplosione è nella fase mondo condivisa)
-    if (p.role === 'cop') asPlayer(r.owner || player, () => commitCrime(1.2, '🚨 Hai bombardato un poliziotto!'));
+    if (p.role === 'cop') asPlayer(r.owner || player, () => commitCrime(1.2, 'crime.bombCop'));
     else if (p.role === 'soldier') armyAlertT = ARMY_ALERT_T;   // l'esercito non la prende bene
-    else if (p.role !== 'robber') asPlayer(r.owner || player, () => commitCrime(0.7, '🚨 Hai bombardato un passante!'));
+    else if (p.role !== 'robber') asPlayer(r.owner || player, () => commitCrime(0.7, 'crime.bombPed'));
   }
   eachActivePlayer(v => {
     const px = v.car ? v.car.x : v.x, py = v.car ? v.car.y : v.y;
@@ -91,7 +91,7 @@ function tankCrush(c) {
       // dell'esercito senza guidatore-player non fa diventare ricercato nessuno
       const by = MP ? c.owner : player;
       if (by || !MP) asPlayer(by, () => commitCrime(o.role === 'police' || o.wasPolice ? 1.2 : 0.5,
-        o.role === 'police' || o.wasPolice ? '🚨 Hai schiacciato una volante!' : '🚨 Hai schiacciato un\'auto!'));
+        o.role === 'police' || o.wasPolice ? 'crime.crushPolice' : 'crime.crushCar'));
     }
   }
 }
@@ -102,7 +102,7 @@ function tankCrush(c) {
 // armate gli danno la caccia finché non si allontana per un bel po'
 const ARMY_ALERT_T = 60 * 18;
 let armyAlertT = 0;
-const SAY_ARMY = ['Zona militare!', 'Intruso! Fuoco!', 'Fermo dove sei!', 'Allarme! Allarme!', 'Difendete la base!', 'Non è un\'esercitazione!'];
+const SAY_ARMY = 'say.army';               // le frasi sono in js/i18n.js
 function nearestArmyBase() {
   const fp = spawnFocus();
   let best = null, bd = Infinity;
@@ -120,7 +120,7 @@ function playerInBase(lm, v) {
 }
 function triggerArmyAlert(lm) {
   if (armyAlertT === 0) {
-    toast('🪖 ZONA MILITARE! Hai fatto scattare l\'allarme — scappa!');
+    toast(t('army.alarm'));
     flashSiren(); sfx.alarm(null);
     // mezzo secondo abbondante per capire che aria tira: nessuno spara
     // a bruciapelo sul cancello, i soldati devono prendere la mira

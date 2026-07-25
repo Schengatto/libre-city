@@ -136,9 +136,9 @@ function netDial(done) {
     };
     ws.onclose = () => {
       if (ws !== net.sock) return;               // socket già sostituita da un riaggancio
-      if (!settled) { status('🔌 Connessione al server… riprovo'); netScheduleReconnect(); return; }
+      if (!settled) { status(t('net.retry')); netScheduleReconnect(); return; }
       if (net.wantOpen) {                         // caduta dopo l'ingresso: riaggancio silenzioso
-        if (!net.dropped) { net.dropped = true; toast('🌐 Connessione persa, riaggancio…'); netRefreshBadge(); }
+        if (!net.dropped) { net.dropped = true; toast(t('net.lost')); netRefreshBadge(); }
         netScheduleReconnect();
       }
     };
@@ -172,7 +172,7 @@ function netOnJoined(m) {
     player.x += 26 * m.shirtIdx;
     unstick(player, player.r, player.r);
   } else if (net.dropped) {
-    net.dropped = false; toast('🌐 Riconnesso alla partita');
+    net.dropped = false; toast(t('net.back'));
   }
   netRefreshBadge();
   // il server ha una build diversa dalla nostra → invita a ricaricare il client
@@ -189,7 +189,7 @@ function netUpdatePrompt() {
   if (!el) {
     el = document.createElement('div');
     el.id = 'updateBanner';
-    el.textContent = '🔄 Nuova versione disponibile — tocca per aggiornare';
+    el.textContent = t('net.update');
     el.addEventListener('click', () => location.reload());
     document.body.appendChild(el);
   }
@@ -202,11 +202,11 @@ function onServerMessage(m) {
     case 'ok': netOnJoined(m); break;             // riaggancio riuscito
     case 'join':
       net.players.set(m.id, makeGhost(m.id, m.name, m.shirtIdx));
-      toast(`🌐 ${m.name} è entrato in partita!`); sfx.coin(); netRefreshBadge();
+      toast(t('net.joined', { name: m.name })); sfx.coin(); netRefreshBadge();
       break;
     case 'leave': {
       const g = net.players.get(m.id);
-      if (g) { net.players.delete(m.id); netDropCarsOf(m.id); toast(`🌐 ${g.name} ha lasciato la partita`); }
+      if (g) { net.players.delete(m.id); netDropCarsOf(m.id); toast(t('net.left', { name: g.name })); }
       netRefreshBadge();
       break;
     }
@@ -434,7 +434,7 @@ function netReportDown(kind) {
   if (net.lastHitBy != null && frame - net.lastHitT < 60 * 6) {
     netSend({ t: 'kill', to: net.lastHitBy });    // il server recapita il punto al tiratore
     const g = net.players.get(net.lastHitBy);
-    if (g) toast(`☠️ ${g.name} ti ha steso!`);
+    if (g) toast(t('pvp.down', { name: g.name }));
   }
   net.lastHitBy = null;
 }
@@ -444,11 +444,11 @@ function netScoreKill(victimId) {
   net.streak++;
   net.score += KILL_POINTS;
   const nb = bountyForStreak(net.streak);
-  if (nb > net.bounty) toast(`🎯 Taglia su di te: $${nb} — sei un bersaglio!`);
+  if (nb > net.bounty) toast(t('pvp.onYou', { n: nb }));
   net.bounty = nb; updateBountyHud(nb);
   const g = net.players.get(victimId);
   cash += 25; updateCash();                     // taglia sul rivale steso
-  toast(`💀 Hai steso ${g ? g.name : 'un rivale'}! (+$25)`);
+  toast(t('pvp.killedCash', { name: g ? g.name : t('pvp.rival') }));
   sfx.coin();
 }
 
@@ -620,7 +620,10 @@ function netOnSnapshot(m) {
     } else { g.car = null; interpFeed(g, pv.x, pv.y, pv.aim); }
   }
   // --- messaggi del server per me (uccisioni, taglie): toast UNA volta per snapshot ---
-  if (m.me && Array.isArray(m.me.ev)) for (const t of m.me.ev) { toast(t); if (t[0] === '💀' || t[0] === '🎯') sfx.coin(); }
+  if (m.me && Array.isArray(m.me.ev)) for (const ev of m.me.ev) {
+    const txt = evText(ev); toast(txt);
+    if (txt[0] === '💀' || txt[0] === '🎯') sfx.coin();
+  }
   // --- classifica dallo snapshot (stats autoritative) ---
   if (Array.isArray(m.sc)) for (const s of m.sc) {
     if (s.id === net.myId) { net.kills = s.k; net.deaths = s.d; }   // punteggio/taglia miei: via `me`
@@ -688,7 +691,7 @@ function netReconcileMe() {
     downT = me.dt || 1;
     if (bm) {
       bm.classList.remove('hidden'); bm.classList.toggle('busted', me.dk === 'busted');
-      const t = $('#bigTitle'); if (t) t.textContent = me.dk === 'busted' ? 'Arrestato' : 'Ti hanno ucciso';
+      const bt = $('#bigTitle'); if (bt) bt.textContent = t(me.dk === 'busted' ? 'big.busted' : 'big.dead');
       const c = $('#bigCount'); if (c) c.textContent = Math.max(1, Math.ceil(downT / 60));
     }
   } else {
@@ -830,7 +833,7 @@ function renderLadder() {
 function updateBountyHud(b) {
   const el = document.getElementById('bountyBadge');
   if (!el) return;
-  if (b > 0) { el.textContent = `🎯 Taglia: $${b}`; el.classList.remove('hidden'); }
+  if (b > 0) { el.textContent = t('net.bounty', { n: b }); el.classList.remove('hidden'); }
   else el.classList.add('hidden');
 }
 
@@ -841,7 +844,7 @@ function netRefreshBadge() {
     el.classList.toggle('hidden', !netActive());
     if (netActive()) {
       const n = net.players.size + 1;
-      el.innerHTML = `🌐 <b>${ROOM_CODE}</b> · ${n} giocator${n === 1 ? 'e' : 'i'}`;
+      el.innerHTML = t(n === 1 ? 'net.badge' : 'net.badgeN', { code: ROOM_CODE, n });
     }
   }
   const lc = document.getElementById('lobbyCount');
@@ -854,8 +857,8 @@ function shareInvite(btn) {
   const url = inviteLink();
   if (navigator.share) {
     navigator.share({
-      title: 'Libre City',
-      text: `Entra nella mia partita di Libre City! Codice stanza: ${ROOM_CODE}`,
+      title: t('invite.shareTitle'),
+      text: t('invite.shareText', { code: ROOM_CODE }),
       url,
     }).catch(() => {});                            // annullato dall'utente: nessun errore
     return;
@@ -865,7 +868,7 @@ function shareInvite(btn) {
 function copyInvite(btn) {
   const link = inviteLink();
   const orig = btn ? btn.textContent : '';
-  const ok = () => { if (btn) { btn.textContent = '✅ Copiato!'; setTimeout(() => { btn.textContent = orig; }, 1500); } };
+  const ok = () => { if (btn) { btn.textContent = t('invite.copied'); setTimeout(() => { btn.textContent = orig; }, 1500); } };
   const fallback = () => {
     const inp = document.getElementById('inviteLink');
     if (inp) { inp.focus(); inp.select(); try { document.execCommand('copy'); ok(); } catch (e) {} }

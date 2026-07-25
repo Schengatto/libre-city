@@ -69,6 +69,7 @@ const store = {
 };
 let playerName  = store.get('name', '');       // vuoto = primo avvio: chiedi il nome
 let gameMinutes = store.get('minutes', 0);     // durata partita in minuti · 0 = senza limiti
+let audioOn     = store.get('audio', true);    // interruttore audio delle impostazioni (js/audio.js)
 let timeLeft = 0;                              // frame rimanenti (solo con durata impostata)
 // Filtro violenza (solo GIOCATORE SINGOLO): false = niente armi, nessuno spara né
 // uccide (né player né NPC), le missioni polizia si chiudono raggiungendo il ladro.
@@ -93,22 +94,24 @@ const CAR_COLORS = ['#d23a3a','#3a72d2','#e0a92a','#37a05a','#8a3ad2','#e06a2a',
 // melee=true → attacco ravvicinato (pugni): niente proiettili, colpisce chi è a portata
 // pvp = danno per colpo a un ALTRO GIOCATORE in multigiocatore (vedi js/net.js)
 const WEAPONS = [
-  { name: 'Pugni',          icon: '👊', price: 0,   cd: 22, auto: false, melee: true, range: 34, knock: 5, dmgCar: 2, sfx: 'punch' },
-  { name: 'Pistola',        icon: '🔫', price: 10,  cd: 20, auto: false, spd: 13, life: 52, spread: 0.03,  knock: 4, dmgCar: 10, pvp: 10, sfx: 'shoot' },
-  { name: 'Mitra',          icon: '⚡', price: 30,  cd: 8,  auto: true,  spd: 13, life: 44, spread: 0.09,  knock: 3, dmgCar: 6,  pvp: 6,  sfx: 'smg' },
-  { name: 'Fucile a pompa', icon: '💥', price: 50,  cd: 46, auto: false, spd: 11, life: 26, spread: 0.22,  knock: 7, dmgCar: 8,  pvp: 8,  pellets: 6, shake: 4, sfx: 'shotgun' },
+  { k: 'fists',    icon: '👊', price: 0,   cd: 22, auto: false, melee: true, range: 34, knock: 5, dmgCar: 2, sfx: 'punch' },
+  { k: 'pistol',   icon: '🔫', price: 10,  cd: 20, auto: false, spd: 13, life: 52, spread: 0.03,  knock: 4, dmgCar: 10, pvp: 10, sfx: 'shoot' },
+  { k: 'smg',      icon: '⚡', price: 30,  cd: 8,  auto: true,  spd: 13, life: 44, spread: 0.09,  knock: 3, dmgCar: 6,  pvp: 6,  sfx: 'smg' },
+  { k: 'shotgun',  icon: '💥', price: 50,  cd: 46, auto: false, spd: 11, life: 26, spread: 0.22,  knock: 7, dmgCar: 8,  pvp: 8,  pellets: 6, shake: 4, sfx: 'shotgun' },
   // Granate: un ordigno LANCIATO che vola per un tratto breve (fuse = life) e poi esplode
   // ad area — onda d'urto ridotta rispetto al razzo (pw < 1). Riusa i razzi: vedi
   // playerThrowGrenade/updateRockets/explodeRocket.
-  { name: 'Granate',        icon: '💣', price: 80,  cd: 55, auto: false, grenade: true, spd: 7.5, life: 26, pw: 0.72, knock: 8, dmgCar: 60, pvp: 30, shake: 5, sfx: 'whoosh' },
+  { k: 'grenade',  icon: '💣', price: 80,  cd: 55, auto: false, grenade: true, spd: 7.5, life: 26, pw: 0.72, knock: 8, dmgCar: 60, pvp: 30, shake: 5, sfx: 'whoosh' },
   // Lanciafiamma: getto continuo a cortissimo raggio (raffica di "fiammelle" a vita
   // brevissima) — poco danno a colpo ma cadenza altissima, e incendia i veicoli.
   // Vedi playerShoot (flag `fire`) e updateBullets (`flame`).
-  { name: 'Lanciafiamma',   icon: '🔥', price: 100, cd: 3,  auto: true,  spd: 5.5, life: 8,  spread: 0.30, knock: 1, dmgCar: 4, pvp: 5, pellets: 3, fire: true, shake: 1, sfx: 'flame' },
+  { k: 'flamer',   icon: '🔥', price: 100, cd: 3,  auto: true,  spd: 5.5, life: 8,  spread: 0.30, knock: 1, dmgCar: 4, pvp: 5, pellets: 3, fire: true, shake: 1, sfx: 'flame' },
   // Lanciarazzi: spara un RAZZO che esplode all'impatto — onda d'urto ad area
   // (vedi playerShoot/updateRockets). Ricarica lenta, ma devastante in PvP.
-  { name: 'Lanciarazzi',    icon: '🚀', price: 500, cd: 85, auto: false, rocket: true, spd: 7, life: 120, knock: 12, dmgCar: 95, pvp: 40, shake: 8, sfx: 'rocket' },
+  { k: 'rocket',   icon: '🚀', price: 500, cd: 85, auto: false, rocket: true, spd: 7, life: 120, knock: 12, dmgCar: 95, pvp: 40, shake: 8, sfx: 'rocket' },
 ];
+// nome dell'arma nella lingua corrente (le armi si identificano con `k`, vedi js/i18n.js)
+function wName(w) { return t('weapon.' + w.k); }
 
 // `let` (non `const`): sul server autoritativo la glue rilega `player` al
 // giocatore attualmente in simulazione, così le funzioni della sim (che leggono

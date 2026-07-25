@@ -367,7 +367,7 @@
   <canvas id="game"></canvas>
 
   <div id="wanted">
-    <div id="wantedLabel" class="hidden">★ CERCATO ★</div>
+    <div id="wantedLabel" class="hidden" data-i18n="hud.wanted">★ CERCATO ★</div>
     <div id="stars"></div>
   </div>
 
@@ -379,76 +379,68 @@
     <div id="cash">$0</div>
     <div id="timer" class="hidden">⏱ 0:00</div>
     <div id="health"><div id="healthBar"></div></div>
-    <div id="weapon">👊 Pugni</div>
+    <div id="weapon" data-i18n="hud.fists">👊 Pugni</div>
     <div id="gear" class="hidden">⚙️ 1ª</div>
   </div>
 
-  <canvas id="mini" width="160" height="160" title="Tocca per aprire la mappa a schermo intero"></canvas>
+  <canvas id="mini" width="160" height="160" data-i18n-title="hud.miniTitle"
+    title="Tocca per aprire la mappa a schermo intero"></canvas>
 
   <!-- Mappa a schermo intero: si apre toccando la minimappa, si chiude con ✕/Esc/tap fuori -->
   <div id="mapFull" class="hidden">
     <canvas id="miniFull"></canvas>
-    <button id="mapClose" aria-label="Chiudi mappa" title="Chiudi (Esc)">✕</button>
+    <button id="mapClose" data-i18n-aria="hud.mapClose" data-i18n-title="hud.mapCloseTitle"
+      aria-label="Chiudi mappa" title="Chiudi (Esc)">✕</button>
   </div>
 
-  <div id="hint" title="Mostra o nascondi la guida completa">
-    <b>WASD / frecce</b> muovi &amp; guida · <b>Mouse</b> mira · <b>Click sx</b> pugni/spari<br>
-    <b>E</b> sali/scendi · <b>Spazio</b> clacson/sirena 🚨 · <b>1-5</b> armi · <b>M</b> missioni
-    <div id="hintFull">
-      <b>Tab</b> classifica della partita (in multigiocatore 🌐)<br>
-      👊 Parti a mani nude: 3 pugni stendono un passante<br>
-      🛒 Compra le armi all'<b>ARMERIA</b> (pistola, mitra, fucile a pompa, lanciarazzi)<br>
-      🚕 Sali su un <b>taxi</b>: porta i clienti a destinazione e guadagna<br>
-      🍕 Sali sulla <b>moto delle consegne</b>: ritira il cibo in pizzeria e consegnalo<br>
-      🚑 Sali sull'<b>ambulanza</b> (all'ospedale): soccorri i feriti in città<br>
-      🚔 Sali sulla <b>volante</b> (alla centrale): ferma i ladri in fuga<br>
-      🚒 Sali sull'<b>autopompa</b> (dai pompieri): spegni gli incendi — <b>mouse premuto</b> = idrante 💧<br>
-      🪖 La <b>CASERMA</b> è un'area recintata: nel cortile ci sono <b>jeep</b> e <b>carri armati</b><br>
-      &nbsp;&nbsp;&nbsp;&nbsp;(razzi col mouse, schiacciano le auto!) — ma è piena di <b>soldati</b> che sparano a vista!<br>
-      🪙 Raccogli le monetine · 🏥 curati all'ospedale ($25) · 🚦 occhio ai semafori<br>
-      🚨 Investi o spara ai passanti → arriva la polizia: gli agenti scendono, sparano<br>
-      &nbsp;&nbsp;&nbsp;&nbsp;e se ti fermano in auto ti <b>arrestano</b> (riparti dalla centrale!)
-    </div>
-    <div class="hintKey"><b>H</b> (o un clic qui) — guida completa</div>
+  <!-- La guida comandi è tutta in js/i18n.js (hint.short / hint.full / hint.key) -->
+  <div id="hint" data-i18n-title="hint.title" title="Mostra o nascondi la guida completa">
+    <span data-i18n-html="hint.short"></span>
+    <div id="hintFull" data-i18n-html="hint.full"></div>
+    <div class="hintKey" data-i18n-html="hint.key"></div>
   </div>
 
   <div id="toast"></div>
 
   <div id="bigMsg" class="hidden">
-    <div id="bigTitle">Ti hanno ucciso</div>
+    <div id="bigTitle" data-i18n="big.dead">Ti hanno ucciso</div>
     <div id="bigCount">3</div>
   </div>
 
   <div id="pause" class="hidden">
-    <h2>⏸ Pausa</h2>
-    <button id="resumeBtn" class="mbtn">▶ Riprendi</button>
-    <button id="pauseSave" class="mbtn hidden">💾 Salva partita</button>
-    <button id="pauseShare" class="mbtn hidden">📤 Invita un amico</button>
-    <button id="quitBtn" class="mbtn">🏁 Termina e salva il punteggio</button>
+    <h2 data-i18n="pause.title">⏸ Pausa</h2>
+    <button id="resumeBtn" class="mbtn" data-i18n="pause.resume">▶ Riprendi</button>
+    <button id="pauseSave" class="mbtn hidden" data-i18n="pause.save">💾 Salva partita</button>
+    <button id="pauseShare" class="mbtn hidden" data-i18n="pause.share">📤 Invita un amico</button>
+    <button id="quitBtn" class="mbtn" data-i18n="pause.quit">🏁 Termina e salva il punteggio</button>
   </div>
 
   <div id="gameOver" class="hidden">
-    <div id="goTitle">⏱ Tempo scaduto!</div>
+    <div id="goTitle" data-i18n="go.time">⏱ Tempo scaduto!</div>
     <div id="goScore">$0</div>
     <div id="goRank"></div>
     <div id="goLadderWrap" class="hidden">
       <table class="ladtab" id="goLadderTable">
-        <thead><tr><th>#</th><th>Nome</th><th>🏆 Punti</th><th>💀 Stesi</th><th>☠️ Morti</th><th>🎯 Taglia</th></tr></thead>
+        <thead><tr><th>#</th><th data-i18n="lad.name">Nome</th><th data-i18n="lad.points">🏆 Punti</th>
+          <th data-i18n="lad.downs">💀 Stesi</th><th data-i18n="lad.deaths">☠️ Morti</th>
+          <th data-i18n="lad.bounty">🎯 Taglia</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
-    <button id="backToMenu" class="mbtn">↩ Torna al menu</button>
+    <button id="backToMenu" class="mbtn" data-i18n="go.back">↩ Torna al menu</button>
   </div>
 
   <!-- Classifica della partita multigiocatore: Tab (o 🏆) per aprire/chiudere -->
   <div id="ladder" class="hidden">
     <div class="lbox">
-      <h2>🏆 Classifica della partita</h2>
+      <h2 data-i18n="lad.title">🏆 Classifica della partita</h2>
       <table class="ladtab" id="ladderTable">
-        <thead><tr><th>#</th><th>Nome</th><th>🏆 Punti</th><th>💀 Stesi</th><th>☠️ Morti</th><th>🎯 Taglia</th></tr></thead>
+        <thead><tr><th>#</th><th data-i18n="lad.name">Nome</th><th data-i18n="lad.points">🏆 Punti</th>
+          <th data-i18n="lad.downs">💀 Stesi</th><th data-i18n="lad.deaths">☠️ Morti</th>
+          <th data-i18n="lad.bounty">🎯 Taglia</th></tr></thead>
         <tbody></tbody>
       </table>
-      <div class="ladhint">Premi Tab (o tocca 🏆) per chiudere</div>
+      <div class="ladhint" data-i18n="lad.hint">Premi Tab (o tocca 🏆) per chiudere</div>
     </div>
   </div>
 
@@ -472,194 +464,207 @@
 
     <!-- Barra da cabinato: il miglior punteggio salvato (riempita da ui.js) -->
     <div id="arcTop" aria-hidden="true">
-      <span class="hi" id="hiScore">HI-SCORE&nbsp; $0</span>
-      <span>CREDITI&nbsp;1</span>
+      <span class="hi" id="hiScore" data-i18n-html="start.hiscore">HI-SCORE&nbsp; $0</span>
+      <span data-i18n-html="start.credits">CREDITI&nbsp;1</span>
     </div>
 
     <h1>LIBRE CITY</h1>
-    <div class="tag">Corri · Consegna · Soccorri</div>
+    <div class="tag" data-i18n="start.tag">Corri · Consegna · Soccorri</div>
+
+    <!-- Primo avvio (prima di tutto): scelta della lingua -->
+    <div id="langPanel" class="panel hidden">
+      <h2 data-i18n="lang.title">🌍 Lingua · Language</h2>
+      <button id="langItBtn" class="mbtn">🇮🇹 Italiano</button>
+      <button id="langEnBtn" class="mbtn">🇬🇧 English</button>
+    </div>
 
     <!-- Primo avvio: chiede il nome del giocatore -->
     <div id="namePanel" class="panel hidden">
-      <h2>Come ti chiami?</h2>
+      <h2 data-i18n="name.title">Come ti chiami?</h2>
       <div class="field">
-        <label for="nameInput">Nome del personaggio</label>
-        <input id="nameInput" maxlength="14" placeholder="Il tuo nome" autocomplete="off">
+        <label for="nameInput" data-i18n="name.label">Nome del personaggio</label>
+        <input id="nameInput" maxlength="14" data-i18n-ph="name.ph" placeholder="Il tuo nome" autocomplete="off">
       </div>
-      <button id="nameOk" class="mbtn">Avanti ➜</button>
+      <button id="nameOk" class="mbtn" data-i18n="name.next">Avanti ➜</button>
     </div>
 
     <!-- Menu principale -->
     <div id="menuPanel" class="panel hidden">
-      <div id="menuHello">Ciao, <b id="menuName"></b>!</div>
-      <button id="playBtn" class="mbtn">▶ Giocatore singolo</button>
-      <button id="loadBtn" class="mbtn hidden">💾 Riprendi partita</button>
-      <button id="mpBtn" class="mbtn">🌐 Multigiocatore</button>
-      <button id="settingsBtn" class="mbtn">⚙️ Impostazioni</button>
-      <button id="scoresBtn" class="mbtn">🏆 Classifica</button>
-      <button id="howtoBtn" class="mbtn">❓ Come si gioca</button>
+      <div id="menuHello" data-i18n-html="menu.hello">Ciao, <b id="menuName"></b>!</div>
+      <button id="playBtn" class="mbtn" data-i18n="menu.play">▶ Giocatore singolo</button>
+      <button id="loadBtn" class="mbtn hidden" data-i18n="menu.load">💾 Riprendi partita</button>
+      <button id="mpBtn" class="mbtn" data-i18n="menu.mp">🌐 Multigiocatore</button>
+      <button id="settingsBtn" class="mbtn" data-i18n="menu.settings">⚙️ Impostazioni</button>
+      <button id="scoresBtn" class="mbtn" data-i18n="menu.scores">🏆 Classifica</button>
+      <button id="howtoBtn" class="mbtn" data-i18n="menu.howto">❓ Come si gioca</button>
       <!-- Compare solo quando il browser offre l'installazione (beforeinstallprompt) -->
-      <button id="installBtn" class="mbtn hidden">📲 Installa l'app</button>
+      <button id="installBtn" class="mbtn hidden" data-i18n="menu.install">📲 Installa l'app</button>
     </div>
 
     <!-- Giocatore singolo: crea la partita (violenza, durata, taglia mappa) -->
     <div id="spPanel" class="panel hidden">
-      <h2>▶ Giocatore singolo</h2>
+      <h2 data-i18n="sp.title">▶ Giocatore singolo</h2>
       <div class="field">
-        <label for="spViolence">Violenza</label>
+        <label for="spViolence" data-i18n="sp.violence">Violenza</label>
         <select id="spViolence">
-          <option value="on" selected>Sì — armi e scontri</option>
-          <option value="off">No — nessuna arma, non si uccide</option>
+          <option value="on" selected data-i18n="sp.violenceOn">Sì — armi e scontri</option>
+          <option value="off" data-i18n="sp.violenceOff">No — nessuna arma, non si uccide</option>
         </select>
       </div>
       <div class="field">
-        <label for="spDuration">Durata della partita</label>
+        <label for="spDuration" data-i18n="sp.duration">Durata della partita</label>
         <select id="spDuration">
-          <option value="5">5 minuti</option>
-          <option value="10" selected>10 minuti</option>
-          <option value="15">15 minuti</option>
-          <option value="30">30 minuti</option>
-          <option value="60">60 minuti</option>
-          <option value="0">Senza limiti di tempo</option>
+          <option value="5" data-i18n="dur.5">5 minuti</option>
+          <option value="10" selected data-i18n="dur.10">10 minuti</option>
+          <option value="15" data-i18n="dur.15">15 minuti</option>
+          <option value="30" data-i18n="dur.30">30 minuti</option>
+          <option value="60" data-i18n="dur.60">60 minuti</option>
+          <option value="0" data-i18n="common.noLimit">Senza limiti di tempo</option>
         </select>
       </div>
       <div class="field">
-        <label for="spSize">Dimensione della mappa</label>
+        <label for="spSize" data-i18n="sp.size">Dimensione della mappa</label>
         <select id="spSize">
-          <option value="P" selected>Piccola</option>
-          <option value="M">Media (area 2×)</option>
-          <option value="G">Grande (area 4×)</option>
+          <option value="P" selected data-i18n="common.sizeS">Piccola</option>
+          <option value="M" data-i18n="common.sizeM">Media (area 2×)</option>
+          <option value="G" data-i18n="common.sizeL">Grande (area 4×)</option>
         </select>
       </div>
-      <p class="mpnote">Col filtro violenza su <b>No</b> non ci sono armi: nessuno spara né viene
+      <p class="mpnote" data-i18n-html="sp.note">Col filtro violenza su <b>No</b> non ci sono armi: nessuno spara né viene
          ucciso (nemmeno gli NPC) e per le missioni in volante 🚔 basta <b>raggiungere il ladro
          in fuga</b>.</p>
-      <button id="spGo" class="mbtn">🏙️ Inizia a giocare</button>
-      <button id="spBack" class="mbtn back">↩ Indietro</button>
+      <button id="spGo" class="mbtn" data-i18n="sp.go">🏙️ Inizia a giocare</button>
+      <button id="spBack" class="mbtn back" data-i18n="common.back">↩ Indietro</button>
     </div>
 
     <!-- Multigiocatore: scelta ospita/entra -->
     <div id="mpPanel" class="panel hidden">
-      <h2>🌐 Multigiocatore</h2>
-      <p class="mpnote">Ospita una partita e condividi il link (con password facoltativa e numero
+      <h2 data-i18n="mp.title">🌐 Multigiocatore</h2>
+      <p class="mpnote" data-i18n-html="mp.note">Ospita una partita e condividi il link (con password facoltativa e numero
          massimo di giocatori), oppure entra nella stanza di un amico. In partita la
          <b>classifica</b> (stesi / morti / soldi) si apre con <b>Tab</b> o col pulsante 🏆.</p>
-      <button id="mpHostBtn" class="mbtn">🏠 Crea una partita</button>
-      <button id="mpJoinBtn" class="mbtn">🔗 Entra con un codice</button>
-      <button id="mpBack" class="mbtn back">↩ Indietro</button>
+      <button id="mpHostBtn" class="mbtn" data-i18n="mp.host">🏠 Crea una partita</button>
+      <button id="mpJoinBtn" class="mbtn" data-i18n="mp.join">🔗 Entra con un codice</button>
+      <button id="mpBack" class="mbtn back" data-i18n="common.back">↩ Indietro</button>
     </div>
 
     <!-- Multigiocatore: crea la stanza -->
     <div id="hostPanel" class="panel hidden">
-      <h2>🏠 Crea una partita</h2>
+      <h2 data-i18n="host.title">🏠 Crea una partita</h2>
       <div class="field">
-        <label for="hostPass">Password (facoltativa)</label>
-        <input id="hostPass" maxlength="20" placeholder="Nessuna password" autocomplete="off">
+        <label for="hostPass" data-i18n="host.pass">Password (facoltativa)</label>
+        <input id="hostPass" maxlength="20" data-i18n-ph="host.passPh" placeholder="Nessuna password" autocomplete="off">
       </div>
       <div class="field">
-        <label for="hostMax">Numero massimo di giocatori</label>
+        <label for="hostMax" data-i18n="host.max">Numero massimo di giocatori</label>
         <select id="hostMax">
-          <option value="2">2 giocatori</option>
-          <option value="3">3 giocatori</option>
-          <option value="4" selected>4 giocatori</option>
-          <option value="6">6 giocatori</option>
-          <option value="8">8 giocatori</option>
+          <option value="2" data-i18n="host.p2">2 giocatori</option>
+          <option value="3" data-i18n="host.p3">3 giocatori</option>
+          <option value="4" selected data-i18n="host.p4">4 giocatori</option>
+          <option value="6" data-i18n="host.p6">6 giocatori</option>
+          <option value="8" data-i18n="host.p8">8 giocatori</option>
         </select>
       </div>
       <div class="field">
-        <label for="hostDuration">Durata della partita</label>
+        <label for="hostDuration" data-i18n="sp.duration">Durata della partita</label>
         <select id="hostDuration">
-          <option value="5">5 minuti</option>
-          <option value="10" selected>10 minuti</option>
-          <option value="15">15 minuti</option>
+          <option value="5" data-i18n="dur.5">5 minuti</option>
+          <option value="10" selected data-i18n="dur.10">10 minuti</option>
+          <option value="15" data-i18n="dur.15">15 minuti</option>
         </select>
       </div>
       <div class="field">
-        <label for="hostSize">Dimensione della mappa</label>
+        <label for="hostSize" data-i18n="sp.size">Dimensione della mappa</label>
         <select id="hostSize">
-          <option value="P" selected>Piccola</option>
-          <option value="M">Media (area 2×)</option>
-          <option value="G">Grande (area 4×)</option>
+          <option value="P" selected data-i18n="common.sizeS">Piccola</option>
+          <option value="M" data-i18n="common.sizeM">Media (area 2×)</option>
+          <option value="G" data-i18n="common.sizeL">Grande (area 4×)</option>
         </select>
       </div>
       <div id="hostStatus" class="mpstatus"></div>
-      <button id="hostGo" class="mbtn">🏙️ Crea la stanza</button>
-      <button id="hostBack" class="mbtn back">↩ Indietro</button>
+      <button id="hostGo" class="mbtn" data-i18n="host.go">🏙️ Crea la stanza</button>
+      <button id="hostBack" class="mbtn back" data-i18n="common.back">↩ Indietro</button>
     </div>
 
     <!-- Multigiocatore: stanza creata, invita gli amici -->
     <div id="invitePanel" class="panel hidden">
-      <h2>🎟️ Invita i tuoi amici</h2>
+      <h2 data-i18n="invite.title">🎟️ Invita i tuoi amici</h2>
       <div class="roomcode" id="inviteCode">······</div>
       <div class="field">
-        <label for="inviteLink">Link da condividere</label>
+        <label for="inviteLink" data-i18n="invite.link">Link da condividere</label>
         <input id="inviteLink" readonly>
       </div>
-      <button id="inviteShare" class="mbtn">📤 Condividi link</button>
-      <button id="inviteCopy" class="mbtn">📋 Copia link</button>
-      <div id="lobbyLine">👥 In stanza: <b id="lobbyCount">1 / 4</b></div>
-      <p class="mpnote">L'amico apre il link, oppure sceglie «Entra con un codice» e digita il
+      <button id="inviteShare" class="mbtn" data-i18n="invite.share">📤 Condividi link</button>
+      <button id="inviteCopy" class="mbtn" data-i18n="invite.copy">📋 Copia link</button>
+      <div id="lobbyLine" data-i18n-html="invite.lobby">👥 In stanza: <b id="lobbyCount">1 / 4</b></div>
+      <p class="mpnote" data-i18n="invite.note1">L'amico apre il link, oppure sceglie «Entra con un codice» e digita il
          codice qui sopra. Si può entrare anche a partita già iniziata.</p>
-      <p class="mpnote">📱 <b>Torna subito qui dopo aver condiviso il link</b>: mentre il gioco
+      <p class="mpnote" data-i18n-html="invite.note2">📱 <b>Torna subito qui dopo aver condiviso il link</b>: mentre il gioco
          è in un'altra app la stanza non è raggiungibile, e ricompare appena riapri questa pagina.</p>
-      <button id="invitePlay" class="mbtn">▶ Inizia a giocare</button>
-      <button id="inviteBack" class="mbtn back">↩ Annulla la partita</button>
+      <button id="invitePlay" class="mbtn" data-i18n="invite.play">▶ Inizia a giocare</button>
+      <button id="inviteBack" class="mbtn back" data-i18n="invite.cancel">↩ Annulla la partita</button>
     </div>
 
     <!-- Multigiocatore: entra in una stanza -->
     <div id="joinPanel" class="panel hidden">
-      <h2>🔗 Entra in partita</h2>
+      <h2 data-i18n="join.title">🔗 Entra in partita</h2>
       <div class="field">
-        <label for="joinName">Il tuo nome</label>
+        <label for="joinName" data-i18n="join.name">Il tuo nome</label>
         <input id="joinName" maxlength="14" autocomplete="off">
       </div>
       <div class="field">
-        <label for="joinCode">Codice stanza</label>
-        <input id="joinCode" maxlength="12" placeholder="es. MK7PF2" autocomplete="off" style="text-transform:uppercase">
+        <label for="joinCode" data-i18n="join.code">Codice stanza</label>
+        <input id="joinCode" maxlength="12" data-i18n-ph="join.codePh" placeholder="es. MK7PF2" autocomplete="off" style="text-transform:uppercase">
       </div>
       <div class="field">
-        <label for="joinPass">Password (se richiesta)</label>
+        <label for="joinPass" data-i18n="join.pass">Password (se richiesta)</label>
         <input id="joinPass" maxlength="20" autocomplete="off">
       </div>
       <div id="joinStatus" class="mpstatus"></div>
-      <button id="joinGo" class="mbtn">➜ Entra</button>
-      <button id="joinBack" class="mbtn back">↩ Indietro</button>
+      <button id="joinGo" class="mbtn" data-i18n="join.go">➜ Entra</button>
+      <button id="joinBack" class="mbtn back" data-i18n="common.back">↩ Indietro</button>
     </div>
 
     <!-- Impostazioni -->
     <div id="settingsPanel" class="panel hidden">
-      <h2>⚙️ Impostazioni</h2>
+      <h2 data-i18n="set.title">⚙️ Impostazioni</h2>
       <div class="field">
-        <label for="setName">Nome del personaggio</label>
-        <input id="setName" maxlength="14" autocomplete="off">
-      </div>
-      <div class="field">
-        <label for="setDuration">Durata della partita</label>
-        <select id="setDuration">
-          <option value="0">Senza limiti di tempo</option>
-          <option value="15">15 minuti</option>
-          <option value="10">10 minuti</option>
-          <option value="5">5 minuti</option>
+        <label for="setLang" data-i18n="lang.label">Lingua del gioco</label>
+        <select id="setLang">
+          <option value="it">🇮🇹 Italiano</option>
+          <option value="en">🇬🇧 English</option>
         </select>
       </div>
-      <button id="settingsSave" class="mbtn">💾 Salva</button>
-      <button id="settingsBack" class="mbtn back">↩ Indietro</button>
+      <div class="field">
+        <label for="setAudio" data-i18n="set.audio">Audio</label>
+        <select id="setAudio">
+          <option value="on" selected data-i18n="set.audioOn">🔊 Attivo</option>
+          <option value="off" data-i18n="set.audioOff">🔇 Disattivato</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="setName" data-i18n="name.label">Nome del personaggio</label>
+        <input id="setName" maxlength="14" autocomplete="off">
+      </div>
+      <button id="settingsSave" class="mbtn" data-i18n="set.save">💾 Salva</button>
+      <button id="settingsBack" class="mbtn back" data-i18n="common.back">↩ Indietro</button>
     </div>
 
     <!-- Classifica -->
     <div id="scoresPanel" class="panel hidden">
-      <h2>🏆 Classifica</h2>
+      <h2 data-i18n="scores.title">🏆 Classifica</h2>
       <table id="scoreTable">
-        <thead><tr><th>#</th><th>Nome</th><th>Punteggio</th><th>Durata</th><th>Data</th></tr></thead>
+        <thead><tr><th>#</th><th data-i18n="scores.name">Nome</th><th data-i18n="scores.score">Punteggio</th>
+          <th data-i18n="scores.duration">Durata</th><th data-i18n="scores.date">Data</th></tr></thead>
         <tbody></tbody>
       </table>
-      <div id="scoreEmpty" class="hidden">Nessuna partita giocata — la classifica ti aspetta!</div>
-      <button id="scoresBack" class="mbtn back">↩ Indietro</button>
+      <div id="scoreEmpty" class="hidden" data-i18n="scores.empty">Nessuna partita giocata — la classifica ti aspetta!</div>
+      <button id="scoresBack" class="mbtn back" data-i18n="common.back">↩ Indietro</button>
     </div>
 
     <!-- Come si gioca -->
     <div id="howtoPanel" class="panel hidden">
-    <p class="desc">Esplora una grande città con <b>quartieri diversi</b> — case, uffici, fabbriche — e strutture
+    <p class="desc" data-i18n-html="howto.desc">Esplora una grande città con <b>quartieri diversi</b> — case, uffici, fabbriche — e strutture
        come <b>ospedali 🏥</b> (dove curarti), <b>centrali di polizia 🚔</b>, caserme dei pompieri,
        banche e mercati. <b>Ruba qualsiasi auto</b>, sfreccia nel traffico e raccogli le
        <b>monetine 🪙</b> nascoste nei <b>vicoli</b>. Sali su un <b>taxi 🚕</b> per fare il tassista:
@@ -680,31 +685,31 @@
        pochi dollari, poi arrivano <b>mitra, fucile a pompa e lanciarazzi</b>. Ma attento: se investi,
        picchi o spari la gente, la <b>polizia</b> ti darà la caccia — più stelle ⭐ hai, più diventano cattivi!</p>
     <div class="keys kb">
-      <span><b>WASD</b> / frecce</span><span>muovere / guidare</span>
-      <span><b>Mouse</b></span><span>mirare</span>
-      <span><b>Click sinistro</b></span><span>pugni / sparare (a piedi)</span>
-      <span><b>E</b></span><span>salire / scendere dall'auto</span>
-      <span><b>Spazio</b></span><span>clacson / sirena 🚨</span>
-      <span><b>M</b></span><span>missioni on / off</span>
-      <span><b>1-5</b></span><span>cambiare / comprare arma</span>
+      <span data-i18n-html="howto.kb1"><b>WASD</b> / frecce</span><span data-i18n="howto.kb1v">muovere / guidare</span>
+      <span data-i18n-html="howto.kb2"><b>Mouse</b></span><span data-i18n="howto.kb2v">mirare</span>
+      <span data-i18n-html="howto.kb3"><b>Click sinistro</b></span><span data-i18n="howto.kb3v">pugni / sparare (a piedi)</span>
+      <span data-i18n-html="howto.kb4"><b>E</b></span><span data-i18n="howto.kb4v">salire / scendere dall'auto</span>
+      <span data-i18n-html="howto.kb5"><b>Spazio</b></span><span data-i18n="howto.kb5v">clacson / sirena 🚨</span>
+      <span data-i18n-html="howto.kb6"><b>M</b></span><span data-i18n="howto.kb6v">missioni on / off</span>
+      <span data-i18n-html="howto.kb7"><b>1-5</b></span><span data-i18n="howto.kb7v">cambiare / comprare arma</span>
     </div>
     <div class="keys touchhelp">
-      <span><b>🕹️ Stick sinistro</b></span><span>muovere / guidare</span>
-      <span><b>🎯 Stick destro</b></span><span>mirare — spingi a fondo per sparare</span>
-      <span><b>🚗</b></span><span>salire / scendere dal mezzo</span>
-      <span><b>📣</b></span><span>clacson / sirena 🚨</span>
-      <span><b>📋</b></span><span>missioni on / off</span>
-      <span><b>Icone in alto</b></span><span>cambiare / comprare arma</span>
+      <span data-i18n-html="howto.t1"><b>🕹️ Stick sinistro</b></span><span data-i18n="howto.t1v">muovere / guidare</span>
+      <span data-i18n-html="howto.t2"><b>🎯 Stick destro</b></span><span data-i18n="howto.t2v">mirare — spingi a fondo per sparare</span>
+      <span data-i18n-html="howto.t3"><b>🚗</b></span><span data-i18n="howto.t3v">salire / scendere dal mezzo</span>
+      <span data-i18n-html="howto.t4"><b>📣</b></span><span data-i18n="howto.t4v">clacson / sirena 🚨</span>
+      <span data-i18n-html="howto.t5"><b>📋</b></span><span data-i18n="howto.t5v">missioni on / off</span>
+      <span data-i18n-html="howto.t6"><b>Icone in alto</b></span><span data-i18n="howto.t6v">cambiare / comprare arma</span>
     </div>
-    <p style="font-size:13px;opacity:.7;margin-top:16px;">🔊 Alza il volume per motori, spari e sirene!</p>
-    <button id="howtoBack" class="mbtn back">↩ Indietro</button>
+    <p style="font-size:13px;opacity:.7;margin-top:16px;" data-i18n="howto.volume">🔊 Alza il volume per motori, spari e sirene!</p>
+    <button id="howtoBack" class="mbtn back" data-i18n="common.back">↩ Indietro</button>
     </div><!-- /howtoPanel -->
 
-    <div id="credits">Realizzato da <a href="https://enricoschintu.com" target="_blank"
+    <div id="credits" data-i18n-html="start.credit">Realizzato da <a href="https://enricoschintu.com" target="_blank"
       rel="noopener">Enrico Schintu</a> · © 2026</div>
 
     <!-- Attract mode: il ticker racconta i mestieri della città -->
-    <div id="ticker" aria-hidden="true"><span>🚕 PORTA I CLIENTI A DESTINAZIONE · 🍕 CONSEGNA LA PIZZA FINCHÉ È CALDA · 🚑 SOCCORRI I FERITI · 🚒 SPEGNI GLI INCENDI · 🪙 RACCOGLI LE MONETINE NEI VICOLI · 🚔 OCCHIO ALLE STELLE: LA POLIZIA NON DIMENTICA · 🪖 LA CASERMA È PIENA DI SOLDATI (E DI CARRI ARMATI) · 🚕 PORTA I CLIENTI A DESTINAZIONE · 🍕 CONSEGNA LA PIZZA FINCHÉ È CALDA · 🚑 SOCCORRI I FERITI · 🚒 SPEGNI GLI INCENDI · 🪙 RACCOGLI LE MONETINE NEI VICOLI</span></div>
+    <div id="ticker" aria-hidden="true"><span data-i18n="start.ticker">🚕 PORTA I CLIENTI A DESTINAZIONE · 🍕 CONSEGNA LA PIZZA FINCHÉ È CALDA · 🚑 SOCCORRI I FERITI · 🚒 SPEGNI GLI INCENDI · 🪙 RACCOGLI LE MONETINE NEI VICOLI · 🚔 OCCHIO ALLE STELLE: LA POLIZIA NON DIMENTICA · 🪖 LA CASERMA È PIENA DI SOLDATI (E DI CARRI ARMATI) · 🚕 PORTA I CLIENTI A DESTINAZIONE · 🍕 CONSEGNA LA PIZZA FINCHÉ È CALDA · 🚑 SOCCORRI I FERITI · 🚒 SPEGNI GLI INCENDI · 🪙 RACCOGLI LE MONETINE NEI VICOLI</span></div>
   </div>
 
   <!-- Multigiocatore: indirizzo del server WebSocket (vedi server/). Lascialo
@@ -712,8 +717,10 @@
        qui l'URL pubblico, es. content="wss://libre-city.fly.dev". Il singolo
        giocatore funziona anche senza server. -->
   <meta name="lc-server" content="">
-  <!-- Il gioco è diviso in 11 script che condividono lo scope globale: l'ordine conta! -->
+  <!-- Il gioco è diviso in 14 script che condividono lo scope globale: l'ordine conta!
+       i18n.js va subito dopo core.js: tutti gli altri chiamano t()/tList(). -->
   <script src="js/core.js"></script>
+  <script src="js/i18n.js"></script>
   <script src="js/city.js"></script>
   <script src="js/train.js"></script>
   <script src="js/entities.js"></script>
@@ -758,7 +765,7 @@
     window.addEventListener('appinstalled', function () {
       deferred = null;
       if (btn) btn.classList.add('hidden');
-      if (typeof toast === 'function') toast('App installata! 🎉');
+      if (typeof toast === 'function') toast(t('menu.installed'));
     });
   })();
   </script>

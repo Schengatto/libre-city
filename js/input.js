@@ -174,12 +174,12 @@ function toggleCar() {
     netAbandonCar(c);                              // multigiocatore: resta visibile anche agli altri
     player.car = null;
     engineGain(0);
-    if (taxiActive()) cancelTaxi('🚕 Corsa annullata — hai abbandonato il cliente');
-    else if (pizzaActive()) cancelPizza('🍕 Consegna annullata — il cliente resta a bocca asciutta');
-    else if (rescueActive()) cancelRescue('🚑 Soccorso annullato — il ferito aspetta ancora aiuto');
-    else if (patrolActive()) cancelPatrol('🚔 Inseguimento annullato — il ladro se l\'è svignata');
-    else if (firejobActive()) cancelFirejob('🚒 Intervento annullato — l\'incendio si è spento da solo');
-    else { taxi.waitCd = 0; pizza.waitCd = 0; rescue.waitCd = 0; patrol.waitCd = 0; firejob.waitCd = 0; toast('🚶 Sei sceso'); }
+    if (taxiActive()) cancelTaxi('taxi.abandon');
+    else if (pizzaActive()) cancelPizza('pizza.abandon');
+    else if (rescueActive()) cancelRescue('rescue.abandon');
+    else if (patrolActive()) cancelPatrol('patrol.abandon');
+    else if (firejobActive()) cancelFirejob('fire.abandon');
+    else { taxi.waitCd = 0; pizza.waitCd = 0; rescue.waitCd = 0; patrol.waitCd = 0; firejob.waitCd = 0; toast(t('veh.out')); }
     return;
   }
   let best = null, bd = 52;
@@ -196,23 +196,19 @@ function toggleCar() {
     netAssignCarId(best);                          // multigiocatore: id di rete stabile del mezzo
     // in multigiocatore i mezzi-missione (taxi/pizza/ambulanza/volante) non danno
     // incarichi: ricadono sull'avviso generico "sei salito in auto/moto"
-    if (best.isTaxi && !netActive()) toast('🚕 Sei salito su un TAXI — carica i clienti e portali a destinazione!');
-    else if (best.isDelivery && !netActive()) toast('🍕 Sei salito sulla moto delle consegne — ritira il cibo e portalo ai clienti!');
-    else if (best.livery === 'ambulance' && !netActive()) toast('🚑 Sei salito sull\'AMBULANZA — soccorri i feriti e portali in ospedale!');
-    else if (best.livery === 'fire') toast(usingTouch ? '🚒 Sei salito sull\'AUTOPOMPA — spingi lo stick destro per l\'idrante!'
-                                                      : '🚒 Sei salito sull\'AUTOPOMPA — tieni premuto il mouse per l\'idrante!');
-    else if (best.wasPolice && !netActive()) toast('🚔 Sei salito sulla VOLANTE — rispondi alle chiamate e ferma i criminali!');
-    else if (best.isTank) { toast(usingTouch ? '🪖 Sei salito sul CARRO ARMATO — stick destro: razzi · passa sopra le auto!'
-                                             : '🪖 Sei salito sul CARRO ARMATO — mouse: razzi · passa sopra le auto!');
+    if (best.isTaxi && !netActive()) toast(t('taxi.enter'));
+    else if (best.isDelivery && !netActive()) toast(t('pizza.enter'));
+    else if (best.livery === 'ambulance' && !netActive()) toast(t('rescue.enter'));
+    else if (best.livery === 'fire') toast(t(usingTouch ? 'fire.enterTouch' : 'fire.enterKb'));
+    else if (best.wasPolice && !netActive()) toast(t('patrol.enter'));
+    else if (best.isTank) { toast(t(usingTouch ? 'veh.tankTouch' : 'veh.tankKb'));
                             triggerArmyAlert(nearestArmyBase()); }   // rubare un carro non passa inosservato
-    else if (best.livery === 'army') toast('🪖 Sei salito sulla jeep militare — l\'esercito non gradisce…');
-    else if (usingTouch) toast(best.isBike ? '🏍️ Sei salito in moto — stick sinistro per guidare, 🚗 per scendere'
-                             : '🚗 Sei salito in auto — stick sinistro per guidare, 🚗 per scendere');
-    else toast(best.isBike ? '🏍️ Sei salito in moto — WASD guida, E scendi'
-             : '🚗 Sei salito in auto — WASD guida, E scendi');
+    else if (best.livery === 'army') toast(t('veh.jeep'));
+    else if (usingTouch) toast(t(best.isBike ? 'veh.bikeTouch' : 'veh.carTouch'));
+    else toast(t(best.isBike ? 'veh.bikeKb' : 'veh.carKb'));
     armMissionForCar();                            // il primo incarico arriva subito (se le missioni sono attive)
     if (!missionsOn && (best.isTaxi || best.isDelivery || best.wasPolice || best.livery === 'ambulance' || best.livery === 'fire'))
-      toast(usingTouch ? '🚫 Missioni disattivate — tocca 📋 per riattivarle' : '🚫 Missioni disattivate — premi M per riattivarle');
+      toast(t(usingTouch ? 'miss.offTouch' : 'miss.offKb'));
     sfx.door(); sfx.ignition();
   } else sfx.err();
 }
@@ -258,15 +254,15 @@ function armMissionForCar() {
 }
 function toggleMissions() {
   if (!started) return;
-  if (netActive()) { toast('🌐 In multigiocatore non ci sono missioni — dai la caccia agli altri!'); return; }
+  if (netActive()) { toast(t('mp.noMissions')); return; }
   missionsOn = !missionsOn;
   if (!missionsOn) {
     cancelTaxi(); cancelPizza(); cancelRescue(); cancelPatrol(); cancelFirejob();
     taxi.waitCd = pizza.waitCd = rescue.waitCd = patrol.waitCd = firejob.waitCd = 0;
-    toast(usingTouch ? '🚫 Missioni disattivate — tocca 📋 per riattivarle' : '🚫 Missioni disattivate — premi M per riattivarle');
+    toast(t(usingTouch ? 'miss.offTouch' : 'miss.offKb'));
   } else {
     armMissionForCar();
-    toast('✅ Missioni riattivate!');
+    toast(t('miss.on'));
   }
 }
 
@@ -279,7 +275,7 @@ function hornOrSiren() {
   const c = player.car;
   if (c.wasPolice || c.livery === 'ambulance' || c.livery === 'fire') {
     c.sirenOn = !c.sirenOn;
-    toast(c.sirenOn ? '🚨 Sirena accesa' : '🔇 Sirena spenta');
+    toast(t(c.sirenOn ? 'veh.sirenOn' : 'veh.sirenOff'));
   } else sfx.horn({ v: 1, pan: 0 }, c);
 }
 // la sirena del mezzo del player suona (e lampeggia) se attivata con Spazio
