@@ -85,7 +85,7 @@ function loop(nowT) {
 //  MENU PRINCIPALE · IMPOSTAZIONI · CLASSIFICA · PAUSA
 // =========================================================
 const PANELS = ['langPanel', 'namePanel', 'menuPanel', 'spPanel', 'settingsPanel', 'scoresPanel', 'howtoPanel',
-                'mpPanel', 'hostPanel', 'invitePanel', 'joinPanel'];
+                'mpPanel', 'hostPanel', 'queuePanel', 'invitePanel', 'joinPanel'];
 function showPanel(id) {
   for (const p of PANELS) { const el = $('#' + p); if (el) el.classList.toggle('hidden', p !== id); }
 }
@@ -287,7 +287,7 @@ onClick('hostBack', () => showPanel('mpPanel'));
 onClick('joinBack', () => showPanel('mpPanel'));
 
 // messaggi d'errore della rete, tradotti (chiave sconosciuta → messaggio generico)
-const NET_ERRS = ['offline', 'noserver', 'pass', 'full', 'notfound', 'exists', 'badcode', 'timeout'];
+const NET_ERRS = ['offline', 'noserver', 'pass', 'full', 'notfound', 'exists', 'badcode', 'timeout', 'qfull'];
 function netErrText(err) {
   return NET_ERRS.includes(err) ? t('net.err.' + err) : t('net.err.other', { err });
 }
@@ -315,6 +315,27 @@ onClick('hostGo', () => {
   location.hash = 'room=' + code;
   location.reload();
 });
+// ---- sala d'attesa: il server è al tetto di stanze, siamo in fila ----
+// Il posto e la stima arrivano dal server (netOnQueued in net.js); qui si disegnano
+// e si fa scorrere il conto alla rovescia tra un aggiornamento e l'altro.
+function fmtWait(ms) {
+  if (ms < 15_000) return t('queue.etaNow');
+  const s = Math.round(ms / 1000);
+  if (s < 90) return t('queue.etaSec', { n: Math.ceil(s / 10) * 10 });
+  return t('queue.etaMin', { n: Math.ceil(s / 60) });
+}
+function updateQueuePanel() {
+  const q = net.queue; if (!q) return;
+  const pos = $('#queuePos'); if (pos) pos.textContent = t('queue.posFmt', { n: q.pos });
+  const why = $('#queueWhy'); if (why) why.textContent = t('queue.why', { rooms: q.rooms, max: q.max });
+  const eta = $('#queueEta'); if (eta) eta.textContent = fmtWait(netQueueEta());
+}
+function showQueuePanel() {
+  updateQueuePanel();
+  showPanel('queuePanel');
+}
+onClick('queueCancel', () => { netCancelQueue(); showPanel('hostPanel'); });
+
 onClick('inviteShare', () => shareInvite($('#inviteShare')));
 onClick('inviteCopy', () => copyInvite($('#inviteCopy')));
 onClick('invitePlay', () => startMatch(false));   // NB: senza la lambda, l'evento del clic arriverebbe come `resume` (truthy) e salterebbe l'init dell'orologio → timer a 0:00
@@ -425,6 +446,7 @@ else if (_hostIntent && ROOM_FROM_URL === _hostIntent.code) {
       const st = $('#hostStatus'); if (st) st.textContent = netErrText(err);
       return;
     }
+    showPanel('invitePanel');       // se eravamo in sala d'attesa: ora la stanza è nostra
     netRefreshBadge();
   });
 }

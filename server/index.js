@@ -54,6 +54,21 @@ const HEARTBEAT_MS = 30_000;      // ping applicativo per scovare le socket mort
 // giocatori ancora connessi. Evita le stanze "fantasma" che restano in RAM a
 // simulare (sim a 60Hz = CPU) per ore quando nessuno le chiude davvero.
 const MAX_ROOM_MS = 35 * 60_000;
+// Tetto di stanze VIVE simultanee. Ogni stanza è una città simulata a 60Hz sullo
+// stesso event loop (un solo processo Node): oltre una certa soglia non si rompe
+// nulla, ma TUTTE le partite iniziano a scattare. Meglio far aspettare qualcuno
+// fuori che rovinare la partita a chi sta già giocando. Chi arriva a tetto pieno
+// finisce in CODA (vedi più sotto) invece di ricevere un errore: le sessioni sono
+// a tempo, quindi un posto si libera da sé e l'attesa è prevedibile.
+const MAX_ROOMS = Number(process.env.MAX_ROOMS) || 20;
+const MAX_QUEUE = Number(process.env.MAX_QUEUE) || 30;   // oltre, meglio dire "riprova" che promettere un'ora d'attesa
+const QUEUE_TICK_MS = 5_000;      // ogni quanto si riaggiorna posizione/stima a chi è in coda
+// Quanto una stanza FINITA resta in piedi per la schermata di riepilogo. Il suo
+// POSTO però è già libero dal fischio finale: nessuno sta più giocando lì.
+const END_LINGER_MS = 2 * 60_000;
+// Durata di partita usata per stimare i giri di coda oltre il primo (quando i
+// pretendenti sono più delle stanze), se non se ne ricava una dalle stanze vive.
+const TYPICAL_MATCH_MS = 10 * 60_000;
 // La sim (movimento/fisica) è a PASSO FISSO tarato su 60Hz, come il single-player e
 // come la predizione del client: simulare a 30Hz faceva girare TUTTO il mondo
 // autoritativo a metà velocità (74 px/s invece di 148) e, con il client che predice
@@ -150,7 +165,36 @@ function scheduleEnd(room) {
   clearTimeout(room.endTimer);
   if (!room.minutes) return;
   const ms = Math.max(0, room.minutes * 60_000 - (now() - room.startAt));
-  room.endTimer = setTimeout(() => broadcast(room, { t: 'end' }), ms);
+  room.endTimer = setTimeout(() => finishRoom(room), ms);
+}
+// Fischio finale. Da qui in poi nessuno gioca più: i client mostrano il riepilogo.
+// Quindi (a) si spegne la sim — 60Hz di CPU per un mondo che nessuno guarda — e
+// (b) il POSTO della stanza torna disponibile, così chi è in coda entra subito
+// invece di aspettare che l'ultimo giocatore chiuda la scheda. La stanza resta in
+// piedi ancora un po' solo per il riepilogo, poi sparisce.
+function finishRoom(room) {
+  if (room.ended) return;
+  room.ended = true;
+  broadcast(room, { t: 'end' });
+  stopSim(room);
+  clearTimeout(room.reaperTimer);
+  room.reaperTimer = setTimeout(() => destroyRoom(room), END_LINGER_MS);
+  log('room ended', room.code, `(posto liberato, ${liveRooms()}/${MAX_ROOMS} vive)`);
+  pumpQueue();
+}
+// Stanze che occupano un posto: quelle ancora in partita. Le finite non contano.
+function liveRooms() {
+  let n = 0;
+  for (const r of rooms.values()) if (!r.ended) n++;
+  return n;
+}
+// Istante (ms epoch) in cui questa stanza libererà il suo posto: il fischio
+// finale, o il tetto di vita assoluto se la partita è senza limite di tempo.
+// È una stima PER ECCESSO: se i giocatori escono prima, il posto si libera prima.
+function roomFreeAt(room) {
+  if (room.ended) return 0;
+  const byMatch = room.minutes ? room.startAt + room.minutes * 60_000 : Infinity;
+  return Math.min(byMatch, room.startAt + MAX_ROOM_MS);
 }
 // abbattimento forzato allo scadere del tetto di vita: avvisa chi è ancora
 // connesso (così la UI chiude la partita) e poi libera tutto.
@@ -160,6 +204,7 @@ function scheduleReaper(room) {
     log('room reaped', room.code, `(vita > ${Math.round(MAX_ROOM_MS / 60_000)}min)`);
     broadcast(room, { t: 'end' });
     destroyRoom(room);
+    pumpQueue();                             // il posto è libero: tocca al primo in coda
   }, MAX_ROOM_MS);
 }
 function destroyRoom(room) {
@@ -169,6 +214,99 @@ function destroyRoom(room) {
   for (const p of room.players.values()) clearTimeout(p.dropTimer);
   rooms.delete(room.code);
   log('room destroyed', room.code);
+}
+
+// ---------- Coda di attesa per una nuova stanza -----------------------------
+// A tetto pieno chi vuole CREARE una partita non viene respinto: entra in coda e
+// il server lo fa partire da solo appena un posto si libera (la sua socket resta
+// aperta, non deve rifare nulla). Entrare in una stanza ESISTENTE non passa mai
+// di qui: se un amico ti ha invitato entri sempre, anche a tetto pieno.
+//
+// Ogni pretendente tiene un `qtoken`: se il telefono va in background e la socket
+// cade, al rientro si ripresenta col token e RIPRENDE IL SUO POSTO invece di
+// ripartire in fondo (stessa idea della grazia dei giocatori).
+const queue = [];                 // pretendenti in ordine di arrivo
+let queueTimer = null;
+
+function queueIndexOfWs(ws) { return queue.findIndex(e => e.ws === ws); }
+// stima dell'attesa per chi è in posizione `pos` (0-based). I posti si liberano
+// uno per volta, dal primo fischio finale in poi: chi è primo aspetta la stanza
+// che finisce prima, il secondo la seconda, e così via. Se i pretendenti sono più
+// delle stanze, i giri successivi si stimano con la durata tipica di una partita.
+function queueEtaMs(pos) {
+  const frees = [];
+  let minutesSum = 0;
+  for (const r of rooms.values()) {
+    if (r.ended) continue;
+    frees.push(roomFreeAt(r));
+    minutesSum += r.minutes || 0;
+  }
+  if (!frees.length) return 0;                       // c'è già posto: parte al prossimo giro di pompa
+  frees.sort((a, b) => a - b);
+  const matchMs = minutesSum ? (minutesSum / frees.length) * 60_000 : TYPICAL_MATCH_MS;
+  const rounds = Math.floor(pos / frees.length);     // 0 finché i pretendenti stanno nelle stanze vive
+  const at = frees[pos % frees.length] + rounds * matchMs;
+  return Math.max(0, at - now());
+}
+function sendQueued(e, pos) {
+  sendRaw(e.ws, {
+    t: 'queued', pos: pos + 1, eta: queueEtaMs(pos), qtoken: e.qtoken,
+    rooms: liveRooms(), max: MAX_ROOMS, waiting: queue.length, build: serverBuild(),
+  });
+}
+function broadcastQueue() {
+  queue.forEach((e, i) => { if (!e.gone) sendQueued(e, i); });
+  if (queue.length && !queueTimer) queueTimer = setInterval(broadcastQueue, QUEUE_TICK_MS);
+  else if (!queue.length && queueTimer) { clearInterval(queueTimer); queueTimer = null; }
+}
+function enqueue(ws, m) {
+  if (queue.length >= MAX_QUEUE) { sendRaw(ws, { t: 'no', r: 'qfull' }); return; }
+  const e = { ws, msg: m, qtoken: crypto.randomUUID(), gone: false, dropTimer: null, at: now() };
+  queue.push(e);
+  ws._q = true;
+  log('queued', String(m.code || '?'), `pos ${queue.length}`, `(${liveRooms()}/${MAX_ROOMS} stanze vive)`);
+  broadcastQueue();
+}
+function removeFromQueue(ws) {
+  const i = queueIndexOfWs(ws);
+  if (i < 0) return;
+  clearTimeout(queue[i].dropTimer);
+  queue.splice(i, 1);
+  ws._q = false;
+  broadcastQueue();
+}
+// la socket di un pretendente è caduta: come per i giocatori, gli teniamo il
+// posto per la finestra di grazia, poi lo togliamo davvero.
+function onQueueDisconnect(ws) {
+  const i = queueIndexOfWs(ws);
+  if (i < 0) return;
+  const e = queue[i];
+  e.gone = true;
+  e.dropTimer = setTimeout(() => {
+    const j = queue.indexOf(e);
+    if (j >= 0) { queue.splice(j, 1); log('queue drop', e.msg && e.msg.code); broadcastQueue(); }
+  }, GRACE_MS);
+}
+// un posto si è liberato: fa partire i primi della coda che sono ancora connessi.
+// La guardia `pumping` evita la ricorsione (createRoom può distruggere una stanza).
+let pumping = false;
+function pumpQueue() {
+  if (pumping) return;
+  pumping = true;
+  try {
+    while (queue.length && liveRooms() < MAX_ROOMS) {
+      // il primo ancora raggiungibile: chi è momentaneamente caduto tiene il posto
+      // ma non può ricevere una stanza adesso, quindi lo si salta per questo giro
+      const i = queue.findIndex(e => !e.gone && e.ws && e.ws.readyState === 1);
+      if (i < 0) break;
+      const [e] = queue.splice(i, 1);
+      clearTimeout(e.dropTimer);
+      e.ws._q = false;
+      log('queue → stanza', e.msg && e.msg.code, `(attesa ${Math.round((now() - e.at) / 1000)}s)`);
+      createRoom(e.ws, e.msg);        // in caso di fallimento la socket riceve il suo 'no'
+    }
+  } finally { pumping = false; }
+  broadcastQueue();
 }
 
 // ---------- Simulazione autoritativa del mondo (Fase 2) -------------------
@@ -241,23 +379,46 @@ function bindWs(ws, room, p) {
   ws._pid = p.id;
 }
 
-// crea la stanza (chi la crea è il primo giocatore, maglia 0)
+// crea la stanza (chi la crea è il primo giocatore, maglia 0). Prima però passa
+// dai controlli e, se il server è a tetto pieno, dalla coda.
 function handleCreate(ws, m) {
+  if (ws._q) return;                         // già in coda: un secondo 'create' si ignora
   const code = String(m.code || '').toUpperCase();
   if (!/^[A-Z0-9]{4,12}$/.test(code)) { sendRaw(ws, { t: 'no', r: 'badcode' }); return; }
+  // riaggancio di chi era in coda e ha perso la socket: riprende la SUA posizione
+  if (m.qtoken) {
+    const e = queue.find(x => x.qtoken === m.qtoken);
+    if (e) {
+      clearTimeout(e.dropTimer); e.dropTimer = null;
+      e.gone = false; e.ws = ws; ws._q = true;
+      log('queue resume', code, `pos ${queue.indexOf(e) + 1}`);
+      sendQueued(e, queue.indexOf(e));
+      pumpQueue();                           // nel frattempo potrebbe essersi liberato un posto
+      return;
+    }
+  }
   const existing = rooms.get(code);
-  if (existing && activeCount(existing) > 0) { sendRaw(ws, { t: 'no', r: 'exists' }); return; }
+  if (existing && !existing.ended && activeCount(existing) > 0) { sendRaw(ws, { t: 'no', r: 'exists' }); return; }
+  if (liveRooms() >= MAX_ROOMS) { enqueue(ws, { ...m, code }); return; }
+  createRoom(ws, m);
+}
+// creazione vera e propria: chiamata subito, oppure dalla coda quando tocca a te
+function createRoom(ws, m) {
+  const code = String(m.code || '').toUpperCase();
+  const existing = rooms.get(code);
+  if (existing && !existing.ended && activeCount(existing) > 0) { sendRaw(ws, { t: 'no', r: 'exists' }); return; }
   if (existing) destroyRoom(existing);
   const room = {
     code, pass: String(m.pass || ''), max: clamp(+m.max || 4, 2, MAX_PLAYERS_CAP),
     minutes: Math.max(0, +m.minutes || 0), startAt: now(),
-    idSeq: 0, players: new Map(), endTimer: null,
+    idSeq: 0, players: new Map(), endTimer: null, ended: false,
   };
   rooms.set(code, room);
   scheduleEnd(room);
   scheduleReaper(room);                      // tetto di vita assoluto: 35 min poi via
   startSim(room);                            // Fase 2: avvia la città autoritativa della stanza
-  log('room created', code, 'by', String(m.name || '?'), `(${room.minutes}min, max ${room.max}, sim ${room.sim ? 'on' : 'off'})`);
+  log('room created', code, 'by', String(m.name || '?'),
+      `(${room.minutes}min, max ${room.max}, sim ${room.sim ? 'on' : 'off'}, ${liveRooms()}/${MAX_ROOMS} vive)`);
   addPlayer(ws, room, m.name);
 }
 // entra in una stanza esistente (o riaggancia con il token)
@@ -285,6 +446,9 @@ function handleJoin(ws, m) {
     }
   }
 
+  // partita già finita (resta in piedi solo per il riepilogo di chi c'era): per
+  // chi arriva adesso è come se non ci fosse più, il mondo non è più simulato
+  if (room.ended) { sendRaw(ws, { t: 'no', r: 'notfound' }); return; }
   if ((room.pass || '') !== String(m.pass || '')) { sendRaw(ws, { t: 'no', r: 'pass' }); return; }
   if (activeCount(room) >= room.max) { sendRaw(ws, { t: 'no', r: 'full' }); return; }
   addPlayer(ws, room, m.name);
@@ -331,7 +495,8 @@ function onDisconnect(ws) {
     if (room.sim) room.sim.removePlayer(p.id);   // uscita vera: via anche dalla città autoritativa
     broadcast(room, { t: 'leave', id: p.id });
     log('leave', room.code, p.id, p.name);
-    if (room.players.size === 0) destroyRoom(room);
+    // stanza svuotata prima del tempo: sparisce e il posto va a chi è in coda
+    if (room.players.size === 0) { const live = !room.ended; destroyRoom(room); if (live) pumpQueue(); }
   }, GRACE_MS);
 }
 
@@ -381,7 +546,8 @@ const server = http.createServer((req, res) => {
   if (req.url === '/health' || (req.url.split('?')[0] === '/health')) {
     const players = [...rooms.values()].reduce((n, r) => n + activeCount(r), 0);
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, rooms: rooms.size, players }));
+    res.end(JSON.stringify({ ok: true, rooms: rooms.size, live: liveRooms(), max: MAX_ROOMS,
+                             queue: queue.length, players }));
     return;
   }
   if (STATIC_DIR && (req.method === 'GET' || req.method === 'HEAD')) { serveStatic(req, res); return; }
@@ -413,16 +579,17 @@ wss.on('connection', ws => {
     try { m = JSON.parse(data); } catch { return; }
     if (!m || typeof m !== 'object') return;
     if (m.t === 'ping') { sendRaw(ws, { t: 'pong' }); return; }   // keepalive applicativo
-    if (!ws._pid) {                                // non ancora in una stanza: solo create/join
+    if (!ws._pid) {                                // non ancora in una stanza: solo create/join/uscita dalla coda
       if (m.t === 'create') handleCreate(ws, m);
       else if (m.t === 'join') handleJoin(ws, m);
+      else if (m.t === 'unqueue') { removeFromQueue(ws); try { ws.close(); } catch {} }
       else ws.close();
       return;
     }
     onGameMessage(ws, m);
   });
-  ws.on('close', () => onDisconnect(ws));
-  ws.on('error', () => onDisconnect(ws));
+  ws.on('close', () => { onQueueDisconnect(ws); onDisconnect(ws); });
+  ws.on('error', () => { onQueueDisconnect(ws); onDisconnect(ws); });
 });
 
 // battito del cuore: chi non risponde al ping entro un giro è una socket morta

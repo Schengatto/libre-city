@@ -16,6 +16,8 @@ services:
     environment:
       PORT: "8080"
       STATIC_DIR: /app/public          # i file del gioco (build di dist/, montati sotto)
+      MAX_ROOMS: "20"                  # partite simultanee: oltre, i nuovi host vanno in sala d'attesa
+      MAX_QUEUE: "30"                  # lunghezza massima della sala d'attesa
     volumes:
       - ./public:/app/public:ro
     networks:

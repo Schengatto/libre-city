@@ -27,6 +27,10 @@ const net = {
   hello: null, rejoin: null, _open: null,   // dati per (ri)aprire la connessione
   clockLeft: null,       // frame di partita rimasti, comunicati dal server
   reconnT: null, reconnDelay: 0, wantOpen: false, dropped: false,  // riaggancio automatico
+  // ---- coda di attesa (server a tetto pieno di stanze) ----
+  qtoken: null,          // chiave per riprendere il PROPRIO posto in coda dopo una caduta
+  queue: null,           // { pos, eta, rooms, max, at } · null = non siamo in coda
+  queueT: null,          // timer del conto alla rovescia mostrato a schermo
   wake: null,            // wake lock: schermo acceso finché si è in multigiocatore
   kills: 0, deaths: 0, score: 0, streak: 0, bounty: 0,   // punteggio, serie e taglia sulla nostra testa
   lastHitBy: null, lastHitT: -9999,   // ultimo rivale che ci ha colpito (per il kill credit)
@@ -122,14 +126,21 @@ function netDial(done) {
     ws.onopen = () => {
       net.reconnDelay = 0;
       // primo ingresso: create/join iniziale · riaggancio: join col token
-      ws.send(JSON.stringify(net.token ? { ...net.rejoin, t: 'join', token: net.token } : net.hello));
+      // · riaggancio mentre si è in coda: create col qtoken, per riprendere il posto
+      const hello = net.token ? { ...net.rejoin, t: 'join', token: net.token }
+                  : net.qtoken ? { ...net.hello, qtoken: net.qtoken }
+                  : net.hello;
+      ws.send(JSON.stringify(hello));
     };
     ws.onmessage = ev => {
       let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
       if (!m || typeof m !== 'object') return;
       if (!settled) {                            // in attesa dell'esito del primo ingresso
-        if (m.t === 'ok') { settled = true; clearTimeout(timer); netOnJoined(m); netWakeLock(); done(null); return; }
-        if (m.t === 'no') { settled = true; clearTimeout(timer); netShutdown(); done(m.r); return; }
+        if (m.t === 'ok') { settled = true; clearTimeout(timer); netQueueEnd(); netOnJoined(m); netWakeLock(); done(null); return; }
+        if (m.t === 'no') { settled = true; clearTimeout(timer); netQueueEnd(); netShutdown(); done(m.r); return; }
+        // server a tetto pieno: siamo in coda. NON è un fallimento e non c'è più
+        // un tempo massimo di attesa — la partita parte da sé quando tocca a noi.
+        if (m.t === 'queued') { clearTimeout(timer); netOnQueued(m); return; }
         return;                                  // altri messaggi prima dell'ok: si ignorano
       }
       onServerMessage(m);
@@ -153,6 +164,34 @@ function netScheduleReconnect(immediate) {
   clearTimeout(net.reconnT);
   net.reconnDelay = immediate ? 0 : Math.min((net.reconnDelay || 400) * 1.6, 8000);
   net.reconnT = setTimeout(() => { if (net.wantOpen) net._open(); }, net.reconnDelay);
+}
+
+// ---------- Coda di attesa ----------
+// Il server tiene un tetto di stanze simultanee: oltre quello le partite di tutti
+// inizierebbero a scattare. A tetto pieno non veniamo respinti ma messi in fila, e
+// la stanza si apre DA SOLA quando tocca a noi (arriva un normale 'ok'): qui si
+// tiene solo lo stato per la schermata d'attesa. Le sessioni sono a tempo, quindi
+// il server sa stimare quanto manca e ce lo aggiorna ogni pochi secondi.
+function netOnQueued(m) {
+  net.qtoken = m.qtoken || net.qtoken;
+  net.queue = { pos: m.pos | 0, eta: Math.max(0, m.eta | 0), rooms: m.rooms | 0, max: m.max | 0, at: Date.now() };
+  if (!net.queueT) net.queueT = setInterval(updateQueuePanel, 1000);   // stima che scorre tra un aggiornamento e l'altro
+  showQueuePanel();
+}
+// quanto manca ADESSO: l'ultima stima del server meno il tempo passato da allora
+function netQueueEta() {
+  if (!net.queue) return 0;
+  return Math.max(0, net.queue.eta - (Date.now() - net.queue.at));
+}
+function netQueueEnd() {
+  clearInterval(net.queueT); net.queueT = null;
+  net.queue = null; net.qtoken = null;
+}
+// l'utente rinuncia ad aspettare: si esce dalla fila e si torna al pannello «crea»
+function netCancelQueue() {
+  netSend({ t: 'unqueue' });
+  netQueueEnd();
+  netShutdown();
 }
 
 // applica l'ingresso riuscito (o il riaggancio): id, maglia, roster, orologio
@@ -222,6 +261,7 @@ function onServerMessage(m) {
 function netShutdown() {
   net.wantOpen = false; net.dropped = false;
   clearTimeout(net.reconnT); net.reconnT = null;
+  clearInterval(net.queueT); net.queueT = null; net.queue = null; net.qtoken = null;
   try { if (net.wake) net.wake.release(); } catch (e) {}
   net.wake = null;
   if (net.sock) { try { net.sock.onclose = null; net.sock.onerror = null; net.sock.close(); } catch (e) {} }

@@ -234,6 +234,19 @@ const STR = {
     'host.creating': 'Creazione della stanza…',
     'host.go': '🏙️ Crea la stanza',
 
+    'queue.title': '⏳ Sala d\'attesa',
+    'queue.why': 'Partite in corso: {rooms} su {max}, il massimo che il server regge bene. ' +
+      'Sei in fila: la tua stanza si apre da sola appena una finisce.',
+    'queue.posFmt': '{n}°',
+    'queue.posLabel': 'posto in fila',
+    'queue.etaNow': 'Tocca a te da un momento all\'altro',
+    'queue.etaSec': 'Attesa stimata: circa {n} secondi',
+    'queue.etaMin': 'Attesa stimata: circa {n} minuti',
+    'queue.stay': '<b>Resta su questa schermata</b>: quando tocca a te la partita parte da sola, ' +
+      'non devi rifare nulla.',
+    'queue.joinNote': 'Nel frattempo puoi sempre entrare nella stanza di un amico: da lì non si passa dalla fila.',
+    'queue.cancel': '↩ Rinuncia e torna indietro',
+
     'invite.title': '🎟️ Invita i tuoi amici',
     'invite.link': 'Link da condividere',
     'invite.share': '📤 Condividi link',
@@ -470,6 +483,7 @@ const STR = {
     'net.err.exists': 'Esiste già una partita con questo codice: ricarica la pagina',
     'net.err.badcode': 'Codice stanza non valido',
     'net.err.timeout': 'Nessuna risposta dal server — riprova tra poco',
+    'net.err.qfull': 'Anche la sala d\'attesa è piena — riprova tra qualche minuto',
     'net.err.other': 'Errore di rete: {err}',
 
     // ---- PvP ----
@@ -624,6 +638,19 @@ const STR = {
     'host.p6': '6 players', 'host.p8': '8 players',
     'host.creating': 'Creating the room…',
     'host.go': '🏙️ Create the room',
+
+    'queue.title': '⏳ Waiting room',
+    'queue.why': 'Matches running: {rooms} of {max}, as many as the server handles well. ' +
+      'You are in line: your room opens by itself as soon as one finishes.',
+    'queue.posFmt': '#{n}',
+    'queue.posLabel': 'place in line',
+    'queue.etaNow': 'Your turn is about to come',
+    'queue.etaSec': 'Estimated wait: about {n} seconds',
+    'queue.etaMin': 'Estimated wait: about {n} minutes',
+    'queue.stay': '<b>Stay on this screen</b>: when your turn comes the match starts by itself, ' +
+      'you do not have to do anything again.',
+    'queue.joinNote': 'Meanwhile you can always join a friend\'s room: that never goes through the line.',
+    'queue.cancel': '↩ Give up and go back',
 
     'invite.title': '🎟️ Invite your friends',
     'invite.link': 'Link to share',
@@ -842,6 +869,7 @@ const STR = {
     'net.err.exists': 'A game with this code already exists: reload the page',
     'net.err.badcode': 'Invalid room code',
     'net.err.timeout': 'No answer from the server — try again shortly',
+    'net.err.qfull': 'The waiting room is full too — try again in a few minutes',
     'net.err.other': 'Network error: {err}',
 
     'pvp.killed': '💀 You took {name} down!',

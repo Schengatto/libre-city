@@ -342,6 +342,12 @@
   .mpnote { font-size:13px; opacity:.8; max-width:440px; line-height:1.5; }
   #lobbyLine { font:bold 13px 'Courier New',monospace; letter-spacing:.1em; }
   #lobbyLine b { color:#3dff9e; text-shadow:0 0 8px rgba(61,255,158,.6); }
+  /* sala d'attesa: stesso display LED del codice stanza, ma in ambra "aspetta" */
+  #queuePos { color:#ffc23a; border-color:#4a3a12; text-shadow:0 0 14px rgba(255,194,58,.9);
+    letter-spacing:normal; padding:10px 20px 8px; min-width:110px; text-align:center; }
+  .qlabel { margin-top:6px; font:bold 11px 'Courier New',monospace; letter-spacing:.18em;
+    text-transform:uppercase; opacity:.7; }
+  .qeta { margin-top:10px; font:bold 15px 'Courier New',monospace; letter-spacing:.06em; color:#8fd6ff; }
   /* classifica della partita (Tab / 🏆) */
   #ladder { position:absolute; inset:0; z-index:46; display:flex; align-items:center; justify-content:center;
     background:rgba(10,11,16,.45); pointer-events:none; }
@@ -584,6 +590,22 @@
       <div id="hostStatus" class="mpstatus"></div>
       <button id="hostGo" class="mbtn" data-i18n="host.go">🏙️ Crea la stanza</button>
       <button id="hostBack" class="mbtn back" data-i18n="common.back">↩ Indietro</button>
+    </div>
+
+    <!-- Multigiocatore: server al completo, sei in fila per una stanza -->
+    <div id="queuePanel" class="panel hidden">
+      <h2 data-i18n="queue.title">⏳ Sala d'attesa</h2>
+      <!-- niente data-i18n qui: il testo ha {rooms}/{max} e lo riempie updateQueuePanel -->
+      <p class="mpnote" id="queueWhy">Il server sta già ospitando il massimo delle partite che regge bene.
+         Sei in fila: la tua stanza si apre da sola appena una finisce.</p>
+      <div class="roomcode" id="queuePos">—</div>
+      <div id="queuePosLabel" class="qlabel" data-i18n="queue.posLabel">posto in fila</div>
+      <div id="queueEta" class="qeta">—</div>
+      <p class="mpnote" data-i18n-html="queue.stay"><b>Resta su questa schermata</b>: quando tocca a te la partita parte
+         da sola, non devi rifare nulla.</p>
+      <p class="mpnote" data-i18n="queue.joinNote">Nel frattempo puoi sempre entrare nella stanza di un amico: da lì non si
+         passa dalla fila.</p>
+      <button id="queueCancel" class="mbtn back" data-i18n="queue.cancel">↩ Rinuncia e torna indietro</button>
     </div>
 
     <!-- Multigiocatore: stanza creata, invita gli amici -->
