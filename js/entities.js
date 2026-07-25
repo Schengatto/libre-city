@@ -341,6 +341,9 @@ function spawnTrafficNear(cx, cy, rmin, rmax) {
     if (d < rmin || d > rmax) continue;
     const ed = Math.random() < 0.5 ? 1 : -1;
     const c = makeTrafficCar(ei, ed, ed > 0 ? rnd(0.05, 0.5) : rnd(0.5, 0.95));
+    // mai far nascere un'auto addosso a un'altra: resterebbero appiccicate
+    // finché la distanza di sicurezza non riesce a separarle
+    if (cars.some(o => o.role !== 'parked' && dist(o.x, o.y, c.x, c.y) < 70)) continue;
     if (Math.random() < 0.18) makeTaxi(c);            // un po' di taxi nel traffico
     else if (Math.random() < 0.14) makeMoto(c);       // e qualche moto
     return c;

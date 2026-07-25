@@ -80,11 +80,13 @@ function explodeRocket(r) {
 // i cingoli non perdonano: l'auto che finisce sotto il carro esplode sul colpo
 function tankCrush(c) {
   if (Math.abs(c.speed) < 1.2) return;
-  const ca = Math.cos(c.angle), sa = Math.sin(c.angle);
   for (const o of [...cars]) {
     if (o === c || o.isTank || o.exploded) continue;
     const dx = o.x - c.x, dy = o.y - c.y;
-    if (Math.abs(dx * ca + dy * sa) < c.w / 2 && Math.abs(-dx * sa + dy * ca) < c.h / 2) {
+    if (dx * dx + dy * dy > CAR_REACH * CAR_REACH) continue;              // broad-phase
+    // contatto vero fra le due sagome: schiaccia appena tocca la lamiera,
+    // non quando l'auto è già mezza dentro il carro
+    if (carHit(c, o)) {
       explodeCar(o);
       shake(6, 7);
       // il crimine è di chi guida il carro (in locale: il player unico); un carro

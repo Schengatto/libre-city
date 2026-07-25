@@ -290,6 +290,7 @@ var __sim = {
   playerCount() { return players.length; },
   _player(id) { return playerById(id); },   // solo per i test: riferimento diretto all'oggetto player
   _spawnPed(x, y, role) { const p = makePed(x, y, role); peds.push(p); return p; },   // solo per i test
+  _cars() { return cars; },                 // solo per i test: traffico/collisioni
   // --- diagnostica per i test ---
   worldInfo() {
     let sig = 0;

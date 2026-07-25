@@ -487,19 +487,45 @@ function lineClear(x0, y0, x1, y1) {
   return true;
 }
 
+// ---------- Geometria del veicolo (condivisa da IA e collisioni) ----------
+// spazio che un'auto AI lascia fra il proprio muso e il paraurti di chi precede
+// quando è ferma in coda (in marcia la distanza cresce con la velocità)
+const SAFE_GAP = 16;
+
+// Ogni veicolo è la SUA scatola orientata w×h, la stessa che disegna render.js.
+// carProj = mezza-estensione della scatola lungo un asse unitario (u): serve sia
+// a misurare gli spazi (dove finisce il paraurti) sia al test di collisione.
+function carProj(c, ux, uy) {
+  const ca = Math.cos(c.angle), sa = Math.sin(c.angle);
+  return (c.w || 46) / 2 * Math.abs(ux * ca + uy * sa)
+       + (c.h || 24) / 2 * Math.abs(uy * ca - ux * sa);
+}
+
 // ---------- IA veicoli ----------
-// spazio libero davanti al veicolo (cono in avanti) → distanza di sicurezza
-function gapAhead(c, maxLook) {
+// spazio libero davanti al veicolo, misurato da PARAURTI a paraurti (non fra i
+// centri): così la distanza di sicurezza è la stessa per un'utilitaria e per un
+// camion, e nessuno resta incollato a chi lo precede.
+// Con `push` attivo l'autista ha perso la pazienza: ignora chi è fermo di
+// traverso (vedi lo sblocca-stalli in updateCar) e prova a scansarlo.
+function gapAhead(c, maxLook, push) {
   let gap = maxLook;
   const ax = c.dir.x, ay = c.dir.y;
+  const myFront = carProj(c, ax, ay);                  // dal centro al mio muso
+  const myHalfW = carProj(c, -ay, ax);                 // mezza larghezza
   for (const o of cars) {
     if (o === c || o.role === 'parked') continue;
+    if (push && Math.abs(o.speed) < 0.2 &&
+        c.dir.x * o.dir.x + c.dir.y * o.dir.y < 0.3) continue;   // fermo di traverso: lo scanso
     const dx = o.x - c.x, dy = o.y - c.y;
     const along = dx * ax + dy * ay;                   // avanti (>0)
+    if (along <= 0) continue;                          // è dietro di me
     const side = -dx * ay + dy * ax;                   // laterale
-    if (along > 0 && along < gap && Math.abs(side) < 18) gap = along;
+    // ingombro dell'altro veicolo sui MIEI assi (può essere ruotato rispetto a me)
+    if (Math.abs(side) > myHalfW + carProj(o, -ay, ax) + 4) continue;   // non è sulla mia traiettoria
+    const g = along - myFront - carProj(o, ax, ay);    // vuoto fra i due paraurti
+    if (g < gap) gap = g;
   }
-  return gap;
+  return Math.max(0, gap);
 }
 // distanza fino alla linea d'arresto se l'incrocio ha semaforo rosso (Infinity se libero)
 function signalStop(c) {
@@ -576,9 +602,11 @@ function updateCar(c) {
   // semaforo rosso
   const sg = signalStop(c);
   if (sg !== Infinity) cap = Math.min(cap, clamp((sg - 24) * 0.05, 0, c.maxSpeed));
-  // auto che precede (mantiene le distanze, niente tamponamenti)
-  const gap = gapAhead(c, T * 5);
-  cap = Math.min(cap, clamp((gap - 30) * 0.15, 0, c.maxSpeed));
+  // auto che precede: tiene le distanze di sicurezza fra i paraurti — da fermo
+  // resta un margine di SAFE_GAP, in marcia cresce con la velocità (all'equilibrio
+  // gap ≈ SAFE_GAP + velocità / 0.16, cioè ~32px a velocità di crociera)
+  const gap = gapAhead(c, T * 5, c.pushT > 0);
+  cap = Math.min(cap, clamp((gap - SAFE_GAP) * 0.16, 0, c.maxSpeed));
   // incrocio senza semaforo → rallenta e dà un'occhiata
   const nodeAheadIdx = c.ed > 0 ? e.b : e.a;
   const nodeAhead = nodes[nodeAheadIdx];
@@ -590,13 +618,19 @@ function updateCar(c) {
   // passaggio a livello: al treno il traffico si ferma (le volanti in caccia no,
   // updatePoliceCar non passa di qui; anche l'esercito prosegue)
   if (trainBlocking(c)) cap = 0;
+  // sblocca-stalli: se sta scansando qualcuno di fermo procede a passo d'uomo
+  if (c.pushT > 0) { c.pushT--; cap = Math.min(cap, 1.0); }
   // accelerazione/frenata morbida (lo spunto dipende dal mezzo)
   c.speed += clamp(cap - c.speed, -0.6, c.accel * 1.4);
   if (c.speed < 0) c.speed = 0;
   // clacson: bloccato da qualcuno (non dal semaforo) → dopo un po' protesta
-  if (gap < T * 2.2 && c.speed < 0.7 && sg === Infinity) {
+  if (gap < T * 1.6 && c.speed < 0.7 && sg === Infinity) {
     c.stuckT = (c.stuckT || 0) + 1;
     if (c.stuckT > 70 && Math.random() < 0.03) sfx.horn(hear(c.x, c.y, 850), c);
+    // stallo lungo: due auto che si cedono la strada a vicenda all'incrocio, o
+    // l'auto di un giocatore piantata di traverso. Perde la pazienza e per un po'
+    // se la scansa (senza questo, chi cede a chi cede resterebbe fermo per sempre).
+    if (c.stuckT > 150) { c.pushT = 90; c.stuckT = 0; }
   } else c.stuckT = 0;
   // avanza lungo l'arco
   c.t += c.ed * (c.speed / Math.max(1, e.len));
@@ -672,14 +706,36 @@ function runOverPlayer(c, strong) {
 }
 
 // ---------- Collisioni auto ↔ auto ----------
-// ogni veicolo è approssimato da due cerchi (muso e coda) → forma allungata
-// (la moto è più corta e stretta: cerchi ravvicinati e raggio ridotto)
-function carCircles(c) {
-  const off = c.isBike ? 8 : c.isTank ? 16 : 13;
-  const cx = Math.cos(c.angle) * off, cy = Math.sin(c.angle) * off;
-  return [[c.x + cx, c.y + cy], [c.x - cx, c.y - cy]];
+// Ogni veicolo è la sua scatola orientata w×h (la stessa sagoma disegnata), non
+// più due cerchi: i cerchi sono più grassi ai fianchi e più tondi ai musi, per
+// cui l'urto scattava dentro la grafica dell'auto. Qui il contatto è esattamente
+// sul bordo, con il teorema degli assi separanti (SAT).
+// Ritorna null se non si toccano, altrimenti la separazione minima: normale
+// (nx, ny) orientata da a verso b, penetrazione `pen` e punto di contatto sul bordo.
+function carHit(a, b) {
+  const ca = Math.cos(a.angle), sa = Math.sin(a.angle);
+  const cb = Math.cos(b.angle), sb = Math.sin(b.angle);
+  const ahw = (a.w || 46) / 2, ahh = (a.h || 24) / 2;
+  const bhw = (b.w || 46) / 2, bhh = (b.h || 24) / 2;
+  const dx = b.x - a.x, dy = b.y - a.y;
+  // 4 assi candidati: i lati delle due scatole (in 2D bastano questi)
+  const axes = [ca, sa, -sa, ca, cb, sb, -sb, cb];
+  let pen = Infinity, nx = 0, ny = 0, reachA = 0;
+  for (let k = 0; k < 8; k += 2) {
+    const ux = axes[k], uy = axes[k + 1];
+    const pa = ahw * Math.abs(ux * ca + uy * sa) + ahh * Math.abs(uy * ca - ux * sa);
+    const pb = bhw * Math.abs(ux * cb + uy * sb) + bhh * Math.abs(uy * cb - ux * sb);
+    const d = dx * ux + dy * uy;
+    const p = pa + pb - Math.abs(d);
+    if (p <= 0) return null;                            // asse scarico → non c'è contatto
+    if (p < pen) { pen = p; reachA = pa; const s = d < 0 ? -1 : 1; nx = ux * s; ny = uy * s; }
+  }
+  // punto d'impatto sulla lamiera (per scintille e scossone), non fra i centri
+  return { pen, nx, ny, px: a.x + nx * (reachA - pen / 2), py: a.y + ny * (reachA - pen / 2) };
 }
-const carRadius = c => c.isBike ? 7 : c.isTank ? 14 : 11;
+// distanza oltre la quale due veicoli non possono toccarsi (broad-phase):
+// mezza diagonale della scatola più grande in gioco (il carro armato, 56×30) ×2
+const CAR_REACH = 64;
 // applica uno spostamento a un'auto rispettandone il tipo di moto
 function shoveCar(c, dx, dy) {
   if (c.role === 'traffic' && c.edge != null) {         // auto su rotaia: arretra lungo la corsia
@@ -720,19 +776,12 @@ function resolveCarCollisions() {
     for (let j = i + 1; j < cars.length; j++) {
       const b = cars[j];
       const ddx = b.x - a.x, ddy = b.y - a.y;
-      if (ddx * ddx + ddy * ddy > 60 * 60) continue;    // broad-phase
+      if (ddx * ddx + ddy * ddy > CAR_REACH * CAR_REACH) continue;    // broad-phase
       // il carro armato lanciato non rimbalza sulle auto: ci passa sopra (tankCrush)
       if ((a.isTank && Math.abs(a.speed) >= 1.2) || (b.isTank && Math.abs(b.speed) >= 1.2)) continue;
-      const ac = carCircles(a), bc = carCircles(b), rr = carRadius(a) + carRadius(b);
-      let pen = 0, nx = 0, ny = 0;
-      for (const p of ac) for (const q of bc) {
-        const dx = q[0] - p[0], dy = q[1] - p[1], d = Math.hypot(dx, dy) || 0.001, pp = rr - d;
-        if (pp > pen) { pen = pp; nx = dx / d; ny = dy / d; }   // normale da a → b
-      }
-      if (pen <= 0) continue;
-      // sovrapposizione profonda (i cerchi si scavalcano): la normale può
-      // puntare all'indietro — riallineala alla direzione centro → centro
-      if (nx * ddx + ny * ddy < 0) { nx = -nx; ny = -ny; }
+      const hit = carHit(a, b);
+      if (!hit) continue;
+      const { pen, nx, ny } = hit;
       // chi pesa di più si sposta di meno: un camion spinge via una moto
       const wa = (a.role === 'parked' ? 0.18 : 1) / (a.mass || 1);
       const wb = (b.role === 'parked' ? 0.18 : 1) / (b.mass || 1);
@@ -752,7 +801,7 @@ function resolveCarCollisions() {
         // impatto: scintille, scossone e danno proporzionali alla botta
         const imp = -vn;
         if (imp > 1.6) {
-          spawnSparks((a.x + b.x) / 2, (a.y + b.y) / 2, Math.min(10, Math.round(2 + imp * 1.4)));
+          spawnSparks(hit.px, hit.py, Math.min(10, Math.round(2 + imp * 1.4)));
           if (a.driver === 'player' || b.driver === 'player') {
             shake(Math.min(8, 2 + imp * 0.8), Math.min(9, 3 + imp * 0.7)); sfx.crash();
             const other = a.driver === 'player' ? b : a;
@@ -768,7 +817,8 @@ function resolveCarCollisions() {
 // volanti dei rivali ricercati). Sono interpolate e "di proprietà" di un altro
 // client: qui NON le muoviamo, spostiamo e facciamo rimbalzare solo la nostra
 // auto (l'altro fa lo stesso dalla sua parte). Prima si attraversavano; ora si
-// scontrano davvero. Ogni veicolo è due cerchi, come in resolveCarCollisions.
+// scontrano davvero. Ogni veicolo è la sua scatola orientata, come in
+// resolveCarCollisions (stesso carHit → stesso contatto sul bordo).
 function resolveRemoteCarCollisions() {
   if (!netActive() || !player.car) return;
   const a = player.car;
@@ -776,15 +826,10 @@ function resolveRemoteCarCollisions() {
   const remotes = netSolidCars([]);
   for (const b of remotes) {
     const ddx = b.x - a.x, ddy = b.y - a.y;
-    if (ddx * ddx + ddy * ddy > 60 * 60) continue;     // broad-phase
-    const ac = carCircles(a), bc = carCircles(b), rr = carRadius(a) + carRadius(b);
-    let pen = 0, nx = 0, ny = 0;
-    for (const p of ac) for (const q of bc) {
-      const dx = q[0] - p[0], dy = q[1] - p[1], d = Math.hypot(dx, dy) || 0.001, pp = rr - d;
-      if (pp > pen) { pen = pp; nx = dx / d; ny = dy / d; }
-    }
-    if (pen <= 0) continue;
-    if (nx * ddx + ny * ddy < 0) { nx = -nx; ny = -ny; }
+    if (ddx * ddx + ddy * ddy > CAR_REACH * CAR_REACH) continue;     // broad-phase
+    const hit = carHit(a, b);
+    if (!hit) continue;
+    const { pen, nx, ny } = hit;
     shoveCar(a, -nx * pen, -ny * pen);                 // la remota è immobile per noi: ci scostiamo tutto noi
     const va = carVel(a), vb = carVel(b);
     const vn = (vb.x - va.x) * nx + (vb.y - va.y) * ny; // velocità di avvicinamento
@@ -794,7 +839,7 @@ function resolveRemoteCarCollisions() {
       applyImpulse(a, -nx * jn / ma, -ny * jn / ma);
       const imp = -vn;
       if (imp > 1.6) {                                  // botta vera: scintille, scossone, danno
-        spawnSparks((a.x + b.x) / 2, (a.y + b.y) / 2, Math.min(10, Math.round(2 + imp * 1.4)));
+        spawnSparks(hit.px, hit.py, Math.min(10, Math.round(2 + imp * 1.4)));
         shake(Math.min(8, 2 + imp * 0.8), Math.min(9, 3 + imp * 0.7)); sfx.crash();
         damageCar(a, Math.min(16, 2 + imp * 2.2));
       }
