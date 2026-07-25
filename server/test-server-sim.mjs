@@ -1,7 +1,7 @@
-// LIBRE CITY · server/test-server-sim.mjs — test end-to-end del server autoritativo (Fase 2, Stage 2b).
-// Avvia il vero server, due client WebSocket creano/entrano nella stanza, mandano
-// INPUT ('i') e ricevono gli SNAPSHOT ('w') di UNA città condivisa.
-//   Uso:  node server/test-server-sim.mjs
+// LIBRE CITY · server/test-server-sim.mjs — end-to-end test of the authoritative server
+// (Phase 2, Stage 2b). Starts the real server; two WebSocket clients create/join the room,
+// send INPUT ('i') and receive the SNAPSHOTS ('w') of ONE shared city.
+//   Usage:  node server/test-server-sim.mjs
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,7 +14,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) { pass++; console.log('  OK ', m); } else { fail++; console.log('  XX FAIL:', m); } };
 
-// avvia il server
+// Start the server.
 const srv = spawn(process.execPath, [path.join(__dirname, 'index.js')],
   { env: { ...process.env, PORT: String(PORT), HOST: '127.0.0.1', STATIC_DIR: '' }, stdio: ['ignore', 'pipe', 'pipe'] });
 srv.stdout.on('data', d => process.env.DBG && process.stdout.write('[srv] ' + d));
@@ -29,7 +29,7 @@ function connect() {
 const waitFor = async (pred, ms = 4000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (pred()) return true; await sleep(30); } return false; };
 
 try {
-  await sleep(800);   // lascia partire il server
+  await sleep(800);   // give the server time to start
 
   console.log('1) creazione stanza con simulazione autoritativa');
   const c1 = await connect();

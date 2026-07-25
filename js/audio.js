@@ -1,10 +1,10 @@
-// LIBRE CITY · js/audio.js — audio: sintesi procedurale WebAudio (motori, spari, sirene…).
+// LIBRE CITY · js/audio.js — audio: procedural WebAudio synthesis (engines, gunfire, sirens…).
 
 // =========================================================
-//  AUDIO (sintesi procedurale)
+//  AUDIO (procedural synthesis)
 // =========================================================
-// MASTER: rubinetto unico attraversato da OGNI suono → l'interruttore audio delle
-// impostazioni è un semplice guadagno 0/1, senza toccare il contesto né i singoli suoni.
+// MASTER: a single tap that EVERY sound passes through → the audio switch in the settings
+// is just a 0/1 gain, without touching the context or the individual sounds.
 let AC = null, MASTER = null, engine = null;
 function initAudio() {
   if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
@@ -14,11 +14,11 @@ function initAudio() {
   MASTER.gain.value = audioOn ? 1 : 0;
   MASTER.connect(AC.destination);
 }
-// chiamata quando si salvano le impostazioni: rampa breve per non fare "click"
+// Called when settings are saved: a short ramp to avoid a "click".
 function applyAudioSetting() {
   if (AC && MASTER) MASTER.gain.setTargetAtTime(audioOn ? 1 : 0, AC.currentTime, 0.02);
 }
-// uscita audio: diretta sul master, oppure attraverso un panner stereo (suoni "nel mondo")
+// Audio output: straight to the master, or through a stereo panner ("in-world" sounds).
 function dest(pan) {
   if (!pan || !AC.createStereoPanner) return MASTER;
   const p = AC.createStereoPanner(); p.pan.value = clamp(pan, -1, 1); p.connect(MASTER);
@@ -46,40 +46,42 @@ function noise(dur, vol, filter, when, pan) {
   const g = AC.createGain(); g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
   n.connect(f).connect(g).connect(dest(pan)); n.start(t0); n.stop(t0 + dur + 0.02);
 }
-// suoni emessi nel mondo: volume attenuato con la distanza e pan stereo rispetto al player
+// Sounds emitted in the world: volume attenuated with distance, stereo-panned relative to
+// the player.
 function hear(x, y, range) {
   const R = range || 900, d = dist(x, y, player.x, player.y);
   if (d > R) return null;
   const k = 1 - d / R;
   return { v: k * k, pan: clamp((x - player.x) / 520, -0.85, 0.85) };
 }
-// anti-spam: cooldown (in frame, decrementati in update) per i suoni che scatterebbero a raffica
+// Anti-spam: cooldowns (in frames, decremented in update) for sounds that would otherwise
+// fire in bursts.
 const sfxCd = { scream: 0, yell: 0, chat: 0, horn: 0, rico: 0, clank: 0, whistle: 0 };
-// motore continuo — sintesi procedurale a "scoppi": un vero motore non è una nota,
-// ma una serie di combustioni ripetute (i cilindri che sparano) + rumore meccanico.
-// Modello: rumore di combustione in loop + un sub per il peso, entrambi tagliuzzati
-// da una modulazione d'ampiezza alla frequenza di scoppio (= giri) → "brap-brap-brap".
-// Più giri = scoppi più fitti, filtro più aperto e chop che si fonde in un ruggito.
+// Continuous engine — procedural "combustion" synthesis: a real engine is not a note but a
+// series of repeated combustions (the cylinders firing) plus mechanical noise.
+// Model: looping combustion noise + a sub for weight, both chopped by an amplitude
+// modulation at the firing frequency (= revs) → "brap-brap-brap".
+// More revs = denser firing, a more open filter, and a chop that melts into a roar.
 function makeEngine(out) {
-  // rumore di combustione: buffer bianco in loop, è la "grana" del motore
+  // Combustion noise: a looping white buffer — the engine's "grain".
   const len = Math.max(1, Math.floor(AC.sampleRate * 1.5));
   const buf = AC.createBuffer(1, len, AC.sampleRate), d = buf.getChannelData(0);
   for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
   const src = AC.createBufferSource(); src.buffer = buf; src.loop = true;
   const nbp = AC.createBiquadFilter(); nbp.type = 'bandpass'; nbp.frequency.value = 180; nbp.Q.value = 0.6;
-  const nAmt = AC.createGain(); nAmt.gain.value = 0.4;           // poco sibilo: il rombo è sordo
+  const nAmt = AC.createGain(); nAmt.gain.value = 0.4;           // little hiss: the rumble is muffled
 
-  // sub: il "thump" pesante e bombato di ogni scoppio (è la voce dominante)
+  // Sub: the heavy, rounded "thump" of each combustion (the dominant voice).
   const sub = AC.createOscillator(); sub.type = 'triangle'; sub.frequency.value = 38;
   const sAmt = AC.createGain(); sAmt.gain.value = 0.95;
 
-  // modulazione d'ampiezza alla frequenza di scoppio → i singoli colpi del motore
-  const am = AC.createGain(); am.gain.value = 0.5;               // livello medio del chop
+  // Amplitude modulation at the firing frequency → the engine's individual beats.
+  const am = AC.createGain(); am.gain.value = 0.5;               // mean level of the chop
   const lfo = AC.createOscillator(); lfo.type = 'sawtooth'; lfo.frequency.value = 38;
-  const depth = AC.createGain(); depth.gain.value = 0.4;         // profondità del chop
+  const depth = AC.createGain(); depth.gain.value = 0.4;         // depth of the chop
   lfo.connect(depth).connect(am.gain);
 
-  // corpo/silenziatore: chiuso e risonante → rombo grave e "bombato", mai stridulo
+  // Body/silencer: closed and resonant → a deep, rounded rumble, never shrill.
   const body = AC.createBiquadFilter(); body.type = 'lowpass'; body.frequency.value = 280; body.Q.value = 2;
   const g = AC.createGain(); g.gain.value = 0;
 
@@ -89,26 +91,26 @@ function makeEngine(out) {
   src.start(); sub.start(); lfo.start();
   return { lfo, sub, nbp, depth, body, g };
 }
-// aggiorna una voce motore: ritmo degli scoppi = giri; agli alti giri apre i filtri
-// e attenua il chop (i colpi si fondono in un ruggito continuo)
+// Updates an engine voice: firing rate = revs; at high revs it opens the filters and eases
+// off the chop (the beats melt into a continuous roar).
 function driveEngine(e, vol, freq, smooth) {
   const t = AC.currentTime, s = smooth || 0.1;
-  const f = (freq || 52) * 0.68;                                 // scoppi più gravi = rombo sordo
-  const rev = clamp((f - 30) / 130, 0, 1);                       // 0 al minimo → 1 su di giri
+  const f = (freq || 52) * 0.68;                                 // deeper firing = muffled rumble
+  const rev = clamp((f - 30) / 130, 0, 1);                       // 0 at idle → 1 at full revs
   e.g.gain.setTargetAtTime((vol || 0) * 1.25, t, s);
-  e.lfo.frequency.setTargetAtTime(f, t, s * 0.6);               // scoppi al secondo = giri
+  e.lfo.frequency.setTargetAtTime(f, t, s * 0.6);               // firings per second = revs
   e.sub.frequency.setTargetAtTime(f, t, s * 0.6);
-  e.nbp.frequency.setTargetAtTime(150 + rev * 380, t, s * 0.6); // filtri chiusi: poco acuto anche in corsa
+  e.nbp.frequency.setTargetAtTime(150 + rev * 380, t, s * 0.6); // closed filters: little treble even at speed
   e.body.frequency.setTargetAtTime(240 + rev * 560, t, s * 0.6);
-  e.depth.gain.setTargetAtTime(0.4 - rev * 0.3, t, s * 0.6);    // agli alti giri il chop si fonde nel rombo
+  e.depth.gain.setTargetAtTime(0.4 - rev * 0.3, t, s * 0.6);    // at high revs the chop melts into the rumble
 }
 function engineGain(vol, freq) {
   if (!AC) return;
   if (!engine) engine = makeEngine(MASTER);
   driveEngine(engine, vol, freq, 0.08);
 }
-// brusio dei motori del traffico: una voce persistente che segue
-// l'auto in movimento più "udibile" (vicina e veloce) attorno al player
+// Hum of the traffic's engines: one persistent voice that follows the most "audible"
+// moving car (near and fast) around the player.
 let trafEng = null;
 function updateTrafficEngine() {
   if (!AC) return;
@@ -127,7 +129,7 @@ const sfx = {
   shoot()    { noise(0.05, 0.25, 1600); tone(420, 0.08, 'square', 0.14, 120); },
   smg()      { noise(0.035, 0.2, 2200); tone(520, 0.05, 'square', 0.11, 160); },
   shotgun()  { noise(0.16, 0.42, 800); tone(150, 0.16, 'square', 0.2, 55);
-               tone(200, 0.05, 'square', 0.12, null, 0.28); tone(150, 0.06, 'square', 0.12, null, 0.36); },  // + "ka-chak" della pompa
+               tone(200, 0.05, 'square', 0.12, null, 0.28); tone(150, 0.06, 'square', 0.12, null, 0.36); },  // + the pump's "ka-chak"
   copShoot(h){ const v = h ? h.v : 1, pan = h ? h.pan : 0;
                noise(0.05, 0.2 * v, 1400, 0, pan); tone(300, 0.09, 'square', 0.12 * v, 100, 0, pan); },
   ricochet(h){ if (!h || sfxCd.rico) return; sfxCd.rico = 4;
@@ -135,19 +137,19 @@ const sfx = {
   clank(h)   { if (!h || sfxCd.clank) return; sfxCd.clank = 3;
                tone(rnd(190, 260), 0.07, 'square', 0.16 * h.v, 90, 0, h.pan); noise(0.05, 0.1 * h.v, 1200, 0, h.pan); },
   ignition() { noise(0.14, 0.1, 420, 0.1); tone(46, 0.5, 'sawtooth', 0.18, 130, 0.12); },
-  // clacson: ogni veicolo suona con la propria voce (frequenza e carattere)
+  // Horn: each vehicle sounds with its own voice (frequency and character).
   horn(h, c) { if (!h || sfxCd.horn) return; sfxCd.horn = 40;
                const f = (c && c.hornF) || pick([300, 340, 375]);
                const kind = (c && c.hornKind) || 'car';
-               if (kind === 'bike') {                                         // bip-bip squillante della moto
+               if (kind === 'bike') {                                         // the motorbike's shrill beep-beep
                  tone(f, 0.09, 'square', 0.09 * h.v, null, 0, h.pan);
                  tone(f, 0.09, 'square', 0.09 * h.v, null, 0.14, h.pan);
-               } else if (kind === 'truck') {                                 // tromba grave e lunga del camion
+               } else if (kind === 'truck') {                                 // the lorry's deep, drawn-out horn
                  tone(f, 0.55, 'sawtooth', 0.13 * h.v, null, 0, h.pan);
                  tone(f * 1.2, 0.55, 'sawtooth', 0.1 * h.v, null, 0, h.pan);
                } else {
                  tone(f, 0.2, 'square', 0.1 * h.v, null, 0, h.pan); tone(f * 1.26, 0.2, 'square', 0.07 * h.v, null, 0, h.pan);
-                 if (Math.random() < 0.4) {                                   // a volte insiste: doppio colpo
+                 if (Math.random() < 0.4) {                                   // sometimes they insist: a double blast
                    tone(f, 0.26, 'square', 0.1 * h.v, null, 0.28, h.pan); tone(f * 1.26, 0.26, 'square', 0.07 * h.v, null, 0.28, h.pan);
                  }
                } },
@@ -162,10 +164,10 @@ const sfx = {
                for (let i = 0; i < 3; i++) tone(f * rnd(0.85, 1.2), 0.05, 'triangle', 0.045 * h.v, null, i * 0.08, h.pan); },
   whistle(h) { if (!h || sfxCd.whistle) return; sfxCd.whistle = 90;
                tone(2050, 0.09, 'sine', 0.07 * h.v, 2350, 0, h.pan); tone(2050, 0.11, 'sine', 0.07 * h.v, 2400, 0.12, h.pan); },
-  // treno: rombo grave e continuo delle ruote sui binari; `horn` all'ingresso
+  // Train: the deep, continuous rumble of wheels on rails; `horn` on arrival.
   train(h, horn) { const v = h.v, pan = h.pan;
-                   noise(0.5, 0.05 * v, 260, 0, pan);                       // sferragliamento
-                   tone(58, 0.34, 'sawtooth', 0.09 * v, 46, 0, pan);        // basso delle ruote
+                   noise(0.5, 0.05 * v, 260, 0, pan);                       // clattering
+                   tone(58, 0.34, 'sawtooth', 0.09 * v, 46, 0, pan);        // bass of the wheels
                    if (horn) { tone(150, 0.7, 'sawtooth', 0.13 * v, 140, 0, pan); tone(198, 0.7, 'sawtooth', 0.1 * v, 188, 0, pan); } },
   thud()     { tone(120, 0.14, 'sine', 0.28, 50); noise(0.1, 0.2, 400); },
   punch()    { noise(0.04, 0.2, 900); tone(170, 0.09, 'sine', 0.24, 70); },
@@ -178,14 +180,14 @@ const sfx = {
   err()      { tone(150, 0.14, 'sawtooth', 0.12, 90); },
   bust()     { tone(400, 0.5, 'sawtooth', 0.2, 80); },
   siren(hi)  { if (wanted > 0) tone(hi ? 760 : 560, 0.22, 'square', 0.05 + wanted * 0.01); },
-  // bitonale del mezzo del player: l'ambulanza è più acuta della volante
+  // Two-tone siren on the player's vehicle: the ambulance is higher than the patrol car.
   emergency(amb, hi) { tone(amb ? (hi ? 960 : 720) : (hi ? 780 : 580), 0.3, 'square', 0.07); },
   spray()    { noise(0.16, 0.09, 750); },
-  // lanciafiamma: soffio filtrato brevissimo, basso volume (scatta ~20 volte al secondo)
+  // Flamethrower: a very short filtered puff at low volume (fires ~20 times a second).
   flame()    { noise(0.09, 0.05, 900); },
-  // whoosh del razzo del carro armato
+  // Whoosh of the tank's rocket.
   rocket()   { noise(0.22, 0.3, 750); tone(200, 0.4, 'sawtooth', 0.2, 55); tone(95, 0.3, 'square', 0.12, 40, 0.04); },
-  // klaxon bitonale della base militare in allarme
+  // Two-tone klaxon of the military base on alert.
   alarm(h)   { const v = h ? h.v : 1, pan = h ? h.pan : 0;
                tone(540, 0.17, 'square', 0.11 * v, null, 0, pan); tone(405, 0.17, 'square', 0.11 * v, null, 0.2, pan); },
 };

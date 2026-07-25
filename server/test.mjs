@@ -1,6 +1,6 @@
-// server/test.mjs — smoke test del server (avvialo con:  node test.mjs).
-// Fa partire il server su una porta di prova e verifica il protocollo:
-// create / join / roster / relay dello stato / kill credit / riaggancio col token.
+// server/test.mjs — server smoke test (run it with:  node test.mjs).
+// Starts the server on a test port and checks the protocol: create / join / roster /
+// state relay / kill credit / reconnection with the token.
 import { spawn } from 'node:child_process';
 
 const PORT = Number(process.env.TEST_PORT) || 8791;
@@ -29,12 +29,12 @@ const send = (ws, m) => ws.send(JSON.stringify(m));
 const findT = (ws, t) => ws.inbox.find(m => m.t === t);
 
 try {
-  await wait(1000);   // avvio server + warmup della simulazione (prima città ~200ms)
+  await wait(1000);   // server start-up + simulation warm-up (first city ~200ms)
 
   // create
   const a = await open();
   send(a, { t: 'create', code: 'TEST01', name: 'Alice', pass: '', max: 4, minutes: 2 });
-  await wait(400);    // la create genera la città autoritativa della stanza (~90ms)
+  await wait(400);    // create generates the room's authoritative city (~90ms)
   const aok = findT(a, 'ok');
   ok(aok && aok.id === 'p1', 'A: create → ok, id ' + (aok && aok.id));
   ok(aok && aok.shirtIdx === 0, 'A: maglia 0 (creatore)');
@@ -52,7 +52,7 @@ try {
   const bId = bok.id, bToken = bok.token;
   ok(!!findT(a, 'join'), 'A: notificato dell\'ingresso di B');
 
-  // relay dello stato
+  // State relay.
   a.inbox = []; b.inbox = [];
   send(a, { t: 's', x: 100, y: 200, a: 1.5 });
   await wait(150);
@@ -67,7 +67,7 @@ try {
   const ak = findT(a, 'kill');
   ok(ak && ak.id === bId, 'A: accreditato del kill sulla vittima B');
 
-  // codice occupato / stanza inesistente
+  // Code already taken / room does not exist.
   const c = await open();
   send(c, { t: 'create', code: 'TEST01', name: 'Eve' });
   await wait(150);
@@ -79,7 +79,7 @@ try {
   ok(findT(d, 'no')?.r === 'notfound', 'D: join a stanza inesistente → no/notfound');
   d.close();
 
-  // riaggancio col token
+  // Reconnection with the token.
   b.close();
   await wait(300);
   ok(!findT(a, 'leave'), 'A: nessun "leave" durante la grazia');

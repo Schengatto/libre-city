@@ -17,3 +17,6 @@ deploy-vps.sh
 
 # staging effimero dei sorgenti sim per il container (creato da deploy-vps.sh)
 server/sim/
+
+# classifica condivisa: dati di runtime del server (in produzione è un volume)
+server/data/

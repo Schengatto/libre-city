@@ -1,59 +1,57 @@
-// LIBRE CITY · js/net.js — multigiocatore: crea/entra in una stanza su un vero
-// SERVER (WebSocket), ghost dei giocatori remoti, danni PvP e classifica (ladder).
+// LIBRE CITY · js/net.js — multiplayer: create/join a room on a real WebSocket SERVER,
+// ghosts of remote players, PvP damage and the scoreboard (ladder).
 //
-// FASE 1. Il transport non è più P2P via PeerJS/WebRTC ma un server Node sempre
-// acceso (vedi server/): niente più host-telefono che, andando in background,
-// fa sparire l'intera stanza (era la causa delle disconnessioni casuali). Il
-// server tiene le stanze, fa da ripetitore dei messaggi e possiede l'orologio
-// della partita. Un riaggancio col token recupera lo stesso giocatore.
+// PHASE 1. The transport is no longer P2P over PeerJS/WebRTC but an always-on Node server
+// (see server/): no more phone-as-host that, once backgrounded, took the whole room down
+// with it (the cause of the random disconnections). The server holds the rooms, relays
+// messages and owns the match clock. Reconnecting with the token recovers the same player.
 //
-// MODELLO (invariato in Fase 1). Ogni client simula ancora la PROPRIA città:
-// pedoni, traffico e polizia sono locali (la mappa è identica per tutti grazie
-// al seme ROOM_CODE, vedi core.js). Degli altri giocatori viaggiano solo
-// posizione/mezzo/spari (~15 messaggi al secondo). I danni PvP li decide CHI LI
-// SUBISCE (vittima autoritativa): il colpito si toglie la vita da solo e, se
-// muore, accredita l'uccisione al tiratore con un messaggio 'kill'. La FASE 2
-// sposterà la simulazione sul server, eliminando il disallineamento.
+// MODEL (unchanged in Phase 1). Every client still simulates ITS OWN city: pedestrians,
+// traffic and police are local (the map is identical for everyone thanks to the ROOM_CODE
+// seed, see core.js). Only position/vehicle/shots travel between players (~15 messages a
+// second). PvP damage is decided by WHOEVER TAKES IT (authoritative victim): the player hit
+// removes their own health and, if they die, credits the kill to the shooter with a 'kill'
+// message. PHASE 2 moves the simulation onto the server, removing the divergence.
 
 const NET_SHIRTS = ['#e0533a', '#3a72d2', '#37a05a', '#c9a227', '#8a3ad2', '#e06a2a', '#2ab0b0', '#d94a90'];
 
 const net = {
-  mode: null,            // null = in solitaria · 'host' (ha creato la stanza) · 'client'
-  sock: null,            // WebSocket verso il server
-  url: null,             // URL del server risolto (vedi netServerUrl)
-  players: new Map(),    // id → ghost del giocatore remoto
-  myId: null, token: null,           // token: chiave per riagganciarsi come lo stesso giocatore
+  mode: null,            // null = single-player · 'host' (created the room) · 'client'
+  sock: null,            // WebSocket to the server
+  url: null,             // resolved server URL (see netServerUrl)
+  players: new Map(),    // id → remote player's ghost
+  myId: null, token: null,           // token: key to reconnect as the same player
   pass: '', maxPlayers: 4,
-  hello: null, rejoin: null, _open: null,   // dati per (ri)aprire la connessione
-  clockLeft: null,       // frame di partita rimasti, comunicati dal server
-  reconnT: null, reconnDelay: 0, wantOpen: false, dropped: false,  // riaggancio automatico
-  // ---- coda di attesa (server a tetto pieno di stanze) ----
-  qtoken: null,          // chiave per riprendere il PROPRIO posto in coda dopo una caduta
-  queue: null,           // { pos, eta, rooms, max, at } · null = non siamo in coda
-  queueT: null,          // timer del conto alla rovescia mostrato a schermo
-  wake: null,            // wake lock: schermo acceso finché si è in multigiocatore
-  kills: 0, deaths: 0, score: 0, streak: 0, bounty: 0,   // punteggio, serie e taglia sulla nostra testa
-  lastHitBy: null, lastHitT: -9999,   // ultimo rivale che ci ha colpito (per il kill credit)
-  looseCars: new Map(),   // netId → mezzo abbandonato da un rivale (sagoma parcheggiata, condivisa)
-  carSeq: 0,              // id progressivo dei mezzi che il player locale guida
-  remoteCops: new Map(),  // netId → volante di un rivale ricercato (condivisa, disegnata e solida)
-  copSeq: 0,              // id progressivo delle volanti che trasmetto quando sono ricercato
-  // ---- Fase 2: client di un SERVER AUTORITATIVO ----
-  authoritative: false,   // true = il mondo lo possiede il server; qui si rende soltanto
-  snap: null,             // ultimo snapshot 'w' ricevuto
-  inSeq: 0,               // id progressivo dell'input inviato
-  firePending: false, enterEdge: false, hornEdge: false, weaponReq: null,  // azioni one-shot → server
-  wcars: new Map(), wpeds: new Map(),   // id → entità del mondo (interpolate)
-  wbullets: [], wrockets: [],           // proiettili/razzi (estrapolati tra gli snapshot)
+  hello: null, rejoin: null, _open: null,   // data for (re)opening the connection
+  clockLeft: null,       // match frames left, as reported by the server
+  reconnT: null, reconnDelay: 0, wantOpen: false, dropped: false,  // automatic reconnection
+  // ---- Waiting queue (server at its room cap) ----
+  qtoken: null,          // key to reclaim OUR OWN place in the queue after a drop
+  queue: null,           // { pos, eta, rooms, max, at } · null = not queued
+  queueT: null,          // timer for the countdown shown on screen
+  wake: null,            // wake lock: screen stays on while in multiplayer
+  kills: 0, deaths: 0, score: 0, streak: 0, bounty: 0,   // score, streak and the bounty on our head
+  lastHitBy: null, lastHitT: -9999,   // last rival who hit us (for the kill credit)
+  looseCars: new Map(),   // netId → vehicle abandoned by a rival (shared parked shape)
+  carSeq: 0,              // running id for the vehicles the local player drives
+  remoteCops: new Map(),  // netId → patrol car chasing a wanted rival (shared, drawn and solid)
+  copSeq: 0,              // running id for the patrol cars I broadcast while wanted
+  // ---- Phase 2: client of an AUTHORITATIVE SERVER ----
+  authoritative: false,   // true = the server owns the world; here we only render it
+  snap: null,             // last 'w' snapshot received
+  inSeq: 0,               // running id of the input sent
+  firePending: false, enterEdge: false, hornEdge: false, weaponReq: null,  // one-shot actions → server
+  wcars: new Map(), wpeds: new Map(),   // id → world entities (interpolated)
+  wbullets: [], wrockets: [],           // bullets/rockets (extrapolated between snapshots)
 };
 const netActive = () => net.mode !== null;
 
-// ---------- URL del server -------------------------------------------------
-// In sviluppo (localhost / file://) punta al server locale sulla 8787. In
-// produzione l'URL arriva da <meta name="lc-server" content="wss://…"> in
-// index.html (oppure window.LIBRE_CITY_SERVER o ?server=…). Così net.js resta
-// generico e l'indirizzo del server si configura senza toccare il codice.
-const NET_PROD_SERVER = '';       // fallback se non c'è meta/override (da riempire dopo il deploy)
+// ---------- Server URL -----------------------------------------------------
+// In development (localhost / file://) it points at the local server on 8787. In production
+// the URL comes from <meta name="lc-server" content="wss://…"> in index.html (or from
+// window.LIBRE_CITY_SERVER or ?server=…). That keeps net.js generic and lets the server
+// address be configured without touching the code.
+const NET_PROD_SERVER = '';       // fallback when there is no meta/override (fill in after deploy)
 function netServerUrl() {
   const q = new URLSearchParams(location.search).get('server');
   if (q) return q;
@@ -65,39 +63,39 @@ function netServerUrl() {
   return NET_PROD_SERVER || null;
 }
 
-// ---------- Ghost: la sagoma di un giocatore remoto ----------
+// ---------- Ghost: the shape of a remote player ----------
 function makeGhost(id, name, shirtIdx) {
   return {
     id, name: String(name || 'Ospite').slice(0, 14),
     shirtIdx: shirtIdx || 0, shirt: NET_SHIRTS[(shirtIdx || 0) % NET_SHIRTS.length],
     skin: '#f6c79a', hair: '#3a2410',
-    x: player.x, y: player.y, tx: player.x, ty: player.y,   // posizione attuale e bersaglio (interpolata)
+    x: player.x, y: player.y, tx: player.x, ty: player.y,   // current and target position (interpolated)
     aim: 0, walk: 0, moving: false, gun: false, hp: 100, down: false,
     punchT: 0, car: null,
     stats: { k: 0, d: 0, c: 0, s: 0, b: 0 },
   };
 }
 
-// ---------- Connessione al server (host = crea, client = entra) ----------
-// L'host CREA la stanza sul server; il client vi ENTRA. Dopo il primo ingresso
-// sono simmetrici: mandano stato/eventi al server, che li firma col loro id e
-// li ripete agli altri. Un token permette di riagganciarsi come lo stesso
-// giocatore dopo una caduta di rete.
+// ---------- Connecting to the server (host = create, client = join) ----------
+// The host CREATES the room on the server; the client JOINS it. After that first entry they
+// are symmetric: both send state/events to the server, which signs them with their id and
+// relays them to the others. A token allows reconnecting as the same player after a network
+// drop.
 
-// host: crea la stanza e ne detta i parametri (durata, max giocatori, password)
+// Host: creates the room and sets its parameters (duration, max players, password).
 function netStartHost(pass, maxPlayers, done) {
   const url = netServerUrl();
   if (!url) { done('noserver'); return; }
   net.mode = 'host'; net.url = url;
   net.pass = pass || ''; net.maxPlayers = clamp(maxPlayers || 4, 2, 8);
-  player.shirt = NET_SHIRTS[0];                 // in multigiocatore ognuno ha la sua maglia
+  player.shirt = NET_SHIRTS[0];                 // in multiplayer everyone gets their own shirt
   document.body.classList.add('mp');
   net.rejoin = { code: ROOM_CODE, name: playerName, pass: net.pass };
   net.hello  = { t: 'create', code: ROOM_CODE, name: playerName, pass: net.pass,
                  max: net.maxPlayers, minutes: gameMinutes };
   netDial(done);
 }
-// client: entra in una stanza già creata
+// Client: joins a room that already exists.
 function netJoin(code, pass, done) {
   const url = netServerUrl();
   if (!url) { done('noserver'); return; }
@@ -109,8 +107,8 @@ function netJoin(code, pass, done) {
   netDial(done);
 }
 
-// apre la WebSocket, gestisce l'ingresso iniziale e prepara il riaggancio
-// automatico. done(null) alla riuscita, done(codiceErrore) al fallimento.
+// Opens the WebSocket, handles the initial entry and sets up automatic reconnection.
+// done(null) on success, done(errorCode) on failure.
 function netDial(done) {
   net.wantOpen = true; net.dropped = false; net.reconnDelay = 0;
   let settled = false;
@@ -125,8 +123,8 @@ function netDial(done) {
     net.sock = ws;
     ws.onopen = () => {
       net.reconnDelay = 0;
-      // primo ingresso: create/join iniziale · riaggancio: join col token
-      // · riaggancio mentre si è in coda: create col qtoken, per riprendere il posto
+      // First entry: initial create/join · reconnect: join with the token · reconnect while
+      // queued: create with the qtoken, to reclaim our place.
       const hello = net.token ? { ...net.rejoin, t: 'join', token: net.token }
                   : net.qtoken ? { ...net.hello, qtoken: net.qtoken }
                   : net.hello;
@@ -135,20 +133,20 @@ function netDial(done) {
     ws.onmessage = ev => {
       let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
       if (!m || typeof m !== 'object') return;
-      if (!settled) {                            // in attesa dell'esito del primo ingresso
+      if (!settled) {                            // awaiting the outcome of the first entry
         if (m.t === 'ok') { settled = true; clearTimeout(timer); netQueueEnd(); netOnJoined(m); netWakeLock(); done(null); return; }
         if (m.t === 'no') { settled = true; clearTimeout(timer); netQueueEnd(); netShutdown(); done(m.r); return; }
-        // server a tetto pieno: siamo in coda. NON è un fallimento e non c'è più
-        // un tempo massimo di attesa — la partita parte da sé quando tocca a noi.
+        // Server at its cap: we are queued. This is NOT a failure and there is no maximum
+        // wait any more — the match starts by itself when our turn comes.
         if (m.t === 'queued') { clearTimeout(timer); netOnQueued(m); return; }
-        return;                                  // altri messaggi prima dell'ok: si ignorano
+        return;                                  // other messages before the ok: ignored
       }
       onServerMessage(m);
     };
     ws.onclose = () => {
-      if (ws !== net.sock) return;               // socket già sostituita da un riaggancio
+      if (ws !== net.sock) return;               // socket already replaced by a reconnect
       if (!settled) { status(t('net.retry')); netScheduleReconnect(); return; }
-      if (net.wantOpen) {                         // caduta dopo l'ingresso: riaggancio silenzioso
+      if (net.wantOpen) {                         // dropped after entry: silent reconnect
         if (!net.dropped) { net.dropped = true; toast(t('net.lost')); netRefreshBadge(); }
         netScheduleReconnect();
       }
@@ -158,7 +156,7 @@ function netDial(done) {
   net._open = open;
   open();
 }
-// riaggancio con backoff crescente (fino a ~8s); `immediate` riparte subito
+// Reconnect with growing backoff (up to ~8s); `immediate` retries straight away.
 function netScheduleReconnect(immediate) {
   if (!net.wantOpen || !net._open) return;
   clearTimeout(net.reconnT);
@@ -166,19 +164,19 @@ function netScheduleReconnect(immediate) {
   net.reconnT = setTimeout(() => { if (net.wantOpen) net._open(); }, net.reconnDelay);
 }
 
-// ---------- Coda di attesa ----------
-// Il server tiene un tetto di stanze simultanee: oltre quello le partite di tutti
-// inizierebbero a scattare. A tetto pieno non veniamo respinti ma messi in fila, e
-// la stanza si apre DA SOLA quando tocca a noi (arriva un normale 'ok'): qui si
-// tiene solo lo stato per la schermata d'attesa. Le sessioni sono a tempo, quindi
-// il server sa stimare quanto manca e ce lo aggiorna ogni pochi secondi.
+// ---------- Waiting queue ----------
+// The server caps the number of simultaneous rooms: beyond it, everybody's match would start
+// to stutter. At the cap we are not turned away but put in line, and the room opens BY
+// ITSELF when our turn comes (an ordinary 'ok' arrives): only the state for the waiting
+// screen is kept here. Sessions are time-limited, so the server can estimate the remaining
+// wait and refreshes it every few seconds.
 function netOnQueued(m) {
   net.qtoken = m.qtoken || net.qtoken;
   net.queue = { pos: m.pos | 0, eta: Math.max(0, m.eta | 0), rooms: m.rooms | 0, max: m.max | 0, at: Date.now() };
-  if (!net.queueT) net.queueT = setInterval(updateQueuePanel, 1000);   // stima che scorre tra un aggiornamento e l'altro
+  if (!net.queueT) net.queueT = setInterval(updateQueuePanel, 1000);   // estimate ticking down between refreshes
   showQueuePanel();
 }
-// quanto manca ADESSO: l'ultima stima del server meno il tempo passato da allora
+// How long is left RIGHT NOW: the server's last estimate minus the time elapsed since.
 function netQueueEta() {
   if (!net.queue) return 0;
   return Math.max(0, net.queue.eta - (Date.now() - net.queue.at));
@@ -187,40 +185,40 @@ function netQueueEnd() {
   clearInterval(net.queueT); net.queueT = null;
   net.queue = null; net.qtoken = null;
 }
-// l'utente rinuncia ad aspettare: si esce dalla fila e si torna al pannello «crea»
+// The user gives up waiting: leave the queue and go back to the "create" panel.
 function netCancelQueue() {
   netSend({ t: 'unqueue' });
   netQueueEnd();
   netShutdown();
 }
 
-// applica l'ingresso riuscito (o il riaggancio): id, maglia, roster, orologio
+// Applies a successful entry (or reconnect): id, shirt, roster, clock.
 function netOnJoined(m) {
   const resumed = !!m.resumed;
   net.myId = m.id;
   if (m.token) net.token = m.token;
-  net.authoritative = !!m.sim;                       // Fase 2: il server simula il mondo
+  net.authoritative = !!m.sim;                       // Phase 2: the server simulates the world
   player.shirt = NET_SHIRTS[m.shirtIdx % NET_SHIRTS.length];
-  if (m.minutes != null) gameMinutes = m.minutes;   // il ritmo della partita lo detta il server
+  if (m.minutes != null) gameMinutes = m.minutes;   // the server sets the match's pace
   net.clockLeft = m.left;
-  // sincronizza il roster senza azzerare i ghost già presenti (importante al riaggancio)
+  // Sync the roster without clearing ghosts that are already there (important on reconnect).
   for (const p of (m.players || [])) if (!net.players.has(p.id)) net.players.set(p.id, makeGhost(p.id, p.name, p.shirtIdx));
   if (!resumed && !net.authoritative) {
-    // primo ingresso (solo Fase 1): sfalsa la posizione così i giocatori non partono impilati
-    // (in autoritativo la posizione la decide il server)
+    // First entry (Phase 1 only): offset the position so players do not start stacked up
+    // (in authoritative mode the server decides the position).
     player.x += 26 * m.shirtIdx;
     unstick(player, player.r, player.r);
   } else if (net.dropped) {
     net.dropped = false; toast(t('net.back'));
   }
   netRefreshBadge();
-  // il server ha una build diversa dalla nostra → invita a ricaricare il client
+  // The server is on a different build from ours → prompt for a client reload.
   if (m.build && window.LC_BUILD && m.build !== window.LC_BUILD) netUpdatePrompt();
 }
 
-// Mostra un avviso persistente quando il client in esecuzione è più vecchio del
-// server (tipicamente: pagina aperta da prima di un deploy). Un clic ricarica.
-// Idempotente: al riaggancio il server rimanda `ok`, ma il banner resta unico.
+// Shows a persistent notice when the running client is older than the server (typically: a
+// page left open from before a deploy). A click reloads. Idempotent: on reconnect the server
+// sends `ok` again, but the banner stays a single one.
 function netUpdatePrompt() {
   if (net.updatePrompted) return;
   net.updatePrompted = true;
@@ -235,10 +233,10 @@ function netUpdatePrompt() {
   el.classList.add('show');
 }
 
-// smista i messaggi del server dopo l'ingresso
+// Dispatches the server's messages after entry.
 function onServerMessage(m) {
   switch (m.t) {
-    case 'ok': netOnJoined(m); break;             // riaggancio riuscito
+    case 'ok': netOnJoined(m); break;             // reconnect succeeded
     case 'join':
       net.players.set(m.id, makeGhost(m.id, m.name, m.shirtIdx));
       toast(t('net.joined', { name: m.name })); sfx.coin(); netRefreshBadge();
@@ -251,13 +249,13 @@ function onServerMessage(m) {
     }
     case 'end': if (started) endGame('time'); break;
     case 'kill': netScoreKill(m.id); break;
-    case 'w': netOnSnapshot(m); break;             // Fase 2: snapshot del mondo autoritativo
+    case 'w': netOnSnapshot(m); break;             // Phase 2: authoritative world snapshot
     case 'pong': break;
     default: if (m.id && m.id !== net.myId) netApplyRemote(m.id, m);
   }
 }
 
-// chiude tutto e torna alla modalità in solitaria (ghost compresi)
+// Shuts everything down and returns to single-player mode (ghosts included).
 function netShutdown() {
   net.wantOpen = false; net.dropped = false;
   clearTimeout(net.reconnT); net.reconnT = null;
@@ -273,10 +271,11 @@ function netShutdown() {
   netRefreshBadge();
 }
 
-// ---------- Sopravvivere al telefono in background ----------
-// Da spento/in background il browser sospende la pagina e la WebSocket cade.
-// Con un vero server la stanza però NON sparisce: al ritorno in primo piano ci
-// si riaggancia col token e si riprende lo stesso giocatore (entro la grazia).
+// ---------- Surviving a backgrounded phone ----------
+// With the screen off or the app in the background, the browser suspends the page and the
+// WebSocket drops. With a real server the room does NOT disappear though: on returning to
+// the foreground we reconnect with the token and resume the same player (within the grace
+// period).
 function netWakeLock() {
   if (!netActive() || !navigator.wakeLock) return;
   navigator.wakeLock.request('screen').then(w => { net.wake = w; }, () => {});
@@ -284,20 +283,20 @@ function netWakeLock() {
 function netWakeIfNeeded() {
   if (!netActive()) return;
   netWakeLock();
-  if (!net.sock || net.sock.readyState > 1) netScheduleReconnect(true);   // CLOSING/CLOSED → riaggancia subito
+  if (!net.sock || net.sock.readyState > 1) netScheduleReconnect(true);   // CLOSING/CLOSED → reconnect now
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) netWakeIfNeeded(); });
 addEventListener('pageshow', netWakeIfNeeded);
 
-// ---------- Invio ----------
-// un evento del giocatore locale: lo si manda al server, che lo firma col
-// nostro id e lo ripete agli altri
+// ---------- Sending ----------
+// An event from the local player: sent to the server, which signs it with our id and relays
+// it to the others.
 function netSend(m) {
   if (net.sock && net.sock.readyState === 1) { try { net.sock.send(JSON.stringify(m)); } catch (e) {} }
 }
 function netSendEvt(m) { if (netActive()) netSend(m); }
-// descrizione di rete di un mezzo: la stessa sia per il mezzo guidato (dentro lo
-// stato) sia per quello abbandonato (evento 'park'). `cid` è l'id stabile del mezzo
+// A vehicle's network description: the same one for a driven vehicle (inside the state) and
+// for an abandoned one ('park' event). `cid` is the vehicle's stable id.
 function carNetPayload(c) {
   return {
     cid: c.netId || null, x: c.x, y: c.y, an: c.angle, sp: c.speed, w: c.w, h: c.h, col: c.color,
@@ -306,7 +305,7 @@ function carNetPayload(c) {
     tur: c.isTank ? c.turretA : null,
   };
 }
-// stato compatto del giocatore locale (posizione, mezzo, statistiche)
+// Compact state of the local player (position, vehicle, statistics).
 function netMyState() {
   const c = player.car;
   return {
@@ -314,12 +313,12 @@ function netMyState() {
     g: !WEAPONS[player.weaponIdx].melee, hp: player.health, dn: downT > 0,
     st: { k: net.kills, d: net.deaths, c: cash, s: net.score, b: net.bounty },
     c: c ? carNetPayload(c) : null,
-    pol: netCopPayloads(),                        // volanti al mio inseguimento (se ricercato)
+    pol: netCopPayloads(),                        // patrol cars chasing me (when wanted)
   };
 }
-// le volanti che mi inseguono le simulo solo io: le trasmetto così TUTTI le
-// vedono (prima erano visibili al solo giocatore ricercato). netId stabile per
-// riconoscerle lato ricevente; omesse se non ne ho.
+// The patrol cars chasing me are simulated by me alone: I broadcast them so EVERYONE sees
+// them (previously only the wanted player could). A stable netId identifies them on the
+// receiving side; omitted when I have none.
 function netCopPayloads() {
   let out = null;
   for (const c of cars) {
@@ -328,18 +327,18 @@ function netCopPayloads() {
     (out || (out = [])).push({ cid: c.netId, x: Math.round(c.x), y: Math.round(c.y),
       an: c.angle, sp: c.speed, w: c.w, h: c.h, col: c.color, lp: c.lightPhase || 0 });
   }
-  return out;   // null se nessuna: il ricevente rimuove quelle mie
+  return out;   // null when there are none: the receiver removes mine
 }
-// ---------- Mezzi che il player locale guida/abbandona (condivisi con gli altri) ----------
-// salendo a bordo: id di rete stabile, così i rivali lo riconoscono quando lo
-// guidi (dentro il tuo stato) e quando lo lasci (diventa una sagoma parcheggiata)
+// ---------- Vehicles the local player drives/abandons (shared with everyone) ----------
+// On getting in: a stable network id, so rivals recognise it both while you drive it (inside
+// your state) and once you leave it (it becomes a parked shape).
 function netAssignCarId(c) { if (netActive() && c && !c.netId) c.netId = net.myId + '#' + (net.carSeq++); }
-// scendendo/abbandonando: lo diffonde come mezzo fermo così NON sparisce dagli
-// schermi degli altri (prima invece, con lo stato a `c:null`, svaniva del tutto)
+// On getting out/abandoning: broadcast it as a stationary vehicle so it does NOT vanish from
+// everyone else's screens (previously, with the state at `c:null`, it disappeared entirely).
 function netAbandonCar(c) { if (netActive() && c && c.netId) netSendEvt({ t: 'park', car: carNetPayload(c) }); }
-// mezzo distrutto (esploso): gli altri tolgono la sagoma ferma corrispondente
+// Vehicle destroyed (exploded): the others remove the corresponding stationary shape.
 function netDestroyCar(c) { if (netActive() && c && c.netId) netSendEvt({ t: 'gone', cid: c.netId }); }
-// ganci chiamati dal gameplay quando il giocatore locale attacca
+// Hooks called by the gameplay when the local player attacks.
 function netShotFired(w) {
   netSendEvt({ t: 'shot', x: player.x, y: player.y, a: player.aim, n: w.pellets || 1,
                sp: w.spread, spd: w.spd, life: w.life, dmg: w.dmgCar, pdmg: w.pvp || 8, fk: w.fire ? 1 : 0 });
@@ -347,7 +346,7 @@ function netShotFired(w) {
 function netPunched() { netSendEvt({ t: 'punch', x: player.x, y: player.y, a: player.aim }); }
 function netRocketFired(c) { netSendEvt({ t: 'rocket', x: c.x, y: c.y, a: c.turretA, spd: c.spd, life: c.life, pw: c.pw, gr: c.grenade ? 1 : 0 }); }
 
-// ---------- Ricezione: applica lo stato/gli eventi di un rivale ----------
+// ---------- Receiving: applies a rival's state/events ----------
 function netApplyRemote(id, m) {
   const g = net.players.get(id);
   if (!g) return;
@@ -359,16 +358,16 @@ function netApplyRemote(id, m) {
       if (!g.car) g.car = { role: 'traffic', driver: 'net', colH: 13, speed: 0, gear: 1,
                             kvx: 0, kvy: 0, lightPhase: 0, x: m.c.x, y: m.c.y, angle: m.c.an, tx: null };
       const c = g.car;
-      if (c.tx == null || dist(c.x, c.y, m.c.x, m.c.y) > 280) { c.x = m.c.x; c.y = m.c.y; c.angle = m.c.an; }  // teletrasporto
+      if (c.tx == null || dist(c.x, c.y, m.c.x, m.c.y) > 280) { c.x = m.c.x; c.y = m.c.y; c.angle = m.c.an; }  // teleport
       c.tx = m.c.x; c.ty = m.c.y; c.ta = m.c.an; c.speed = m.c.sp;
       c.w = m.c.w; c.h = m.c.h; c.color = m.c.col;
       c.isBike = m.c.bike; c.isTank = m.c.tank; c.isTaxi = m.c.taxi; c.isDelivery = m.c.del;
       c.livery = m.c.liv || null; c.wasPolice = m.c.pol;
       c.helmet = m.c.hel || '#2a2a2e'; c.riderShirt = g.shirt;
       if (m.c.tur != null) c.turretA = m.c.tur;
-      if (m.c.cid != null) { c.netId = m.c.cid; net.looseCars.delete(m.c.cid); }  // lo sta guidando: via la sagoma ferma
+      if (m.c.cid != null) { c.netId = m.c.cid; net.looseCars.delete(m.c.cid); }  // they are driving it: drop the parked shape
     } else g.car = null;
-    netApplyCops(id, m.pol);                       // volanti al suo inseguimento (o le rimuove se non è più ricercato)
+    netApplyCops(id, m.pol);                       // patrol cars chasing them (removed once they are no longer wanted)
   }
   else if (m.t === 'park') netParkCar(id, m.car);
   else if (m.t === 'gone') net.looseCars.delete(m.cid);
@@ -376,10 +375,9 @@ function netApplyRemote(id, m) {
   else if (m.t === 'punch') netPunchAt(id, m);
   else if (m.t === 'rocket') netSpawnRocket(id, m);
 }
-// un rivale ha abbandonato un mezzo: lo teniamo come sagoma ferma condivisa
-// finché non lo riprende (torna nel suo stato) o non ci allontaniamo troppo.
-// Ogni client gestisce la propria copia — il diradamento per distanza è locale,
-// esattamente come per il traffico simulato in proprio.
+// A rival abandoned a vehicle: we keep it as a shared stationary shape until they take it
+// back (it returns inside their state) or we move too far away. Each client manages its own
+// copy — distance culling is local, exactly as for self-simulated traffic.
 function netParkCar(owner, p) {
   if (!p || p.cid == null) return;
   let c = net.looseCars.get(p.cid);
@@ -392,9 +390,9 @@ function netParkCar(owner, p) {
   c.helmet = p.hel || '#2a2a2e';
   if (p.tur != null) c.turretA = p.tur;
 }
-// volanti trasmesse da un rivale ricercato: le teniamo aggiornate (una copia per
-// netId, con owner) e rimuoviamo quelle non più presenti nell'ultimo elenco —
-// così spariscono da sole quando lui perde il livello ricercato o le semina.
+// Patrol cars broadcast by a wanted rival: we keep them updated (one copy per netId, with an
+// owner) and drop any missing from the latest list — so they disappear by themselves when
+// that rival loses their wanted level or shakes them off.
 function netApplyCops(owner, list) {
   const seen = list ? new Set(list.map(p => p.cid)) : null;
   if (list) for (const p of list) {
@@ -404,32 +402,32 @@ function netApplyCops(owner, list) {
             colH: 13, gear: 1, kvx: 0, kvy: 0, lightPhase: p.lp || 0,
             x: p.x, y: p.y, angle: p.an, tx: p.x, ty: p.y, ta: p.an };
       net.remoteCops.set(p.cid, c);
-    } else if (dist(c.x, c.y, p.x, p.y) > 280) { c.x = p.x; c.y = p.y; c.angle = p.an; }  // teletrasporto
+    } else if (dist(c.x, c.y, p.x, p.y) > 280) { c.x = p.x; c.y = p.y; c.angle = p.an; }  // teleport
     c.tx = p.x; c.ty = p.y; c.ta = p.an; c.speed = p.sp;
     c.w = p.w; c.h = p.h; c.color = p.col;
   }
   for (const [cid, c] of net.remoteCops) if (c.owner === owner && (!seen || !seen.has(cid))) net.remoteCops.delete(cid);
 }
-// tutte le auto remote SOLIDE con cui la mia auto può scontrarsi (giocatori,
-// mezzi abbandonati, volanti). Usata dalla risoluzione collisioni in gameplay.js.
+// All SOLID remote cars my own car can collide with (players, abandoned vehicles, patrol
+// cars). Used by the collision resolution in gameplay.js.
 function netSolidCars(out) {
   for (const g of net.players.values()) if (g.car && !g.down) out.push(g.car);
   for (const c of net.looseCars.values()) out.push(c);
   for (const c of net.remoteCops.values()) out.push(c);
-  // Fase 2: anche il traffico del mondo autoritativo è solido per la mia auto, ma
-  // NON lo muoviamo noi (lo possiede/spinge il server): la mia auto ci rimbalza e
-  // basta. Così la collisione col traffico è O(n) sulla sola auto del player, non
-  // O(n²) su tutte le coppie, e non litiga con l'interpolazione del traffico.
+  // Phase 2: the authoritative world's traffic is solid for my car too, but we do NOT move
+  // it (the server owns and pushes it): my car simply bounces off it. That keeps traffic
+  // collision O(n) on the player's car alone rather than O(n²) over all pairs, and it does
+  // not fight the traffic interpolation.
   if (net.authoritative) for (const c of net.wcars.values()) out.push(c);
   return out;
 }
-// un rivale ha lasciato la partita: via anche i mezzi che aveva abbandonato e le sue volanti
+// A rival left the match: remove the vehicles they abandoned and their patrol cars too.
 function netDropCarsOf(id) {
   for (const [cid, c] of net.looseCars) if (c.owner === id) net.looseCars.delete(cid);
   for (const [cid, c] of net.remoteCops) if (c.owner === id) net.remoteCops.delete(cid);
 }
-// proiettili "fantasma" di un rivale: ostili come quelli dei poliziotti, ma
-// firmati (fromNet) così un'eventuale morte viene accreditata al tiratore
+// A rival's "ghost" bullets: hostile like the police's, but signed (fromNet) so that any
+// resulting death is credited to the shooter.
 function netSpawnShot(id, m) {
   if (!started) return;
   for (let i = 0; i < (m.n || 1); i++) {
@@ -441,10 +439,10 @@ function netSpawnShot(id, m) {
   spawnMuzzle(m.x + Math.cos(m.a) * 14, m.y + Math.sin(m.a) * 14, m.a);
   const h = hear(m.x, m.y, 850); if (h) { if (m.fk) sfx.whoosh(); else sfx.copShoot(h); }
 }
-// pugno di un rivale: conta solo se raggiunge il giocatore locale (vittima autoritativa)
+// A rival's punch: it only counts if it reaches the local player (authoritative victim).
 function netPunchAt(id, m) {
   const g = net.players.get(id);
-  if (g) g.punchT = 10;                         // fa scattare l'animazione del braccio del ghost
+  if (g) g.punchT = 10;                         // triggers the ghost's arm animation
   if (!started || player.car || downT > 0) return;
   if (dist(m.x, m.y, player.x, player.y) < 40 &&
       Math.abs(angDiff(m.a, Math.atan2(player.y - m.y, player.x - m.x))) < 1.1) {
@@ -461,24 +459,24 @@ function netSpawnRocket(id, m) {
   const h = hear(m.x, m.y, 1000); if (h) { if (m.gr) sfx.whoosh(); else sfx.rocket(); }
 }
 
-// ---------- Kill credit (vittima autoritativa) ----------
-// chiunque ci ferisce via rete lascia la firma: se moriamo entro pochi secondi
-// il colpo di grazia è suo e gli spediamo il punto
+// ---------- Kill credit (authoritative victim) ----------
+// Anyone who wounds us over the network leaves their signature: if we die within a few
+// seconds the finishing blow is theirs, and we send them the point.
 function netRegisterHit(id) { net.lastHitBy = id; net.lastHitT = frame; }
-// chiamato da startDown(): aggiorna morti e accredita l'eventuale uccisore
+// Called by startDown(): updates deaths and credits any killer.
 function netReportDown(kind) {
   if (!netActive()) return;
-  if (kind === 'dead' || kind === 'busted') { net.streak = 0; net.bounty = 0; updateBountyHud(0); }   // serie/taglia azzerate
+  if (kind === 'dead' || kind === 'busted') { net.streak = 0; net.bounty = 0; updateBountyHud(0); }   // streak/bounty reset
   if (kind !== 'dead') return;
   net.deaths++;
   if (net.lastHitBy != null && frame - net.lastHitT < 60 * 6) {
-    netSend({ t: 'kill', to: net.lastHitBy });    // il server recapita il punto al tiratore
+    netSend({ t: 'kill', to: net.lastHitBy });    // the server delivers the point to the shooter
     const g = net.players.get(net.lastHitBy);
     if (g) toast(t('pvp.down', { name: g.name }));
   }
   net.lastHitBy = null;
 }
-// ci è arrivato un punto: abbiamo steso la vittima `victimId`
+// A point came in: we downed the victim `victimId`.
 function netScoreKill(victimId) {
   net.kills++;
   net.streak++;
@@ -487,12 +485,12 @@ function netScoreKill(victimId) {
   if (nb > net.bounty) toast(t('pvp.onYou', { n: nb }));
   net.bounty = nb; updateBountyHud(nb);
   const g = net.players.get(victimId);
-  cash += 25; updateCash();                     // taglia sul rivale steso
+  cash += 25; updateCash();                     // bounty on the downed rival
   toast(t('pvp.killedCash', { name: g ? g.name : t('pvp.rival') }));
   sfx.coin();
 }
 
-// ---------- Tick di rete: interpolazione ghost, PvP da investimento, invio stato ----------
+// ---------- Network tick: ghost interpolation, run-over PvP, state upload ----------
 function netTick() {
   if (!netActive()) return;
   for (const g of net.players.values()) {
@@ -504,7 +502,7 @@ function netTick() {
         c.angle += angDiff(c.angle, c.ta != null ? c.ta : c.angle) * 0.35;
       }
       g.x = c.x; g.y = c.y;
-      // il mezzo di un rivale può investirti: lo rileva (e lo paga) la vittima
+      // A rival's vehicle can run you over: the victim detects it (and pays for it).
       if (!g.down && !player.car && downT === 0 && started && Math.abs(c.speed) >= 2.2) {
         const ca = Math.cos(c.angle), sa = Math.sin(c.angle);
         const dx = player.x - c.x, dy = player.y - c.y;
@@ -516,11 +514,11 @@ function netTick() {
       }
     } else {
       g.x += (g.tx - g.x) * 0.3; g.y += (g.ty - g.y) * 0.3;
-      if (dist(g.x, g.y, g.tx, g.ty) > 280) { g.x = g.tx; g.y = g.ty; }   // teletrasporto (respawn)
+      if (dist(g.x, g.y, g.tx, g.ty) > 280) { g.x = g.tx; g.y = g.ty; }   // teleport (respawn)
       if (g.moving) g.walk += 0.3; else g.walk = 0;
     }
   }
-  // volanti remote: interpolate verso il bersaglio + sirena che lampeggia
+  // Remote patrol cars: interpolated towards the target + flashing siren.
   for (const c of net.remoteCops.values()) {
     if (c.tx != null) {
       c.x += (c.tx - c.x) * 0.28; c.y += (c.ty - c.y) * 0.28;
@@ -528,45 +526,43 @@ function netTick() {
     }
     c.lightPhase = (c.lightPhase || 0) + 0.5;
   }
-  // le sagome dei mezzi abbandonati e le volanti remote si diradano quando ti allontani (come il traffico)
+  // Abandoned-vehicle shapes and remote patrol cars are culled as you move away (like traffic).
   const far = Math.max(vw, vh) * 1.3 + 300;
   for (const [cid, c] of net.looseCars) if (dist(c.x, c.y, player.x, player.y) > far) net.looseCars.delete(cid);
   for (const [cid, c] of net.remoteCops) if (dist(c.x, c.y, player.x, player.y) > far) net.remoteCops.delete(cid);
-  if (frame % 4 === 0) netSendEvt(netMyState());                 // ~15 volte al secondo
+  if (frame % 4 === 0) netSendEvt(netMyState());                 // ~15 times a second
   if (frame % 30 === 0 && ladderEl && !ladderEl.classList.contains('hidden')) renderLadder();
 }
 
 // =============================================================================
-//  FASE 2 · CLIENT DI UN SERVER AUTORITATIVO
-//  Il mondo (traffico, pedoni, polizia, proiettili) lo simula il server e lo manda
-//  a snapshot ('w') per area d'interesse. Qui NON si simula: si PREDICE solo il
-//  proprio player (per la reattività) e si interpolano gli snapshot verso i target.
-//  update() (gameplay.js) devia qui quando net.authoritative è vero.
+//  PHASE 2 · CLIENT OF AN AUTHORITATIVE SERVER
+//  The world (traffic, pedestrians, police, bullets) is simulated by the server and sent
+//  as snapshots ('w') per area of interest. Nothing is simulated here: only our own
+//  player is PREDICTED (for responsiveness) and the snapshots are interpolated towards
+//  their targets. update() (gameplay.js) diverts here when net.authoritative is true.
 // =============================================================================
 
-// ---------- Interpolazione a snapshot (rendering nel passato) ----------
-// Tecnica standard dei giochi autoritativi. NON si insegue l'ultima posizione con
-// uno smorzamento esponenziale (che con snapshot a 15/s resta SEMPRE indietro
-// rispetto a un veicolo in moto e va a scatti — la causa del "tutto lento"). Invece
-// si tiene un piccolo BUFFER delle ultime posizioni note e si disegna il mondo con un
-// ritardo pari a ~1.5 intervalli di snapshot, interpolando LINEARMENTE tra i due snapshot
-// che racchiudono l'istante di rendering. Così il moto è fluido e a velocità CORRETTA anche
-// con rete ballerina, SENZA estrapolare (che farebbe "ballare" veicoli e pedoni a ogni
-// correzione). Per ridurre il ritardo si alza la FREQUENZA degli snapshot (server), non si
-// estrapola. Il player locale NON passa di qui: lui è predetto (updateNetClient) per
-// restare reattivo.
-// Ritardo di rendering = ~1.5 intervalli di snapshot: renderT cade SEMPRE fra due
-// campioni reali → interpolazione pura (liscia, niente estrapolazione/scatti). Il
-// lag "posizione nel passato" del rivale si abbassa alzando la FREQUENZA degli
-// snapshot lato server (SNAP_EVERY): a 30/s (33ms) bastano 50ms di ritardo, la metà
-// dei 100ms che servivano a 15/s — stessa fluidità, metà del ritardo.
-const INTERP_MS = 50;                     // ritardo di rendering (~1.5 intervalli di snapshot @30Hz)
-const INTERP_KEEP = 6;                    // stati tenuti per entità (~200ms di storia = margine per il jitter)
+// ---------- Snapshot interpolation (rendering in the past) ----------
+// The standard technique for authoritative games. We do NOT chase the latest position with
+// exponential damping (which, at 15 snapshots/s, ALWAYS lags a moving vehicle and stutters —
+// the cause of "everything feels slow"). Instead we keep a small BUFFER of the last known
+// positions and draw the world with a delay of ~1.5 snapshot intervals, interpolating
+// LINEARLY between the two snapshots that bracket the render instant. Motion is then smooth
+// and at the CORRECT speed even on a flaky network, WITHOUT extrapolating (which would make
+// vehicles and pedestrians "dance" at every correction). To cut the delay, raise the
+// snapshot RATE (server side) rather than extrapolate. The local player does NOT come
+// through here: they are predicted (updateNetClient) to stay responsive.
+// Render delay = ~1.5 snapshot intervals: renderT ALWAYS falls between two real samples →
+// pure interpolation (smooth, no extrapolation or jumps). The rival's "position in the past"
+// lag drops by raising the server-side snapshot RATE (SNAP_EVERY): at 30/s (33ms) a 50ms
+// delay is enough, half the 100ms needed at 15/s — same smoothness, half the lag.
+const INTERP_MS = 50;                     // render delay (~1.5 snapshot intervals @30Hz)
+const INTERP_KEEP = 6;                    // states kept per entity (~200ms of history = jitter margin)
 function interpFeed(e, x, y, a) {
   const t = performance.now();
   const buf = e.ib || (e.ib = []);
   const last = buf[buf.length - 1];
-  if (last && (Math.abs(x - last.x) > 280 || Math.abs(y - last.y) > 280)) buf.length = 0;   // teletrasporto (respawn): riparti, non strisciare
+  if (last && (Math.abs(x - last.x) > 280 || Math.abs(y - last.y) > 280)) buf.length = 0;   // teleport (respawn): restart, do not crawl
   buf.push({ x, y, a, t });
   if (buf.length > INTERP_KEEP) buf.shift();
   if (buf.length === 1) { e.x = x; e.y = y; e.angle = a; }
@@ -577,7 +573,7 @@ function interpSample(e, renderT) {
   if (buf.length === 1 || renderT <= buf[0].t) { const s = buf[0]; e.x = s.x; e.y = s.y; e.angle = s.a; return; }
   for (let i = buf.length - 1; i > 0; i--) {
     const a0 = buf[i - 1];
-    if (renderT >= a0.t) {                  // coppia [a0,a1] che racchiude renderT (o l'ultima se renderT è nel futuro → si ferma sull'ultimo)
+    if (renderT >= a0.t) {                  // pair [a0,a1] bracketing renderT (or the last one if renderT is in the future → holds on the latest)
       const a1 = buf[i], span = a1.t - a0.t;
       let f = span > 0 ? (renderT - a0.t) / span : 1;
       if (f > 1) f = 1;
@@ -589,8 +585,8 @@ function interpSample(e, renderT) {
   }
 }
 
-// applica i campi NON di posizione di un'auto dallo snapshot (aspetto/stato); la
-// posizione va nel buffer d'interpolazione a parte (interpFeed).
+// Applies a car's NON-positional fields from the snapshot (appearance/state); the position
+// goes into the separate interpolation buffer (interpFeed).
 function netApplyCar(c, cp) {
   c.speed = cp.sp;
   c.w = cp.w; c.h = cp.h; c.color = cp.col; c.role = cp.role;
@@ -605,8 +601,8 @@ function netMakeWorldCar(cp) {
   netApplyCar(c, cp); interpFeed(c, cp.x, cp.y, cp.an);
   return c;
 }
-// crea l'auto GUIDATA dal player locale a partire dallo snapshot (con la fisica di
-// guida, che il payload trasporta: top/accel/mass/gears — servono alla predizione)
+// Creates the car DRIVEN by the local player from the snapshot (with the driving physics the
+// payload carries: top/accel/mass/gears — needed for prediction).
 function netMakePlayerCar(cp) {
   const c = netMakeWorldCar(cp);
   c.driver = 'player'; c.speed = 0; c.gear = 1;
@@ -614,10 +610,10 @@ function netMakePlayerCar(cp) {
   return c;
 }
 
-// arriva uno snapshot: aggiorna i target di interpolazione di mondo e ghost
+// A snapshot arrives: update the interpolation targets for the world and the ghosts.
 function netOnSnapshot(m) {
   net.snap = m;
-  // --- auto del mondo (traffico/polizia/parcheggiate/abbandonate) ---
+  // --- World cars (traffic/police/parked/abandoned) ---
   const seen = new Set();
   for (const cp of m.cars) {
     seen.add(cp.id);
@@ -626,7 +622,7 @@ function netOnSnapshot(m) {
     else { netApplyCar(c, cp); interpFeed(c, cp.x, cp.y, cp.an); }
   }
   for (const id of net.wcars.keys()) if (!seen.has(id)) net.wcars.delete(id);
-  // --- pedoni ---
+  // --- Pedestrians ---
   const seenP = new Set();
   for (const pp of m.peds) {
     seenP.add(pp.id);
@@ -638,15 +634,15 @@ function netOnSnapshot(m) {
     interpFeed(p, pp.x, pp.y, pp.f);
   }
   for (const id of net.wpeds.keys()) if (!seenP.has(id)) net.wpeds.delete(id);
-  // --- proiettili e razzi (estrapolati localmente tra gli snapshot) ---
+  // --- Bullets and rockets (extrapolated locally between snapshots) ---
   net.wbullets = m.bul.map(b => ({ x: b.x, y: b.y, vx: Math.cos(b.a) * 12, vy: Math.sin(b.a) * 12, hostile: b.hostile, flame: !!b.fl }));
   net.wrockets = m.rkt.map(r => ({ x: r.x, y: r.y, vx: Math.cos(r.a) * 6.5, vy: Math.sin(r.a) * 6.5, grenade: !!r.gr }));
-  // --- monete e incendi (statici: ricostruiti a ogni snapshot) ---
+  // --- Coins and fires (static: rebuilt on every snapshot) ---
   coins.length = 0; for (const k of m.coins) coins.push({ x: k.x, y: k.y, val: k.v, spin: rnd(0, TAU), bob: rnd(0, TAU) });
   fires.length = 0; for (const f of m.fires) fires.push({ x: f.x, y: f.y, r: 20, hp: 100 });
-  // --- effetti cosmetici del server: particelle + audio posizionale ---
+  // --- Cosmetic effects from the server: particles + positional audio ---
   if (m.fx) for (const e of m.fx) netApplyFx(e);
-  // --- ghost dei giocatori remoti (posizioni AOI; il roster resta da join/leave) ---
+  // --- Remote players' ghosts (AOI positions; the roster still comes from join/leave) ---
   for (const pv of m.players) {
     let g = net.players.get(pv.id);
     if (!g) { g = makeGhost(pv.id, pv.name, pv.sh); net.players.set(pv.id, g); }
@@ -659,28 +655,28 @@ function netOnSnapshot(m) {
       g.car.riderShirt = g.shirt;
     } else { g.car = null; interpFeed(g, pv.x, pv.y, pv.aim); }
   }
-  // --- messaggi del server per me (uccisioni, taglie): toast UNA volta per snapshot ---
+  // --- Server messages for me (kills, bounties): toast ONCE per snapshot ---
   if (m.me && Array.isArray(m.me.ev)) for (const ev of m.me.ev) {
     const txt = evText(ev); toast(txt);
     if (txt[0] === '💀' || txt[0] === '🎯') sfx.coin();
   }
-  // --- classifica dallo snapshot (stats autoritative) ---
+  // --- Scoreboard from the snapshot (authoritative stats) ---
   if (Array.isArray(m.sc)) for (const s of m.sc) {
-    if (s.id === net.myId) { net.kills = s.k; net.deaths = s.d; }   // punteggio/taglia miei: via `me`
+    if (s.id === net.myId) { net.kills = s.k; net.deaths = s.d; }   // my own score/bounty: via `me`
     else { const g = net.players.get(s.id); if (g) g.stats = { k: s.k, d: s.d, c: s.c, s: s.s | 0, b: s.b | 0 }; }
   }
 }
 
-// ricrea un effetto cosmetico ricevuto dal server (particelle esistenti + audio)
+// Recreates a cosmetic effect received from the server (existing particles + audio).
 function netApplyFx(e) {
-  if (e.k === 0) { spawnMuzzle(e.x, e.y, e.a); const h = hear(e.x, e.y, 850); if (h) sfx.copShoot(h); }   // sparo
+  if (e.k === 0) { spawnMuzzle(e.x, e.y, e.a); const h = hear(e.x, e.y, 850); if (h) sfx.copShoot(h); }   // gunshot
   else if (e.k === 1) spawnBlood(e.x, e.y);
   else if (e.k === 2) spawnSparks(e.x, e.y, e.n || 3);
-  else if (e.k === 3) { spawnExplosion(e.x, e.y); const h = hear(e.x, e.y, 1100); if (h) sfx.boom(); }     // esplosione
+  else if (e.k === 3) { spawnExplosion(e.x, e.y); const h = hear(e.x, e.y, 1100); if (h) sfx.boom(); }     // explosion
 }
 
-// campiona il mondo all'istante di rendering (nel passato) dal buffer d'interpolazione
-// + estrapola i proiettili. Fluido e a velocità corretta a qualunque frame-rate.
+// Samples the world at the render instant (in the past) from the interpolation buffer, and
+// extrapolates the bullets. Smooth and at the correct speed at any frame rate.
 function netInterpWorld() {
   const renderT = performance.now() - INTERP_MS;
   for (const c of net.wcars.values()) interpSample(c, renderT);
@@ -695,7 +691,7 @@ function netInterpWorld() {
   for (const r of net.wrockets) { r.x += r.vx; r.y += r.vy; }
 }
 
-// ricostruisce gli array globali che render.js disegna (dai target interpolati)
+// Rebuilds the global arrays render.js draws from (using the interpolated targets).
 function netRebuildArrays() {
   cars.length = 0;
   for (const c of net.wcars.values()) cars.push(c);
@@ -706,8 +702,8 @@ function netRebuildArrays() {
   rockets.length = 0; for (const r of net.wrockets) rockets.push(r);
 }
 
-// riconcilia il proprio player con lo stato autoritativo (salute, soldi, arma, auto,
-// posizione con dead-reckoning: si corregge solo la deriva evidente, non la latenza)
+// Reconciles our own player with the authoritative state (health, cash, weapon, car, and
+// position by dead reckoning: only obvious drift is corrected, not latency).
 function netReconcileMe() {
   const me = net.snap && net.snap.me;
   if (!me) return;
@@ -720,12 +716,12 @@ function netReconcileMe() {
   if (me.d != null) net.deaths = me.d;
   if (me.sco != null) net.score = me.sco;
   if (me.stk != null) net.streak = me.stk;
-  if (me.bty != null) { net.bounty = me.bty | 0; updateBountyHud(net.bounty); }   // idempotente ⇒ ok ogni frame
-  // auto: crea/rimuovi seguendo l'autorità
+  if (me.bty != null) { net.bounty = me.bty | 0; updateBountyHud(net.bounty); }   // idempotent ⇒ fine every frame
+  // Car: create/remove following the authority.
   if (me.car && !player.car) { player.car = netMakePlayerCar(me.car); }
   else if (!me.car && player.car) { player.car = null; engineGain(0); }
   else if (me.car && player.car) { player.car.sirenOn = me.car.siren; if (me.car.tur != null) player.car.turretA = me.car.tur; }
-  // fuori gioco (morto/arrestato): overlay col conto alla rovescia del server
+  // Out of play (dead/busted): overlay with the server's countdown.
   const bm = $('#bigMsg');
   if (me.down) {
     downT = me.dt || 1;
@@ -738,10 +734,10 @@ function netReconcileMe() {
     if (downT > 0 && bm) bm.classList.add('hidden');
     downT = 0;
   }
-  // posizione: CLIENT-AUTHORITATIVE. Il player possiede il proprio movimento e lo
-  // simula in locale (updateNetClient); il server NON lo corregge più — era la causa
-  // del "server che ti sposta"/rubber-band. Ci si riallinea SOLO su un teletrasporto
-  // vero (respawn/arresto che ti riposiziona altrove), oltre una soglia grande.
+  // Position: CLIENT-AUTHORITATIVE. The player owns their own movement and simulates it
+  // locally (updateNetClient); the server no longer corrects it — that was the cause of the
+  // "server moves you"/rubber-banding. We only realign on a genuine teleport (a respawn or
+  // arrest that puts you elsewhere), beyond a large threshold.
   const tx = me.car ? me.car.x : me.x, ty = me.car ? me.car.y : me.y;
   if (dist(player.x, player.y, tx, ty) > 300) {
     player.x = tx; player.y = ty;
@@ -749,7 +745,7 @@ function netReconcileMe() {
   }
 }
 
-// comando compatto verso il server (assi, mira, pulsanti one-shot, cambio arma)
+// Compact command to the server (axes, aim, one-shot buttons, weapon change).
 function netSendInput() {
   const ax = (held('KeyD', 'ArrowRight') ? 1 : 0) - (held('KeyA', 'ArrowLeft') ? 1 : 0);
   const ay = (held('KeyS', 'ArrowDown') ? 1 : 0) - (held('KeyW', 'ArrowUp') ? 1 : 0);
@@ -760,56 +756,57 @@ function netSendInput() {
   if (net.enterEdge) { b |= 4; net.enterEdge = false; }
   if (net.hornEdge) { b |= 8; net.hornEdge = false; }
   const cmd = { t: 'i', seq: ++net.inSeq, ax, ay, aim: Math.round(aim * 256) / 256, b,
-                px: Math.round(player.x), py: Math.round(player.y) };   // posizione client-authoritative
+                px: Math.round(player.x), py: Math.round(player.y) };   // client-authoritative position
   const c = player.car;
   if (c) { cmd.cx = Math.round(c.x); cmd.cy = Math.round(c.y);
            cmd.ca = Math.round(c.angle * 256) / 256; cmd.csp = Math.round(c.speed * 100) / 100; }
   if (typeof touchDrive !== 'undefined' && touchDrive.active) cmd.drive = { active: true, angle: touchDrive.angle };
   if (net.weaponReq != null) { cmd.w = net.weaponReq; net.weaponReq = null; }
-  // raggio d'interesse adattivo: chiedo al server SOLO le entità che il mio schermo
-  // può mostrare (+ margine per interpolazione/pop-in), non un fisso 1200 tarato sul
-  // desktop. Su un telefono taglia di molto entità/banda/GC → più fluido. Lo mando
-  // solo quando cambia (orientamento/resize), è idempotente lato server.
+  // Adaptive area of interest: ask the server ONLY for entities my screen can actually show
+  // (+ a margin for interpolation/pop-in), rather than a fixed 1200 tuned for desktop. On a
+  // phone that cuts entities/bandwidth/GC considerably → smoother. Sent only when it changes
+  // (orientation/resize); it is idempotent server-side.
   const vr = Math.round(Math.max(vw, vh) * 0.5 + 250);
   if (vr !== net.lastVR) { cmd.vr = vr; net.lastVR = vr; }
   netSend(cmd);
 }
 
-// il loop del client autoritativo (chiamato da update() al posto della simulazione)
+// The authoritative client's loop (called by update() in place of the simulation).
 function updateNetClient() {
-  applyTouchInput();                                   // mobile: riversa gli stick su tasti virtuali/mira/fuoco (no-op su desktop)
-  if (mClicked) net.firePending = true;                // ricorda il click (lo sparo lo fa il server)
-  updateTrainKinematics();                             // treno: solo cinematica (gli urti li decide il server)
-  netInterpWorld();                                    // mondo (traffico/pedoni) dagli snapshot
-  netRebuildArrays();                                  // popola cars[]/peds[] (mondo + il tuo mezzo)
-  netReconcileMe();                                    // salute/soldi/arma/auto/morte dal server (NON la posizione)
-  // il player è CLIENT-AUTHORITATIVE: simulazione locale completa (movimento + collisioni
-  // col traffico) per la massima fluidità. La posizione risultante va al server (netSendInput),
-  // che la propaga agli altri. A terra resta fermo (respawn deciso dal server).
+  applyTouchInput();                                   // mobile: pours the sticks into virtual keys/aim/fire (no-op on desktop)
+  if (mClicked) net.firePending = true;                // remember the click (the server does the firing)
+  updateTrainKinematics();                             // train: kinematics only (the server rules on impacts)
+  netInterpWorld();                                    // world (traffic/pedestrians) from the snapshots
+  netRebuildArrays();                                  // populates cars[]/peds[] (world + your own vehicle)
+  netReconcileMe();                                    // health/cash/weapon/car/death from the server (NOT the position)
+  // The player is CLIENT-AUTHORITATIVE: a full local simulation (movement + collisions with
+  // traffic) for maximum smoothness. The resulting position goes to the server
+  // (netSendInput), which propagates it to the others. While down they stay put (the server
+  // decides the respawn).
   if (downT === 0) {
     player.aim = Math.atan2(mouseWY() - player.y, mouseWX() - player.x);
     if (player.car) updateDrive(player.car); else updatePlayerFoot();
-    // il traffico è del server (immobile per noi): risolviamo SOLO la nostra auto contro
-    // mondo+rivali (O(n)). Niente resolveCarCollisions O(n²) su tutto il traffico — era
-    // la causa degli scatti con molti veicoli vicini e litigava con l'interpolazione.
+    // The traffic belongs to the server (immovable for us): we resolve ONLY our own car
+    // against world+rivals (O(n)). No O(n²) resolveCarCollisions across all the traffic —
+    // that caused the stutter with many nearby vehicles and fought the interpolation.
     resolveRemoteCarCollisions();
   }
-  if (frame % 2 === 0) netSendInput();                 // ~30 comandi/s (assi, mira, pulsanti + posizione)
-  updateParts();                                       // decadimento particelle cosmetiche locali
-  // audio d'ambiente derivato dallo stato autoritativo (il motore lo fa già updateDrive)
+  if (frame % 2 === 0) netSendInput();                 // ~30 commands/s (axes, aim, buttons + position)
+  updateParts();                                       // decay of local cosmetic particles
+  // Ambient audio derived from the authoritative state (updateDrive already covers the engine).
   if (wanted > 0 && frame % 26 === 0) sfx.siren((frame / 26) % 2 < 1);
   if (playerSirenOn(player.car) && frame % 24 === 0) sfx.emergency(player.car.livery === 'ambulance', (frame / 24) % 2 < 1);
-  updateCamera();                                      // il proprio player si disegna alla posizione ESATTA (reattivo), niente interpolazione
+  updateCamera();                                      // our own player draws at the EXACT position (responsive), no interpolation
   frame++;
   if (frame % 30 === 0 && ladderEl && !ladderEl.classList.contains('hidden')) renderLadder();
 }
 
-// ---------- Disegno dei ghost (chiamato da render.js) ----------
+// ---------- Drawing the ghosts (called by render.js) ----------
 function netPushEnts(ents) {
-  // in autoritativo mostra i ghost solo dopo che uno snapshot li ha posizionati
+  // In authoritative mode, only show ghosts once a snapshot has positioned them.
   for (const g of net.players.values()) if (!g.down && (!net.authoritative || g.seen)) ents.push({ netG: g, y: g.y });
-  for (const c of net.looseCars.values()) ents.push(c);   // (Fase 1) mezzi abbandonati dai rivali
-  for (const c of net.remoteCops.values()) ents.push(c);  // (Fase 1) volanti dei rivali ricercati
+  for (const c of net.looseCars.values()) ents.push(c);   // (Phase 1) vehicles abandoned by rivals
+  for (const c of net.remoteCops.values()) ents.push(c);  // (Phase 1) patrol cars chasing wanted rivals
 }
 function drawNetPlayer(g) {
   if (g.car) { drawCar(g.car); netTag(g, g.car.x - camX, g.car.y - camY - g.car.h / 2 - 6); return; }
@@ -820,12 +817,12 @@ function drawNetPlayer(g) {
                                     gun: g.gun, punch: g.punchT > 0 ? g.punchT / 10 : 0 });
   netTag(g, x, y);
 }
-// targhetta del rivale: nome azzurro + barretta della vita
+// A rival's tag: name in blue + health bar.
 function netTag(g, x, y) {
   ctx.font = 'bold 11px Trebuchet MS'; ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillText(g.name, x + 1, y - 17);
   ctx.fillStyle = '#8fd6ff'; ctx.fillText(g.name, x, y - 18);
-  // taglia sulla testa del rivale: bersaglio ambito (💰 in oro sopra il nome)
+  // Bounty on the rival's head: a prized target (💰 in gold above the name).
   const b = (g.stats && g.stats.b) | 0;
   if (b > 0) { ctx.fillStyle = '#ffd23a'; ctx.fillText('🎯 $' + b, x, y - 30); }
   ctx.textAlign = 'left';
@@ -833,7 +830,7 @@ function netTag(g, x, y) {
   ctx.fillStyle = '#5ee06a'; ctx.fillRect(x - 14, y - 15, 28 * clamp(g.hp, 0, 100) / 100, 3);
 }
 
-// ---------- Ladder: classifica della partita (Tab o pulsante 🏆) ----------
+// ---------- Ladder: the match scoreboard (Tab or the 🏆 button) ----------
 const ladderEl = document.getElementById('ladder');
 function toggleLadder() {
   if (!netActive() || !started || !ladderEl) return;
@@ -844,10 +841,10 @@ function ladderRows() {
   const rows = [{ name: playerName, s: net.score, k: net.kills, d: net.deaths, b: net.bounty, me: true }];
   for (const g of net.players.values())
     rows.push({ name: g.name, s: g.stats.s | 0, k: g.stats.k, d: g.stats.d, b: g.stats.b | 0, me: false });
-  rows.sort((a, b) => b.s - a.s || b.k - a.k || a.d - b.d);   // punteggio, poi uccisioni, poi meno morti
+  rows.sort((a, b) => b.s - a.s || b.k - a.k || a.d - b.d);   // score, then kills, then fewest deaths
   return rows;
 }
-// riempie sia la ladder in gioco sia quella della schermata di fine partita
+// Fills both the in-game ladder and the end-of-match screen's.
 function renderLadder() {
   const rows = ladderRows();
   for (const sel of ['#ladderTable tbody', '#goLadderTable tbody']) {
@@ -858,7 +855,7 @@ function renderLadder() {
       const tr = document.createElement('tr');
       if (r.me) tr.className = 'me';
       const rank = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1;
-      const name = (r.b > 0 ? '🎯 ' : '') + r.name;          // taglia attiva: bersaglio segnalato
+      const name = (r.b > 0 ? '🎯 ' : '') + r.name;          // active bounty: target flagged
       for (const txt of [rank, name, r.s, r.k, r.d, r.b > 0 ? '$' + r.b : '—']) {
         const td = document.createElement('td');
         td.textContent = txt;
@@ -869,7 +866,7 @@ function renderLadder() {
   }
 }
 
-// ---------- Taglia sulla propria testa (HUD) ----------
+// ---------- Bounty on your own head (HUD) ----------
 function updateBountyHud(b) {
   const el = document.getElementById('bountyBadge');
   if (!el) return;
@@ -877,7 +874,7 @@ function updateBountyHud(b) {
   else el.classList.add('hidden');
 }
 
-// ---------- Badge, link d'invito, condivisione ----------
+// ---------- Badge, invite link, sharing ----------
 function netRefreshBadge() {
   const el = document.getElementById('mpBadge');
   if (el) {
@@ -891,8 +888,8 @@ function netRefreshBadge() {
   if (lc && netActive()) lc.textContent = `${net.players.size + 1} / ${net.maxPlayers}`;
 }
 function inviteLink() { return location.href.split('#')[0] + '#room=' + ROOM_CODE; }
-// condivisione col foglio nativo del sistema (WhatsApp, Messaggi, ecc.); se il
-// dispositivo non lo espone si ripiega sulla copia negli appunti
+// Sharing via the system's native sheet (WhatsApp, Messages, etc.); if the device does not
+// expose it, fall back to copying to the clipboard.
 function shareInvite(btn) {
   const url = inviteLink();
   if (navigator.share) {
@@ -900,10 +897,10 @@ function shareInvite(btn) {
       title: t('invite.shareTitle'),
       text: t('invite.shareText', { code: ROOM_CODE }),
       url,
-    }).catch(() => {});                            // annullato dall'utente: nessun errore
+    }).catch(() => {});                            // cancelled by the user: not an error
     return;
   }
-  copyInvite(btn);                                 // niente foglio nativo: copia e basta
+  copyInvite(btn);                                 // no native sheet: just copy
 }
 function copyInvite(btn) {
   const link = inviteLink();

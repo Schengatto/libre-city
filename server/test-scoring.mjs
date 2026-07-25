@@ -1,19 +1,19 @@
-// LIBRE CITY · server/test-scoring.mjs — test del punteggio, delle taglie e del
-// lanciarazzi nella simulazione autoritativa (Fase 2).
-//   Uso:  node server/test-scoring.mjs
+// LIBRE CITY · server/test-scoring.mjs — tests for scoring, bounties and the rocket
+// launcher in the authoritative simulation (Phase 2).
+//   Usage:  node server/test-scoring.mjs
 import runtime from './sim-runtime.js';
 const { createRoomSim } = runtime;
 
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ', msg); } else { fail++; console.log('  XX FAIL:', msg); } };
 
-// stende `vic` con la pistola di `att` (li tiene adiacenti e spara finché cade)
+// Downs `vic` with `att`'s pistol (keeps them adjacent and fires until they drop).
 function pistolKill(sim, att, vic) {
   const pa = sim._player(att), pv = sim._player(vic);
   pa.owned[1] = true; pa.weaponIdx = 1;
-  pv.health = 6; pv.downT = 0;                 // pronto a cadere
+  pv.health = 6; pv.downT = 0;                 // ready to drop
   for (let i = 0; i < 40; i++) {
-    pv.x = pa.x + 22; pv.y = pa.y;             // resta a tiro
+    pv.x = pa.x + 22; pv.y = pa.y;             // stay in range
     sim.applyInput(att, { aim: 0, b: 2 });
     sim.tick();
     if (pv.downT > 0) return true;
@@ -26,12 +26,12 @@ console.log('1) il lanciarazzi stende un giocatore a piedi e accredita l\'uccisi
   const sim = createRoomSim('ROCKET1');
   const X = sim.addPlayer('Rocketman', 0), Y = sim.addPlayer('Bersaglio', 1);
   const px = sim._player(X), py = sim._player(Y);
-  px.owned[6] = true; px.weaponIdx = 6;         // 6 = Lanciarazzi (vedi WEAPONS)
+  px.owned[6] = true; px.weaponIdx = 6;         // 6 = rocket launcher (see WEAPONS)
   py.x = px.x + 40; py.y = px.y; py.health = 100;
   let killed = false;
   for (let i = 0; i < 30 && !killed; i++) {
-    py.x = px.x + 40; py.y = px.y;              // tienilo davanti alla bocca da fuoco
-    sim.applyInput(X, { aim: 0, b: 2 });        // fuoco (semi-auto)
+    py.x = px.x + 40; py.y = px.y;              // keep them in front of the muzzle
+    sim.applyInput(X, { aim: 0, b: 2 });        // fire (semi-auto)
     sim.tick();
     if (py.downT > 0) killed = true;
   }
@@ -63,13 +63,13 @@ console.log('3) chi stende un giocatore con la taglia la INCASSA (punti + soldi)
   const sim = createRoomSim('BOUNTY2');
   const X = sim.addPlayer('Preda', 0), Y = sim.addPlayer('Cacciatore', 1);
   const px = sim._player(X), py = sim._player(Y);
-  // X si costruisce una taglia stendendo Y tre volte
+  // X builds up a bounty by downing Y three times.
   for (let n = 0; n < 3; n++) pistolKill(sim, X, Y);
   const xBounty = px.bounty;
-  py.downT = 0;                                    // riporta in gioco il cacciatore
+  py.downT = 0;                                    // put the hunter back in play
   const yScoreBefore = sim.scores().find(s => s.id === Y).s;
   const yCashBefore = py.cash;
-  const cashed = pistolKill(sim, Y, X);            // ora Y stende X (con taglia)
+  const cashed = pistolKill(sim, Y, X);            // now Y downs X (who carries a bounty)
   const sy = sim.scores().find(s => s.id === Y);
   console.log('   taglia incassata:', xBounty, '· scores:', JSON.stringify(sim.scores()));
   ok(xBounty === 150, 'la preda aveva una taglia di $150');
@@ -84,15 +84,15 @@ console.log('4) il livello RICERCATO è PER-GIOCATORE (crimine di uno ≠ stelle
   const sim = createRoomSim('WANTED1');
   const X = sim.addPlayer('Bandito', 0), Y = sim.addPlayer('Innocente', 1);
   const px = sim._player(X), py = sim._player(Y);
-  px.owned[1] = true; px.weaponIdx = 1;            // pistola
-  // Y sta ben lontano e non fa nulla
+  px.owned[1] = true; px.weaponIdx = 1;            // pistol
+  // Y stays well away and does nothing.
   py.x = px.x + 4000; py.y = px.y + 4000;
-  // X spara a un passante che gli mettiamo davanti (aim = 0 → verso +x)
+  // X shoots a passer-by placed in front of them (aim = 0 → towards +x).
   let crimeDone = false;
   for (let i = 0; i < 60 && !crimeDone; i++) {
-    sim._spawnPed(px.x + 26, px.y, 'civ');         // bersaglio a tiro ogni tick
-    py.x = px.x + 4000; py.y = px.y + 4000;        // tieni Y lontano e fermo
-    sim.applyInput(X, { aim: 0, b: 2 });           // fuoco semi-auto
+    sim._spawnPed(px.x + 26, px.y, 'civ');         // a target in range every tick
+    py.x = px.x + 4000; py.y = px.y + 4000;        // keep Y far away and still
+    sim.applyInput(X, { aim: 0, b: 2 });           // semi-auto fire
     sim.tick();
     if ((sim.playerState(X).wanted | 0) > 0) crimeDone = true;
   }

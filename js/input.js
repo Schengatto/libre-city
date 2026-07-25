@@ -1,15 +1,15 @@
-// LIBRE CITY · js/input.js — tastiera, mouse e controlli touch; sali/scendi dall'auto,
-// furto con scasso, missioni ON/OFF, clacson/sirena e barra delle armi.
+// LIBRE CITY · js/input.js — keyboard, mouse and touch controls; enter/exit vehicles,
+// carjacking, missions ON/OFF, horn/siren and the weapon bar.
 
 // ---------- Input ----------
 const keys = {};
-let mouseX = 0, mouseY = 0, mDownL = false, mClicked = false;   // mClicked: fronte del click (semi-auto)
+let mouseX = 0, mouseY = 0, mDownL = false, mClicked = false;   // mClicked: click edge (semi-auto)
 addEventListener('keydown', e => {
-  // nei campi del menu (nome, impostazioni) la tastiera scrive, non gioca
+  // In menu fields (name, settings) the keyboard types instead of playing.
   if (e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
   if (e.code === 'Escape') { if (mapFullOpen) { closeMapFull(); return; } togglePause(); return; }
   if (e.code === 'KeyM' && e.shiftKey && !e.repeat && started) { openMapFull(); return; }
-  if (e.code === 'Tab' && started) {                 // classifica della partita (multigiocatore)
+  if (e.code === 'Tab' && started) {                 // match scoreboard (multiplayer)
     e.preventDefault();
     toggleLadder();
     return;
@@ -19,9 +19,9 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyE') { initAudio(); toggleCar(); }
   if (e.code === 'Space' && !e.repeat) { initAudio(); hornOrSiren(); }
   if (e.code === 'KeyM' && !e.repeat) { initAudio(); toggleMissions(); }
-  if (e.code === 'KeyH' && !e.repeat) toggleHelp();      // apre/chiude la guida comandi
+  if (e.code === 'KeyH' && !e.repeat) toggleHelp();
 
-  if (e.code.startsWith('Digit')) {                  // 1-5: compra/equipaggia le armi
+  if (e.code.startsWith('Digit')) {                  // 1-5: buy/equip weapons
     const i = +e.code.slice(5) - 1;
     if (i >= 0 && i < WEAPONS.length) { initAudio(); weaponKey(i); }
   }
@@ -33,17 +33,17 @@ canvas.addEventListener('mousemove', e => { mouseX = e.clientX; mouseY = e.clien
 canvas.addEventListener('mousedown', e => { if (e.button === 0) { initAudio(); mDownL = true; mClicked = true; } });
 addEventListener('mouseup', e => { if (e.button === 0) mDownL = false; });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
-const touchHeld = {};                              // "tasti" premuti dallo stick virtuale
+const touchHeld = {};                              // "keys" held by the virtual stick
 const held = (...codes) => codes.some(c => keys[c] || touchHeld[c]);
 const mouseWX = () => mouseX + camX, mouseWY = () => mouseY + camY;
 
-// ---------- Controlli touch (mobile) ----------
-// Metà sinistra dello schermo: stick virtuale per muoversi; in auto lo stick
-// indica la direzione SULLO SCHERMO verso cui andare (il mezzo ci si allinea).
-// Metà destra: stick di mira — spingilo oltre metà corsa per sparare (o per
-// azionare l'idrante dell'autopompa); un tocco rapido spara un colpo singolo.
-// I pulsanti a schermo coprono E (🚗 sali/scendi), Spazio (📣 clacson/sirena),
-// M (📋 missioni) e 1-4 (barra delle armi in alto).
+// ---------- Touch controls (mobile) ----------
+// Left half of the screen: virtual stick to move; while driving the stick points at the
+// ON-SCREEN direction to head for (the vehicle lines itself up with it).
+// Right half: aiming stick — push it past half travel to fire (or to work the fire
+// engine's hydrant); a quick tap fires a single shot.
+// On-screen buttons cover E (🚗 enter/exit), Space (📣 horn/siren), M (📋 missions)
+// and 1-4 (the weapon bar at the top).
 const isTouchDevice = matchMedia('(pointer: coarse)').matches;
 let usingTouch = false;
 function enterTouchMode() {
@@ -57,7 +57,7 @@ const PAD_R = 55, FIRE_ON = 0.5, MOVE_ON = 0.32;
 const lStick = { id: null, cx: 0, cy: 0, dx: 0, dy: 0 };
 const rStick = { id: null, cx: 0, cy: 0, dx: 0, dy: 0, t0: 0, fired: false };
 let touchAim = 0, touchTap = false;
-const touchDrive = { active: false, angle: 0 };    // stick sinistro in auto: direzione su schermo
+const touchDrive = { active: false, angle: 0 };    // left stick while driving: on-screen heading
 const padL = document.getElementById('padL'), padR = document.getElementById('padR');
 function padShow(el, x, y) { if (el) { el.style.display = 'block'; el.style.left = x + 'px'; el.style.top = y + 'px'; } }
 function padKnob(el, dx, dy) { const k = el && el.firstElementChild; if (k) k.style.transform = `translate(${dx * PAD_R}px, ${dy * PAD_R}px)`; }
@@ -98,7 +98,7 @@ function onTouchEnd(e) {
   for (const t of e.changedTouches) {
     if (t.identifier === lStick.id) { lStick.id = null; lStick.dx = lStick.dy = 0; padHide(padL); }
     else if (t.identifier === rStick.id) {
-      // tocco rapido senza trascinare = un colpo singolo nell'ultima direzione di mira
+      // Quick tap without dragging = one single shot in the last aimed direction.
       if (!rStick.fired && frame - rStick.t0 < 18) touchTap = true;
       rStick.id = null; rStick.dx = rStick.dy = 0; padHide(padR);
     }
@@ -106,10 +106,10 @@ function onTouchEnd(e) {
 }
 canvas.addEventListener('touchend', onTouchEnd, { passive: false });
 canvas.addEventListener('touchcancel', onTouchEnd, { passive: false });
-// riversa lo stato degli stick sui controlli esistenti (tasti + mouse virtuale)
+// Pours the stick state into the existing controls (keys + virtual mouse).
 function applyTouchInput() {
   if (!usingTouch) return;
-  // in auto lo stick non fa da crocetta WASD: dà l'angolo (su schermo) verso cui guidare
+  // While driving the stick is not a WASD d-pad: it gives the on-screen angle to drive at.
   const driving = !!player.car;
   touchDrive.active = driving && lStick.id !== null && Math.hypot(lStick.dx, lStick.dy) > MOVE_ON;
   if (touchDrive.active) touchDrive.angle = Math.atan2(lStick.dy, lStick.dx);
@@ -119,7 +119,7 @@ function applyTouchInput() {
   touchHeld.KeyD = !driving && lStick.id !== null && lStick.dx >  MOVE_ON;
   const firing = rStick.id !== null && Math.hypot(rStick.dx, rStick.dy) > FIRE_ON;
   if (firing) rStick.fired = true;
-  // il mouse virtuale sta nella direzione di mira, poco oltre il personaggio
+  // The virtual mouse sits in the aiming direction, just beyond the character.
   const ax = (player.car ? player.car.x : player.x) - camX;
   const ay = (player.car ? player.car.y : player.y) - camY;
   mouseX = ax + Math.cos(touchAim) * 130; mouseY = ay + Math.sin(touchAim) * 130;
@@ -127,7 +127,7 @@ function applyTouchInput() {
   if (firing || touchTap) mClicked = true;
   touchTap = false;
 }
-// pulsanti azione a schermo
+// On-screen action buttons.
 function bindBtn(id, fn) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -137,8 +137,8 @@ function bindBtn(id, fn) {
 bindBtn('btnCar', toggleCar);
 bindBtn('btnHorn', hornOrSiren);
 bindBtn('btnMissions', toggleMissions);
-bindBtn('btnLadder', () => toggleLadder());   // classifica multigiocatore (visibile solo in partita 🌐)
-// barra delle armi: tocca l'icona per equipaggiare (o comprare all'armeria)
+bindBtn('btnLadder', () => toggleLadder());   // multiplayer scoreboard (only visible in a 🌐 match)
+// Weapon bar: tap an icon to equip (or to buy at the gun shop).
 const wpnBar = document.getElementById('wpnBar');
 if (wpnBar) WEAPONS.forEach((w, i) => {
   const b = document.createElement('button');
@@ -156,22 +156,22 @@ function updateWpnBar() {
 }
 updateWpnBar();
 
-// ---------- Sali / scendi dall'auto ----------
+// ---------- Enter / exit a vehicle ----------
 function toggleCar() {
   if (!started || downT > 0) return;
-  if (net.authoritative) { net.enterEdge = true; return; }   // sali/scendi lo decide il server
+  if (net.authoritative) { net.enterEdge = true; return; }   // the server decides enter/exit
   if (player.car) {
     const c = player.car;
-    // scendi accanto al lato dell'auto, in un punto libero
+    // Step out beside the vehicle, onto a free spot.
     const nx = Math.cos(c.angle + Math.PI / 2), ny = Math.sin(c.angle + Math.PI / 2);
     let ex = c.x + nx * 34, ey = c.y + ny * 34;
     if (boxHits(ex, ey, player.r, player.r)) { ex = c.x - nx * 34; ey = c.y - ny * 34; }
     if (boxHits(ex, ey, player.r, player.r)) { ex = c.x; ey = c.y; }
     player.x = ex; player.y = ey;
-    mClicked = false;                              // un click fatto in auto non spara appena scendi
+    mClicked = false;                              // a click made while driving must not fire on exit
     c.driver = null; c.speed = 0;
-    c.role = 'parked'; c.edge = null;              // resta ferma dove l'hai lasciata (niente rotaia)
-    netAbandonCar(c);                              // multigiocatore: resta visibile anche agli altri
+    c.role = 'parked'; c.edge = null;              // stays where you left it (off the rail)
+    netAbandonCar(c);                              // multiplayer: stays visible to everyone else too
     player.car = null;
     engineGain(0);
     if (taxiActive()) cancelTaxi('taxi.abandon');
@@ -189,60 +189,60 @@ function toggleCar() {
     if (d < bd) { bd = d; best = c; }
   }
   if (best) {
-    // il mezzo era guidato da qualcuno: il guidatore vola a terra e non la prende bene
+    // The vehicle had a driver: they get thrown out and do not take it well.
     if (best.role === 'traffic' || best.role === 'police' || best.role === 'armycar') tossDriver(best);
     player.car = best; best.driver = 'player';
     if (best.role === 'traffic' || best.role === 'parked') best.role = 'player';
-    netAssignCarId(best);                          // multigiocatore: id di rete stabile del mezzo
-    // in multigiocatore i mezzi-missione (taxi/pizza/ambulanza/volante) non danno
-    // incarichi: ricadono sull'avviso generico "sei salito in auto/moto"
+    netAssignCarId(best);                          // multiplayer: stable network id for the vehicle
+    // In multiplayer the mission vehicles (taxi/pizza/ambulance/patrol) hand out no jobs:
+    // they fall back to the generic "you got in the car/on the bike" notice.
     if (best.isTaxi && !netActive()) toast(t('taxi.enter'));
     else if (best.isDelivery && !netActive()) toast(t('pizza.enter'));
     else if (best.livery === 'ambulance' && !netActive()) toast(t('rescue.enter'));
     else if (best.livery === 'fire') toast(t(usingTouch ? 'fire.enterTouch' : 'fire.enterKb'));
     else if (best.wasPolice && !netActive()) toast(t('patrol.enter'));
     else if (best.isTank) { toast(t(usingTouch ? 'veh.tankTouch' : 'veh.tankKb'));
-                            triggerArmyAlert(nearestArmyBase()); }   // rubare un carro non passa inosservato
+                            triggerArmyAlert(nearestArmyBase()); }   // stealing a tank does not go unnoticed
     else if (best.livery === 'army') toast(t('veh.jeep'));
     else if (usingTouch) toast(t(best.isBike ? 'veh.bikeTouch' : 'veh.carTouch'));
     else toast(t(best.isBike ? 'veh.bikeKb' : 'veh.carKb'));
-    armMissionForCar();                            // il primo incarico arriva subito (se le missioni sono attive)
+    armMissionForCar();                            // the first job arrives right away (if missions are on)
     if (!missionsOn && (best.isTaxi || best.isDelivery || best.wasPolice || best.livery === 'ambulance' || best.livery === 'fire'))
       toast(t(usingTouch ? 'miss.offTouch' : 'miss.offKb'));
     sfx.door(); sfx.ignition();
   } else sfx.err();
 }
 
-// ---------- Furto con scasso: il guidatore vola a terra ----------
-// quando Federico ruba un mezzo con qualcuno alla guida, il guidatore viene
-// scaraventato sul lato opposto: resta stordito a terra un attimo, poi si
-// rialza arrabbiato e lo insegue agitando i pugni (vedi updateAngryDriver)
+// ---------- Carjacking: the driver goes flying ----------
+// When the player steals an occupied vehicle the driver is flung out on the far side:
+// they lie stunned for a moment, then get up angry and chase after them with fists
+// flying (see updateAngryDriver).
 function tossDriver(c) {
   const nx = Math.cos(c.angle + Math.PI / 2), ny = Math.sin(c.angle + Math.PI / 2);
-  // atterra dal lato opposto a quello da cui sale Federico (se è libero)
+  // Land on the opposite side from the one the player gets in from (if it is free).
   const side = (player.x - c.x) * nx + (player.y - c.y) * ny > 0 ? -1 : 1;
   let ex = c.x + nx * side * (c.h / 2 + 20), ey = c.y + ny * side * (c.h / 2 + 20);
   if (boxHits(ex, ey, 7, 7)) { ex = c.x - nx * side * (c.h / 2 + 20); ey = c.y - ny * side * (c.h / 2 + 20); }
   if (boxHits(ex, ey, 7, 7)) { ex = c.x + Math.cos(c.angle) * (c.w / 2 + 18); ey = c.y + Math.sin(c.angle) * (c.w / 2 + 18); }
   const p = makePed(ex, ey, 'civ');
-  if (c.riderShirt) p.shirt = c.riderShirt;                        // stessa maglietta del pilota in sella
+  if (c.riderShirt) p.shirt = c.riderShirt;                        // same shirt as the rider in the saddle
   if (c.role === 'police' || c.wasPolice) { p.shirt = '#20407a'; p.hair = '#1a1a2a'; p.copDress = true; }
   if (c.role === 'armycar' || c.livery === 'army') { p.shirt = '#3d5226'; p.hair = '#2a2a1e'; p.soldierDress = true; }
-  p.stolenBike = !!c.isBike;                                       // per la prima sfuriata ("La mia moto!")
-  const a = Math.atan2(ey - c.y, ex - c.x);                        // sbalzato via dal mezzo
-  p.ko = true; p.getsUp = true; p.koT = rndi(55, 85);              // stordito, ma si rialzerà
+  p.stolenBike = !!c.isBike;                                       // for the first outburst ("My bike!")
+  const a = Math.atan2(ey - c.y, ex - c.x);                        // flung away from the vehicle
+  p.ko = true; p.getsUp = true; p.koT = rndi(55, 85);              // stunned, but they will get up
   p.kx = Math.cos(a) * 3.4; p.ky = Math.sin(a) * 3.4;
   p.spin = rnd(-0.5, 0.5);
   peds.push(p);
   sfx.thud(); sfx.yell(hear(ex, ey, 700));
 }
 
-// ---------- Missioni ON/OFF (M) ----------
-// A volte vuoi solo scorrazzare con l'ambulanza o la volante senza incarichi:
-// M disattiva (e riattiva) le missioni dei mezzi speciali.
+// ---------- Missions ON/OFF (M) ----------
+// Sometimes you just want to cruise around in the ambulance or the patrol car without
+// jobs: M turns the special-vehicle missions off (and back on).
 let missionsOn = true;
-// se sei su un mezzo speciale e le missioni sono attive, prepara la chiamata
-// (in multigiocatore niente incarichi: si gioca a darsi la caccia fra rivali)
+// If you are in a special vehicle and missions are on, arm the next call.
+// (No jobs in multiplayer: there the game is hunting each other down.)
 function armMissionForCar() {
   const c = player.car;
   if (!c || !missionsOn || netActive()) return;
@@ -266,20 +266,20 @@ function toggleMissions() {
   }
 }
 
-// ---------- Clacson & sirena (Spazio) ----------
-// In un mezzo qualsiasi Spazio suona il clacson; in volante o ambulanza
-// accende/spegne la sirena. Con una missione attiva la sirena parte da sola.
+// ---------- Horn & siren (Space) ----------
+// In any vehicle Space sounds the horn; in a patrol car or ambulance it toggles the
+// siren. With a mission running the siren starts by itself.
 function hornOrSiren() {
   if (!started || !player.car) return;
-  if (net.authoritative) { net.hornEdge = true; return; }    // clacson/sirena: al server
+  if (net.authoritative) { net.hornEdge = true; return; }    // horn/siren: over to the server
   const c = player.car;
   if (c.wasPolice || c.livery === 'ambulance' || c.livery === 'fire') {
     c.sirenOn = !c.sirenOn;
     toast(t(c.sirenOn ? 'veh.sirenOn' : 'veh.sirenOff'));
   } else sfx.horn({ v: 1, pan: 0 }, c);
 }
-// la sirena del mezzo del player suona (e lampeggia) se attivata con Spazio
-// oppure automaticamente quando la sua missione è in corso
+// The siren on the player's vehicle sounds (and flashes) either when switched on with
+// Space or automatically while its mission is running.
 function playerSirenOn(c) {
   if (!c || c.driver !== 'player') return false;
   if (c.wasPolice) return c.sirenOn || patrolActive();
@@ -287,4 +287,3 @@ function playerSirenOn(c) {
   if (c.livery === 'fire') return c.sirenOn || firejobActive();
   return false;
 }
-

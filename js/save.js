@@ -1,34 +1,33 @@
-// LIBRE CITY · js/save.js — salvataggio della partita in GIOCATORE SINGOLO.
+// LIBRE CITY · js/save.js — SINGLE-PLAYER game saves.
 //
-// La città è generata in modo deterministico dal seme = codice stanza (ROOM_CODE,
-// vedi core.js): NON va salvata, basta ricordare il codice e rigenerarla. Quindi un
-// salvataggio è solo lo stato "vivo" del giocatore (posizione, salute, armi, soldi,
-// livello ricercato, tempo rimasto, contatori missioni) più il codice della sua città.
+// The city is generated deterministically from the room code (ROOM_CODE, see
+// core.js), so it is NOT saved: remembering the code is enough to regenerate it.
+// A save therefore holds only the player's live state (position, health, weapons,
+// cash, wanted level, time left, mission counters) plus that city's code.
 //
-// Slot unico per browser (localStorage, chiave `libreCity.save`). Il traffico e i
-// pedoni non si salvano: ripopolano da soli all'avvio, indistinguibili.
+// One slot per browser (localStorage, key `libreCity.save`). Traffic and pedestrians
+// are not saved: they repopulate on their own, indistinguishably.
 //
-// Ricaricare implica RIGENERARE il mondo: se il codice salvato ≠ ROOM_CODE corrente,
-// si ricarica la pagina su `#room=<codice>` (come fa il flusso host/join) e al ritorno
-// si applica lo stato — la meccanica è in ui.js (loadIntent), qui c'è solo la logica.
+// Reloading implies REGENERATING the world: if the saved code differs from the
+// current ROOM_CODE the page reloads onto `#room=<code>` (like the host/join flow)
+// and the state is applied on the way back — that plumbing lives in ui.js
+// (loadIntent); this file holds only the logic.
 
 const SAVE_VERSION = 1;
 
-// In multigiocatore lo stato è autoritativo del server: niente salvataggio locale.
+// In multiplayer the server owns the state: no local saving.
 function canSave() { return started && !netActive(); }
-// c'è un salvataggio compatibile da poter ricaricare?
 function hasSave() { const s = store.get('save', null); return !!(s && s.v === SAVE_VERSION && s.code); }
 
-// fotografa lo stato corrente in un oggetto serializzabile
 function captureSave() {
   return {
     v: SAVE_VERSION,
     date: Date.now(),
-    code: ROOM_CODE,                       // seme della città: la rigenera identica al reload
+    code: ROOM_CODE,                       // city seed: regenerates it identically on reload
     name: playerName,
     minutes: gameMinutes,
-    violence: violenceOn,                  // filtro violenza scelto a inizio partita
-    timeLeft,                              // frame rimasti (0 = partita senza limiti)
+    violence: violenceOn,
+    timeLeft,                              // frames left (0 = untimed game)
     cash,
     wanted, wantedHeat, crimeCd,
     lightClock,
@@ -38,20 +37,20 @@ function captureSave() {
       shirt: player.shirt, skin: player.skin, hair: player.hair,
       score: player.score, kills: player.kills, deaths: player.deaths,
     },
-    // contatori delle missioni (le missioni in corso NON si salvano: al carico
-    // ripartono da "libere", ma i totali di corse/consegne/soccorsi restano)
+    // Mission counters. Missions in progress are NOT saved: on load they restart as
+    // "available", but the ride/delivery/rescue totals carry over.
     missions: { rides: taxi.rides, pizza: pizza.jobs, rescue: rescue.jobs,
                 arrests: patrol.arrests, fire: firejob.jobs },
   };
 }
 
-// applica un salvataggio ai globali di gioco. PRESUPPONE che il mondo sia già stato
-// generato col codice giusto (stessa città): qui si rimette in piedi solo il giocatore.
+// Applies a save to the game globals. ASSUMES the world was already generated with
+// the right code (same city): this only puts the player back together.
 function applySave(s) {
   if (!s || s.v !== SAVE_VERSION) return false;
   playerName = s.name || playerName; store.set('name', playerName);
   gameMinutes = s.minutes | 0; store.set('minutes', gameMinutes);
-  violenceOn = s.violence !== false;     // salvataggi vecchi (senza campo) = violenza attiva
+  violenceOn = s.violence !== false;     // old saves (no field) = violence on
   timeLeft = s.timeLeft | 0;
   cash = s.cash | 0;
   wanted = s.wanted | 0; wantedHeat = +s.wantedHeat || 0; crimeCd = s.crimeCd | 0;
@@ -60,7 +59,7 @@ function applySave(s) {
   player.x = p.x; player.y = p.y;
   player.health = clamp(p.health == null ? 100 : p.health, 1, 100);
   player.weaponIdx = clamp(p.weaponIdx | 0, 0, WEAPONS.length - 1);
-  // le armi gratis restano sempre sbloccate anche se il salvataggio è più vecchio
+  // Free weapons stay unlocked even if the save predates them.
   player.owned = WEAPONS.map((w, i) => !w.price || !!(p.owned && p.owned[i]));
   if (p.shirt) player.shirt = p.shirt;
   if (p.skin)  player.skin  = p.skin;
@@ -73,7 +72,7 @@ function applySave(s) {
   return true;
 }
 
-// salva la partita in corso (dalla pausa). Ritorna true se salvato.
+// Saves the running game (from the pause menu). Returns true if it was saved.
 function saveGame() {
   if (!canSave()) return false;
   store.set('save', captureSave());

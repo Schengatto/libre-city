@@ -1,27 +1,27 @@
-// LIBRE CITY · js/city.js — generazione della città: grafo stradale a curve, tile e vicoli,
-// landmark (ospedale, polizia, armeria…), base militare, palazzi e dettagli stradali.
+// LIBRE CITY · js/city.js — city generation: curved road graph, tiles and alleys,
+// landmarks (hospital, police, gun shop…), military base, buildings and street detail.
 
-// ---------- Città: rete stradale a grafo (strade che curvano) ----------
-const T = 32;                 // pixel per tile
-const PERIOD = 14;            // dimensione media delle regioni (varietà: parchi, piazze, colori)
-// La TAGLIA della città è codificata nella 1ª lettera del CODICE STANZA
-// (P=piccola, M=media, G=grande): così ogni client — da link o digitando il codice —
-// e il server rigenerano una mappa della stessa dimensione già al load, dal solo
-// seme, senza trasmettere nulla. La media raddoppia l'area crescendo in verticale;
-// la grande raddoppia ancora crescendo in orizzontale. Iniziale non P/M/G → piccola
-// (single-player e stanze anonime, vedi core.js).
+// ---------- City: road network as a graph (roads that curve) ----------
+const T = 32;                 // pixels per tile
+const PERIOD = 14;            // average region size (variety: parks, plazas, colours)
+// City SIZE is encoded in the 1st letter of the ROOM CODE (P=small, M=medium,
+// G=large): every client — from a link or by typing the code — and the server
+// regenerate a map of the same size at load time, from the seed alone, with nothing
+// transmitted. Medium doubles the area by growing vertically; large doubles again by
+// growing horizontally. A leading letter outside P/M/G means small (single-player and
+// anonymous rooms, see core.js).
 const MAP_DIMS = { P: [184, 184], M: [184, 368], G: [368, 368] };
 const _mapDims = MAP_DIMS[String(ROOM_CODE).charAt(0)] || MAP_DIMS.P;
 const MAP_W = _mapDims[0], MAP_H = _mapDims[1];
 const WORLD_W = MAP_W * T, WORLD_H = MAP_H * T;
-const HALF_ROAD = 2.1 * T;    // semilarghezza carreggiata (px)
-const LANE = 18;              // scostamento della corsia di destra dal centro strada
+const HALF_ROAD = 2.1 * T;    // half carriageway width (px)
+const LANE = 18;              // right-lane offset from the road centreline
 
 const ROAD = 0, SIDEWALK = 1, BUILDING = 2, GRASS = 3, TREE = 4, WATER = 5, ALLEY = 6, COURT = 7;
 const grid = new Uint8Array(MAP_W * MAP_H);
 const gi = (x, y) => y * MAP_W + x;
 
-// palette dei tetti per tipologia di quartiere: residenziale, uffici, industriale
+// Roof palettes per neighbourhood type: residential, offices, industrial.
 const RES_COLORS = ['#7d5b46','#8a6d52','#89746a','#9a8466','#8f6f5a','#96826f','#7a5a5a','#847b6a'];
 const OFF_COLORS = ['#5d6b78','#6b6f7a','#4f5a68','#556170','#5f7a72','#7a6a86','#665a72','#5a6d6b'];
 const IND_COLORS = ['#5f6b5a','#736256','#6d5f6b','#82755a','#6a7d6a','#8a8478'];
@@ -32,9 +32,9 @@ const blockColor = (bx, by) => {
   const pal = [RES_COLORS, OFF_COLORS, IND_COLORS][blockKind(bx, by)];
   return pal[hash2(bx, by) % pal.length];
 };
-// lotti edificabili: dividono gli isolati in una trama regolare di rettangoli;
-// da ogni lotto bakeBuildings() ricava un palazzo rettangolare vero e proprio
-const LOTX = new Uint8Array(MAP_W), LOTY = new Uint8Array(MAP_H);     // indice del lotto per asse
+// Building lots: they split blocks into a regular grid of rectangles, and
+// bakeBuildings() turns each lot into an actual rectangular building.
+const LOTX = new Uint8Array(MAP_W), LOTY = new Uint8Array(MAP_H);     // lot index per axis
 (function bakeLots() {
   const bake = (arr, len, salt) => {
     let seg = 0, end = -1;
@@ -45,29 +45,29 @@ const LOTX = new Uint8Array(MAP_W), LOTY = new Uint8Array(MAP_H);     // indice 
   };
   bake(LOTX, MAP_W, 1); bake(LOTY, MAP_H, 3);
 })();
-// palette per erba e chiome (varietà), tetti a falde delle case, tende dei negozi
+// Palettes for grass and foliage (variety), pitched house roofs, shop awnings.
 const GRASS_COLS = ['#4f9e46', '#489347', '#57a74b'];
 const TREE_COLS = [['#2c6e30', '#38853c', '#4d9c4a'], ['#2f7d34', '#3c9142', '#55a852'], ['#33703a', '#428a48', '#5aa15e']];
 const ROOF_COLS = ['#8a4a3a', '#96604a', '#7a5a48', '#6d5242', '#5f6066', '#585c64'];
 const AWNING_COLS = ['#c0392b', '#2e86c0', '#27ae60', '#d68910'];
-// categoria dell'isolato: parco, piazza o edificio (per una città più varia)
+// Block category: park, plaza or buildings (for a more varied city).
 const BUILD_CAT = 0, PARK_CAT = 1, PLAZA_CAT = 2;
 function blockCat(bx, by) {
   const h = hash2(bx + 7, by + 3) % 9;
-  if (h === 0 || h === 6) return PARK_CAT;      // ~2/9 parchi
-  if (h === 3) return PLAZA_CAT;                // ~1/9 piazze
+  if (h === 0 || h === 6) return PARK_CAT;      // ~2/9 parks
+  if (h === 3) return PLAZA_CAT;                // ~1/9 plazas
   return BUILD_CAT;
 }
-const blockHasPond  = (bx, by) => hash2(bx + 1, by + 8) % 3 === 0;   // parco con laghetto
+const blockHasPond  = (bx, by) => hash2(bx + 1, by + 8) % 3 === 0;   // park with a pond
 
-// ---------- geometria delle curve (Bézier quadratica) ----------
+// ---------- Curve geometry (quadratic Bézier) ----------
 function bez(A, B, cx, cy, t) {
   const mt = 1 - t;
   return { x: mt * mt * A.x + 2 * mt * t * cx + t * t * B.x,
            y: mt * mt * A.y + 2 * mt * t * cy + t * t * B.y };
 }
 
-// ---------- grafo stradale: nodi (incroci) e archi (strade curve) ----------
+// ---------- Road graph: nodes (junctions) and edges (curved roads) ----------
 const nodes = [];   // { x, y, edges:[idx...], signal }
 const edges = [];   // { a, b, cx, cy, len }
 const NX = 8, NY = 8, MARGIN = 8;
@@ -77,7 +77,7 @@ function buildGraph() {
   const idOf = (i, j) => j * NX + i;
   for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
     const border = i === 0 || j === 0 || i === NX - 1 || j === NY - 1;
-    // jitter deterministico e contenuto sui nodi interni → griglia ordinata ma non rigida
+    // Deterministic, bounded jitter on inner nodes → tidy grid without rigidity.
     const jx = border ? 0 : (hash2(i + 11, j + 3) % 1000 / 1000 - 0.5) * gx * 0.26;
     const jy = border ? 0 : (hash2(i + 5, j + 17) % 1000 / 1000 - 0.5) * gy * 0.26;
     nodes.push({ x: MARGIN * T + i * gx + jx, y: MARGIN * T + j * gy + jy, edges: [], signal: false });
@@ -86,7 +86,7 @@ function buildGraph() {
     const A = nodes[a], B = nodes[b];
     const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
     const dx = B.x - A.x, dy = B.y - A.y, L = Math.hypot(dx, dy) || 1;
-    // la maggior parte delle vie è dritta; solo ~1 su 4 fa una curva dolce
+    // Most streets are straight; only ~1 in 4 gets a gentle curve.
     const curved = !straight && hash2(a + 7, b + 13) % 100 < 26;
     const bow = curved ? ((hash2(a + 23, b + 5) % 1000 / 1000) - 0.5) * 0.30 : 0;
     const cx = mx + (-dy / L) * L * bow, cy = my + (dx / L) * L * bow;
@@ -96,21 +96,21 @@ function buildGraph() {
     const idx = edges.length; edges.push(e); A.edges.push(idx); B.edges.push(idx);
   };
   for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
-    if (i < NX - 1) {                                 // strada orizzontale verso destra
+    if (i < NX - 1) {                                 // horizontal road heading right
       const onBorder = j === 0 || j === NY - 1;
       if (onBorder || hash2(i * 3 + 1, j * 7 + 2) % 5 !== 0) addEdge(idOf(i, j), idOf(i + 1, j), onBorder);
     }
-    if (j < NY - 1) {                                 // strada verticale verso il basso
+    if (j < NY - 1) {                                 // vertical road heading down
       const onBorder = i === 0 || i === NX - 1;
       if (onBorder || hash2(i * 9 + 4, j * 5 + 6) % 5 !== 0) addEdge(idOf(i, j), idOf(i, j + 1), onBorder);
     }
   }
-  // semafori solo in alcuni incroci trafficati (NON a ogni incrocio)
+  // Traffic lights only at some busy junctions, NOT at every one.
   for (let n = 0; n < nodes.length; n++)
     if (nodes[n].edges.length >= 3 && hash2(n * 3 + 2, n + 5) % 3 === 0) nodes[n].signal = true;
 }
 
-// ---------- rasterizzazione delle strade curve sui tile ----------
+// ---------- Rasterising the curved roads onto tiles ----------
 function stampDisc(wx, wy, r, val) {
   const x0 = Math.max(0, Math.floor((wx - r) / T)), x1 = Math.min(MAP_W - 1, Math.floor((wx + r) / T));
   const y0 = Math.max(0, Math.floor((wy - r) / T)), y1 = Math.min(MAP_H - 1, Math.floor((wy + r) / T));
@@ -123,11 +123,11 @@ function stampDisc(wx, wy, r, val) {
 function bakeRoads() {
   grid.fill(BUILDING);
   for (const e of edges) {
-    if (e.dead) continue;                              // strada soppressa dalla zona militare
+    if (e.dead) continue;                              // road suppressed by the military zone
     const A = nodes[e.a], B = nodes[e.b], steps = Math.max(8, Math.ceil(e.len / (T * 0.5)));
     for (let s = 0; s <= steps; s++) { const p = bez(A, B, e.cx, e.cy, s / steps); stampDisc(p.x, p.y, HALF_ROAD, ROAD); }
   }
-  for (const n of nodes) if (n.live !== false) stampDisc(n.x, n.y, HALF_ROAD * 1.05, ROAD);   // piazzale d'incrocio
+  for (const n of nodes) if (n.live !== false) stampDisc(n.x, n.y, HALF_ROAD * 1.05, ROAD);   // junction apron
 }
 const walkableTile = t => t === ROAD || t === SIDEWALK || t === ALLEY;
 function bakeSidewalksAndBlocks() {
@@ -139,33 +139,33 @@ function bakeSidewalksAndBlocks() {
       const nx = x + dx, ny = y + dy;
       if (nx >= 0 && ny >= 0 && nx < MAP_W && ny < MAP_H && copy[gi(nx, ny)] === ROAD) { adj = true; break; }
     }
-    if (adj) grid[gi(x, y)] = SIDEWALK;                // marciapiede attorno alle strade
+    if (adj) grid[gi(x, y)] = SIDEWALK;                // pavement ringing the roads
   }
-  // riempimento degli isolati: edifici, parchi, piazze secondo la regione
+  // Fill the blocks: buildings, parks or plazas depending on the region.
   for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
     if (grid[gi(x, y)] !== BUILDING) continue;
     const bx = Math.floor(x / PERIOD), by = Math.floor(y / PERIOD), cat = blockCat(bx, by);
     const cxr = (bx + 0.5) * PERIOD, cyr = (by + 0.5) * PERIOD;
     const dxr = x - cxr, dyr = y - cyr, dc = Math.hypot(dxr, dyr);
     if (cat === PARK_CAT) {
-      // parco "disegnato": laghetto ovale, vialetti a croce che portano alle uscite,
-      // alberi fitti a riva e boschetti a gruppetti sul prato
+      // A "designed" park: oval pond, cross-shaped paths leading to the exits,
+      // dense trees along the shore and scattered copses on the lawn.
       const pond = blockHasPond(bx, by);
-      const pr = 2.0 + (hash2(bx + 4, by + 6) % 100) / 100;            // raggio del laghetto 2.0–3.0
+      const pr = 2.0 + (hash2(bx + 4, by + 6) % 100) / 100;            // pond radius 2.0–3.0
       if (pond && (dxr * dxr) / (pr * pr) + (dyr * dyr) / (pr * pr * 0.56) < 1) grid[gi(x, y)] = WATER;
-      else if (Math.abs(dxr) < 0.8 || Math.abs(dyr) < 0.8) grid[gi(x, y)] = SIDEWALK;  // vialetti
+      else if (Math.abs(dxr) < 0.8 || Math.abs(dyr) < 0.8) grid[gi(x, y)] = SIDEWALK;  // paths
       else if (pond && dc < pr + 1.7) grid[gi(x, y)] = hash2(x + 3, y + 11) % 3 === 0 ? TREE : GRASS;
-      else if (hash2(x >> 1, y >> 1) % 5 === 0 && hash2(x * 3, y * 5) % 3 !== 0) grid[gi(x, y)] = TREE;  // boschetti
+      else if (hash2(x >> 1, y >> 1) % 5 === 0 && hash2(x * 3, y * 5) % 3 !== 0) grid[gi(x, y)] = TREE;  // copses
       else grid[gi(x, y)] = GRASS;
     } else if (cat === PLAZA_CAT) {
-      // piazza: fontana al centro e filari regolari di alberi in vasca
-      if (dc < 1.6) grid[gi(x, y)] = WATER;             // fontana
+      // Plaza: fountain at the centre and regular rows of potted trees.
+      if (dc < 1.6) grid[gi(x, y)] = WATER;             // fountain
       else if (dc > 2.6 && x % PERIOD % 4 === 2 && y % PERIOD % 4 === 2) grid[gi(x, y)] = TREE;
       else grid[gi(x, y)] = SIDEWALK;
     }
   }
 }
-// vicoli stretti (1 tile) fra i palazzi, con almeno un'uscita sulla strada
+// Narrow 1-tile alleys between buildings, with at least one exit onto a street.
 function carveAlleys() {
   let made = 0;
   for (let attempt = 0; attempt < 700 && made < 90; attempt++) {
@@ -187,27 +187,26 @@ function carveAlleys() {
     }
   }
 }
-// ---------- Zona militare: riservata PRIMA di asfaltare ----------
-// la base dell'esercito è enorme (26x20 tile ≈ 6 isolati): nessun isolato può
-// contenerla, quindi il generatore le riserva un'area e SOPPRIME le strade che
-// la attraverserebbero (e.dead: mai asfaltate né disegnate, il traffico le
-// ignora e gira attorno alla base)
-// FILTRO VIOLENZA (partita singola, PEACE_CITY in core.js): la città pacifica non
-// ha esercito, quindi NON si riserva niente — nessuna strada soppressa e dove
-// starebbe la base crescono isolati normali (armyZone resta null → placeArmyBase
-// esce subito, e con essa spariscono caserma, carri armati, jeep, guardie e torrette).
+// ---------- Military zone: reserved BEFORE the roads are paved ----------
+// The army base is huge (26x20 tiles ≈ 6 blocks): no single block can hold it, so the
+// generator reserves an area for it and SUPPRESSES the roads that would cross it
+// (e.dead: never paved nor drawn, and traffic ignores them and drives around the base).
+// VIOLENCE FILTER (single-player, PEACE_CITY in core.js): a peaceful city has no army,
+// so nothing is reserved — no suppressed roads, and ordinary blocks grow where the base
+// would be (armyZone stays null → placeArmyBase returns immediately, taking the
+// barracks, tanks, jeeps, guards and turrets with it).
 const ARMY_W = 26, ARMY_H = 20;
 let armyZone = null;
 const inArmyZone = (tx, ty) => !!armyZone && tx >= armyZone.x0 && tx <= armyZone.x1 && ty >= armyZone.y0 && ty <= armyZone.y1;
 function reserveArmyZone() {
   if (!PEACE_CITY) {
-    // mai sul centro mappa (lì nasce il player) né sulle strade di bordo
+    // Never over the map centre (the player spawns there) nor on the border roads.
     let x0, y0, tries = 0;
     do { x0 = rndi(14, MAP_W - ARMY_W - 14); y0 = rndi(14, MAP_H - ARMY_H - 14); }
     while (++tries < 30 && x0 - 12 < MAP_W / 2 && MAP_W / 2 < x0 + ARMY_W + 12 &&
                            y0 - 12 < MAP_H / 2 && MAP_H / 2 < y0 + ARMY_H + 12);
     armyZone = { x0, y0, x1: x0 + ARMY_W - 1, y1: y0 + ARMY_H - 1 };
-    // sopprime ogni strada che passerebbe nella zona (fascia = asfalto+marciapiede)
+    // Suppress every road that would run through the zone (band = asphalt + pavement).
     const PADPX = HALF_ROAD + 2 * T;
     const rx0 = x0 * T - PADPX, ry0 = y0 * T - PADPX;
     const rx1 = (armyZone.x1 + 1) * T + PADPX, ry1 = (armyZone.y1 + 1) * T + PADPX;
@@ -219,8 +218,8 @@ function reserveArmyZone() {
       }
     }
   }
-  // grafo superstite: niente piazzole per i nodi rimasti senza strade,
-  // semafori ricalcolati sul numero di vie ancora vive
+  // Surviving graph: no apron for nodes left without roads, and traffic lights
+  // recomputed from the number of still-live streets.
   for (let n = 0; n < nodes.length; n++) {
     const live = nodes[n].edges.filter(ei => !edges[ei].dead).length;
     nodes[n].live = live > 0;
@@ -233,7 +232,7 @@ genCity();
 const tileAt = (tx, ty) => (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) ? BUILDING : grid[gi(tx, ty)];
 const solidTile = (tx, ty) => { const t = tileAt(tx, ty); return t === BUILDING || t === TREE || t === WATER; };
 
-// ---------- Edifici speciali: polizia, ospedale, pompieri, banca, mercato ----------
+// ---------- Special buildings: police, hospital, fire station, bank, market ----------
 const landmarks = [];                                  // { type, x0, y0, x1, y1, cx, cy, door }
 const lmGrid = new Uint8Array(MAP_W * MAP_H).fill(255);
 const LM_DEFS = [
@@ -250,7 +249,7 @@ function rectAllBuilding(x0, y0, w, h) {
     if (tileAt(x, y) !== BUILDING || lmGrid[gi(x, y)] !== 255 || inArmyZone(x, y)) return false;
   return true;
 }
-// punto calpestabile più vicino al perimetro (ingresso della struttura)
+// Nearest walkable point on the perimeter (the building's entrance).
 function landmarkDoor(lm) {
   for (let d = 1; d < 10; d++) {
     for (let x = lm.x0 - d; x <= lm.x1 + d; x++) {
@@ -264,21 +263,21 @@ function landmarkDoor(lm) {
   }
   return { x: lm.cx, y: lm.cy };
 }
-// la CASERMA non è un palazzo ma un'area recintata: il cortile interno è
-// calpestabile (ci parcheggiano jeep e carri armati), il perimetro diventa
-// recinzione solida con un cancello di 3 tile aperto verso la via più vicina
+// The BARRACKS is not a building but a fenced compound: the inner yard is walkable
+// (jeeps and tanks park there) while the perimeter becomes a solid fence with a
+// 3-tile gate opening towards the nearest street.
 function carveArmyBase(lm) {
-  // la zona riservata può contenere prati/vicoli: il recinto va murato esplicitamente
+  // The reserved zone may contain lawns/alleys, so the fence must be walled explicitly.
   for (let x = lm.x0; x <= lm.x1; x++) { grid[gi(x, lm.y0)] = BUILDING; grid[gi(x, lm.y1)] = BUILDING; }
   for (let y = lm.y0; y <= lm.y1; y++) { grid[gi(lm.x0, y)] = BUILDING; grid[gi(lm.x1, y)] = BUILDING; }
   for (let y = lm.y0 + 1; y < lm.y1; y++) for (let x = lm.x0 + 1; x < lm.x1; x++)
-    grid[gi(x, y)] = SIDEWALK;                        // piazzale interno
-  // cancello sul lato del recinto che guarda l'ingresso (lm.door)
+    grid[gi(x, y)] = SIDEWALK;                        // inner yard
+  // Gate on whichever fence side faces the entrance (lm.door).
   const dtx = Math.floor(lm.door.x / T), dty = Math.floor(lm.door.y / T);
   const dl = Math.abs(dtx - lm.x0), dr = Math.abs(dtx - lm.x1);
   const dt = Math.abs(dty - lm.y0), db = Math.abs(dty - lm.y1);
   const m = Math.min(dl, dr, dt, db);
-  let g, out;                                         // tile del cancello + direzione esterna
+  let g, out;                                         // gate tiles + outward direction
   if (m === dt || m === db) {
     const gy = m === dt ? lm.y0 : lm.y1, gx = clamp(dtx, lm.x0 + 1, lm.x1 - 3);
     g = [[gx, gy], [gx + 1, gy], [gx + 2, gy]]; out = { x: 0, y: m === dt ? -1 : 1 };
@@ -288,7 +287,7 @@ function carveArmyBase(lm) {
   }
   for (const [x, y] of g) {
     grid[gi(x, y)] = SIDEWALK;
-    // vialetto: dal cancello fino alla prima superficie calpestabile esterna
+    // Driveway: from the gate out to the first walkable surface outside.
     let cx = x + out.x, cy = y + out.y, steps = 0;
     while (steps++ < 24 && cx > 1 && cy > 1 && cx < MAP_W - 2 && cy < MAP_H - 2 &&
            lmGrid[gi(cx, cy)] === 255 && !walkableTile(tileAt(cx, cy))) {
@@ -302,9 +301,9 @@ function placeLandmarks() {
   for (const def of LM_DEFS) for (let k = 0; k < def.count; k++) {
     for (let att = 0; att < 500; att++) {
       const x0 = rndi(6, MAP_W - def.w - 6), y0 = rndi(6, MAP_H - def.h - 6);
-      if (!rectAllBuilding(x0 - 1, y0 - 1, def.w + 2, def.h + 2)) continue;   // serve un margine libero
+      if (!rectAllBuilding(x0 - 1, y0 - 1, def.w + 2, def.h + 2)) continue;   // needs a free margin
       const cx = (x0 + def.w / 2) * T, cy = (y0 + def.h / 2) * T;
-      let far = true;                                   // strutture uguali sparse per la città
+      let far = true;                                   // keep same-type buildings spread out
       for (const l of landmarks) if (l.type === def.type && dist(l.cx, l.cy, cx, cy) < 1700) { far = false; break; }
       if (!far) continue;
       const lm = { type: def.type, x0, y0, x1: x0 + def.w - 1, y1: y0 + def.h - 1, cx, cy };
@@ -315,7 +314,7 @@ function placeLandmarks() {
     }
   }
 }
-// la zona riservata dal generatore diventa la caserma: recinto, cancello, cortile
+// The zone the generator reserved becomes the barracks: fence, gate, yard.
 function placeArmyBase() {
   if (!armyZone) return;
   const { x0, y0, x1, y1 } = armyZone;
@@ -329,16 +328,16 @@ function placeArmyBase() {
 placeLandmarks();
 placeArmyBase();
 
-// ---------- Palazzi veri: da ogni lotto un edificio rettangolare ----------
-// Il riempimento "a blob" attorno alle strade viene rifinito: dentro ogni lotto
-// sopravvive solo il rettangolo pieno più grande (il palazzo); i ritagli di
-// risulta diventano cortili (COURT): giardini nel residenziale, piazzali
-// lastricati negli uffici, spiazzi con cataste nelle zone industriali.
+// ---------- Real buildings: one rectangular block per lot ----------
+// The blob-shaped fill around the roads gets refined: inside each lot only the largest
+// solid rectangle survives (the building), and the offcuts become courtyards (COURT):
+// gardens in residential areas, paved forecourts by offices, yards with stacked crates
+// in industrial ones.
 const bldgs = [];                                      // { x0,y0,x1,y1, kind, style, face, lift, col, h }
 const bldgIdx = new Uint16Array(MAP_W * MAP_H).fill(65535);
 function bakeBuildings() {
   const isB = (x, y) => tileAt(x, y) === BUILDING && lmGrid[gi(x, y)] === 255;
-  const segs = arr => {                                // [inizio, fine] di ogni lotto sull'asse
+  const segs = arr => {                                // [start, end] of every lot on the axis
     const out = []; let s = 0;
     for (let v = 1; v <= arr.length; v++) if (v === arr.length || arr[v] !== arr[s]) { out.push([s, v - 1]); s = v; }
     return out;
@@ -348,7 +347,7 @@ function bakeBuildings() {
     for (let y = ya; y <= yb; y++) for (let x = xa; x <= xb; x++)
       if (isB(x, y)) { n++; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
     if (!n) continue;
-    // rifila il bounding box dal lato più "bucato" finché il rettangolo è pieno
+    // Trim the bounding box from its most "holey" side until the rectangle is solid.
     const rowCnt = y => { let c = 0; for (let x = x0; x <= x1; x++) if (isB(x, y)) c++; return c; };
     const colCnt = x => { let c = 0; for (let y = y0; y <= y1; y++) if (isB(x, y)) c++; return c; };
     let guard = 0;
@@ -366,31 +365,31 @@ function bakeBuildings() {
       bldgs.push({ x0, y0, x1, y1, h: hash2(x0 * 7 + y0 * 3 + 1, x1 * 5 + y1 * 11 + 2) });
       for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) bldgIdx[gi(x, y)] = id;
     }
-    // i tile edificabili rimasti fuori dal palazzo diventano cortile (o verde privato)
+    // Buildable tiles left outside the building become courtyard (or private greenery).
     for (let y = ya; y <= yb; y++) for (let x = xa; x <= xb; x++) {
       if (!isB(x, y) || bldgIdx[gi(x, y)] !== 65535) continue;
       const k = blockKind(Math.floor(x / PERIOD), Math.floor(y / PERIOD)), hh = hash2(x + 21, y + 33);
       grid[gi(x, y)] = (k === RES_KIND && hh % 7 === 0) || (k === OFF_KIND && hh % 23 === 0) ? TREE : COURT;
     }
   }
-  // seconda passata (a cortili fatti): stile, altezza e lato che guarda la strada
+  // Second pass (courtyards now carved): style, height and the side facing the street.
   for (const b of bldgs) {
     const w = b.x1 - b.x0 + 1, h = b.y1 - b.y0 + 1, area = w * h;
     const midx = (b.x0 + b.x1) >> 1, midy = (b.y0 + b.y1) >> 1;
     b.kind = blockKind(Math.floor(midx / PERIOD), Math.floor(midy / PERIOD));
     b.face = walkableTile(tileAt(midx, b.y1 + 1)) ? 0 : walkableTile(tileAt(b.x1 + 1, midy)) ? 1
            : walkableTile(tileAt(b.x0 - 1, midy)) ? 2 : walkableTile(tileAt(midx, b.y0 - 1)) ? 3 : -1;
-    if (b.kind === RES_KIND) b.style = area <= 18 ? 'casa' : 'palazzo';
-    else if (b.kind === OFF_KIND) b.style = area >= 20 ? 'torre' : 'negozio';
-    else b.style = area >= 20 ? 'capannone' : 'officina';
-    b.lift = { casa: 6, palazzo: 8, negozio: 7, torre: 11, capannone: 7, officina: 6 }[b.style];
+    if (b.kind === RES_KIND) b.style = area <= 18 ? 'house' : 'apartment';
+    else if (b.kind === OFF_KIND) b.style = area >= 20 ? 'tower' : 'shop';
+    else b.style = area >= 20 ? 'warehouse' : 'workshop';
+    b.lift = { house: 6, apartment: 8, shop: 7, tower: 11, warehouse: 7, workshop: 6 }[b.style];
     const pal = [RES_COLORS, OFF_COLORS, IND_COLORS][b.kind];
     b.col = pal[b.h % pal.length];
   }
 }
 bakeBuildings();
 
-// ---------- posizione/tangente lungo un arco; collocamento sulla corsia destra ----------
+// ---------- Position/tangent along an edge; placement in the right-hand lane ----------
 function edgePos(e, t) { return bez(nodes[e.a], nodes[e.b], e.cx, e.cy, t); }
 function edgeTangent(e, t) {
   const A = nodes[e.a], B = nodes[e.b];
@@ -399,17 +398,17 @@ function edgeTangent(e, t) {
   const m = Math.hypot(x, y) || 1; return { x: x / m, y: y / m };
 }
 
-// ---------- dettagli stradali precalcolati: strisce pedonali, tombini, rappezzi ----------
-const crosswalks = [];   // { x, y, a } — davanti a ogni incrocio vero (3+ strade)
-const roadDeco = [];     // { x, y, a, kind } — 0 tombino · 1 rappezzo · 2 macchia d'olio
+// ---------- Precomputed street detail: crossings, manholes, patches ----------
+const crosswalks = [];   // { x, y, a } — in front of every real junction (3+ roads)
+const roadDeco = [];     // { x, y, a, kind } — 0 manhole · 1 patch · 2 oil stain
 (function bakeRoadDetails() {
   for (const n of nodes) {
-    if (n.live === false) continue;                    // incrocio soppresso dalla zona militare
+    if (n.live === false) continue;                    // junction suppressed by the military zone
     const liveEdges = n.edges.filter(ei => !edges[ei].dead);
-    if (liveEdges.length < 3) continue;                // niente zebre nelle semplici curve
+    if (liveEdges.length < 3) continue;                // no crossings at plain bends
     for (const ei of liveEdges) {
       const e = edges[ei], fromA = nodes[e.a] === n;
-      // cammina lungo l'arco dal nodo fin fuori dal piazzale d'incrocio
+      // Walk along the edge from the node until clear of the junction apron.
       const target = HALF_ROAD * 1.05 + 16, steps = Math.max(10, Math.ceil(e.len / 8));
       for (let s = 1; s <= steps; s++) {
         const t = fromA ? s / steps : 1 - s / steps;
@@ -424,11 +423,11 @@ const roadDeco = [];     // { x, y, a, kind } — 0 tombino · 1 rappezzo · 2 m
   }
   for (let i = 0; i < edges.length; i++) {
     const e = edges[i], count = Math.floor(e.len / 240);
-    if (e.dead) continue;                              // strada soppressa: niente tombini
+    if (e.dead) continue;                              // suppressed road: no manholes
     for (let k = 1; k <= count; k++) {
       const t = k / (count + 1), p = edgePos(e, t), tan = edgeTangent(e, t);
       const h = hash2(i * 31 + k, k * 7 + 3);
-      const off = h % 3 === 0 ? 0 : ((h & 1) ? LANE : -LANE);   // in mezzeria o in corsia
+      const off = h % 3 === 0 ? 0 : ((h & 1) ? LANE : -LANE);   // on the centreline or in a lane
       roadDeco.push({ x: p.x - tan.y * off, y: p.y + tan.x * off, a: Math.atan2(tan.y, tan.x), kind: h % 3 });
     }
   }
@@ -436,13 +435,13 @@ const roadDeco = [];     // { x, y, a, kind } — 0 tombino · 1 rappezzo · 2 m
 
 function railPlace(c) {
   const e = edges[c.edge], p = edgePos(e, c.t), tan = edgeTangent(e, c.t);
-  const dx = tan.x * c.ed, dy = tan.y * c.ed;      // direzione di marcia
-  c.x = p.x - dy * LANE; c.y = p.y + dx * LANE;    // tiene la corsia di destra
+  const dx = tan.x * c.ed, dy = tan.y * c.ed;      // direction of travel
+  c.x = p.x - dy * LANE; c.y = p.y + dx * LANE;    // hold the right-hand lane
   c.dir = { x: dx, y: dy };
   c.angle = Math.atan2(dy, dx);
 }
 
-// collisione box (AABB) contro i tile solidi
+// Box (AABB) collision against solid tiles.
 function boxHits(cx, cy, hw, hh) {
   const x0 = Math.floor((cx - hw) / T), x1 = Math.floor((cx + hw) / T);
   const y0 = Math.floor((cy - hh) / T), y1 = Math.floor((cy + hh) / T);
@@ -450,9 +449,9 @@ function boxHits(cx, cy, hw, hh) {
     if (solidTile(tx, ty)) return true;
   return false;
 }
-// muove un'entità asse per asse, fermandola contro i muri (imposta hitX/hitY);
-// l'aderenza al muro vale solo se il punto è davvero libero: uno spostamento
-// ampio può scavalcare il tile urtato, e in quel caso è meglio restare fermi
+// Moves an entity axis by axis, stopping it against walls (sets hitX/hitY). Sliding
+// flush to the wall only counts if that spot is genuinely free: a large step can jump
+// clean over the tile it hit, and staying put is better in that case.
 function moveBox(e, dx, dy, hw, hh) {
   e.hitX = false; e.hitY = false;
   if (dx !== 0) {
@@ -476,8 +475,8 @@ function moveBox(e, dx, dy, hw, hh) {
     }
   }
 }
-// se un'entità è comunque finita dentro un tile solido, la fa riemergere
-// sul centro del tile libero più vicino (cerca per anelli crescenti)
+// If an entity ended up inside a solid tile anyway, pop it back out onto the centre of
+// the nearest free tile (searching in growing rings).
 function unstick(e, hw, hh) {
   if (!boxHits(e.x, e.y, hw, hh)) return;
   const tx = Math.floor(e.x / T), ty = Math.floor(e.y / T);
@@ -489,7 +488,7 @@ function unstick(e, hw, hh) {
     }
 }
 
-// punti casuali su strada / marciapiede vicino a un centro
+// Random points on road / pavement near a centre.
 function randomTileNear(cx, cy, rmin, rmax, ok) {
   for (let i = 0; i < 60; i++) {
     const a = rnd(0, TAU), d = rnd(rmin, rmax);
@@ -503,4 +502,3 @@ function randomTileNear(cx, cy, rmin, rmax, ok) {
 const randomRoadNear = (cx, cy, rmin, rmax) => randomTileNear(cx, cy, rmin, rmax, (tx, ty) => tileAt(tx, ty) === ROAD);
 const randomWalkNear = (cx, cy, rmin, rmax) => randomTileNear(cx, cy, rmin, rmax,
   (tx, ty) => { const t = tileAt(tx, ty); return t === SIDEWALK || t === GRASS || t === ROAD || t === ALLEY; });
-

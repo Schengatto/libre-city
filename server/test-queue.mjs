@@ -1,13 +1,13 @@
-// server/test-queue.mjs — tetto di stanze simultanee e SALA D'ATTESA.
-// Fa partire il server con un tetto finto (MAX_ROOMS=2, MAX_QUEUE=3) e verifica:
-// il tetto, la messa in fila con posizione/stima, l'ingresso automatico quando un
-// posto si libera, la rinuncia, la ripresa del posto col qtoken e la coda piena.
-// Verifica anche che ENTRARE in una stanza esistente non passi mai dalla fila.
-// Dura ~45s: aspetta davvero la finestra di grazia e la fine di una partita lampo.
+// server/test-queue.mjs — the simultaneous-room cap and the WAITING ROOM.
+// Starts the server with a fake cap (MAX_ROOMS=2, MAX_QUEUE=3) and checks: the cap,
+// queueing with position/estimate, automatic entry when a slot frees up, giving up,
+// reclaiming a place with the qtoken, and a full queue. It also checks that JOINING an
+// existing room never goes through the queue.
+// Takes ~45s: it genuinely waits out the grace window and the end of a lightning match.
 import { spawn } from 'node:child_process';
 
 const PORT = Number(process.env.TEST_PORT) || 8794;
-const PORT2 = PORT + 1;                    // secondo server, con tetto 1, per il test del fischio finale
+const PORT2 = PORT + 1;                    // a second server, cap 1, for the final-whistle test
 let srv2 = null;
 const srv = spawn('node', ['index.js'], {
   cwd: import.meta.dirname,
@@ -33,11 +33,11 @@ const send = (ws, m) => ws.send(JSON.stringify(m));
 const findT = (ws, t) => ws.inbox.find(m => m.t === t);
 const lastT = (ws, t) => [...ws.inbox].reverse().find(m => m.t === t);
 const health = () => fetch(`http://127.0.0.1:${PORT}/health`).then(r => r.json());
-// una create "normale": partita da 10 minuti, come quelle vere del pannello host
+// A "normal" create: a 10-minute match, like the real ones from the host panel.
 const create = (ws, code, minutes = 10) => send(ws, { t: 'create', code, name: 'H-' + code, max: 4, minutes });
 
 try {
-  await wait(1200);   // avvio + warmup della sim
+  await wait(1200);   // start-up + sim warm-up
 
   console.log('\n1) il tetto di stanze vive');
   const a = await open(); create(a, 'ROOMAA');
@@ -79,7 +79,7 @@ try {
   ok(h.queue === 1, `resta 1 solo in fila (queue=${h.queue})`);
 
   console.log('\n5) il posto si libera → la stanza si apre da sola');
-  a.close();                                   // ROOMAA si svuota: dopo la grazia sparisce
+  a.close();                                   // ROOMAA empties: after the grace period it disappears
   console.log('   (attesa della finestra di grazia, ~31s)');
   await wait(32_000);
   const dok = findT(d, 'ok');
@@ -96,7 +96,7 @@ try {
   const f = await open(); create(f, 'ROOMFF');
   await wait(300);
   ok(findT(f, 'queued')?.pos === 2, 'F è il 2° in fila');
-  e.close();                                   // caduta di rete del primo della fila
+  e.close();                                   // network drop for the first in line
   await wait(500);
   const e2 = await open();
   send(e2, { t: 'create', code: 'ROOMEE', name: 'E', max: 4, minutes: 10, qtoken: eq.qtoken });
@@ -117,10 +117,10 @@ try {
   srv.kill('SIGTERM');
   await wait(300);
 
-  // ---- Il cuore del meccanismo: il posto si libera al FISCHIO FINALE ----
-  // Le sessioni sono a tempo, quindi non si aspetta che l'ultimo giocatore chiuda
-  // la scheda: appena la partita finisce (qui: 3 secondi) il posto passa a chi è in
-  // fila, anche se i giocatori sono ancora collegati al riepilogo.
+  // ---- The heart of the mechanism: the slot frees up at the FINAL WHISTLE ----
+  // Sessions are time-limited, so we do not wait for the last player to close their tab: as
+  // soon as the match ends (here: 3 seconds) the slot passes to whoever is in line, even if
+  // the players are still connected to the summary.
   console.log('\n8) il posto si libera alla fine della partita, non quando la stanza si svuota');
   srv2 = spawn('node', ['index.js'], {
     cwd: import.meta.dirname,
@@ -131,7 +131,7 @@ try {
   await wait(1200);
 
   const x = await open(PORT2);
-  send(x, { t: 'create', code: 'SHORT1', name: 'X', max: 4, minutes: 0.05 });   // partita di 3 secondi
+  send(x, { t: 'create', code: 'SHORT1', name: 'X', max: 4, minutes: 0.05 });   // a 3-second match
   await wait(400);
   ok(!!findT(x, 'ok'), 'la partita lampo parte');
   const y = await open(PORT2);
@@ -139,12 +139,12 @@ try {
   await wait(300);
   ok(findT(y, 'queued')?.pos === 1, 'Y finisce in fila (tetto = 1)');
 
-  await wait(3500);                                    // scade il tempo della partita di X
+  await wait(3500);                                    // X's match runs out of time
   ok(!!findT(x, 'end'), 'X riceve il fischio finale');
   ok(!!findT(y, 'ok'), 'Y ottiene la stanza subito dopo, con X ancora collegato al riepilogo');
   const h2 = await fetch(`http://127.0.0.1:${PORT2}/health`).then(r => r.json());
   ok(h2.live === 1 && h2.rooms === 2, `la stanza finita non occupa più un posto (live=${h2.live}, rooms=${h2.rooms})`);
-  // e chi arriva dopo non entra in una partita già finita
+  // And anyone arriving later cannot join a match that has already ended.
   const z = await open(PORT2);
   send(z, { t: 'join', code: 'SHORT1', name: 'Z' });
   await wait(250);

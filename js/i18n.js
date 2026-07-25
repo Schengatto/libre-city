@@ -1,36 +1,36 @@
-// LIBRE CITY · js/i18n.js — traduzioni (italiano · inglese) e applicazione al DOM.
+// LIBRE CITY · js/i18n.js — translations (Italian · English) and their application to the DOM.
 //
-// Come funziona:
-//   • `t('chiave', {p:1})` → la stringa nella lingua corrente, con i segnaposto
-//     {…} sostituiti. Se una chiave manca in inglese si ripiega sull'italiano
-//     (mai una schermata vuota: nel peggiore dei casi si vede la chiave).
-//   • `tList('chiave')` → un array di frasi (fumetti dei pedoni).
-//   • Il DOM statico di index.html è marcato con attributi:
+// How it works:
+//   • `t('key', {p:1})` → the string in the current language, with {…} placeholders
+//     substituted. If a key is missing in English it falls back to Italian (never a blank
+//     screen: in the worst case you see the key itself).
+//   • `tList('key')` → an array of phrases (pedestrian speech bubbles).
+//   • The static DOM in index.html is marked up with attributes:
 //       data-i18n="k"       → textContent
-//       data-i18n-html="k"  → innerHTML (per le stringhe con <b>)
+//       data-i18n-html="k"  → innerHTML (for strings containing <b>)
 //       data-i18n-ph="k"    → placeholder
 //       data-i18n-title="k" → title
 //       data-i18n-aria="k"  → aria-label
-//     `applyI18n()` li riempie; `setLang('en')` salva la scelta e riapplica.
-//   • La lingua vive in localStorage ('libreCity.lang'): al primo avvio è null →
-//     ui.js mostra la scelta della lingua prima del nome (vedi #langPanel).
+//     `applyI18n()` fills them in; `setLang('en')` saves the choice and reapplies.
+//   • The language lives in localStorage ('libreCity.lang'): on a first run it is null →
+//     ui.js shows the language choice before the name (see #langPanel).
 //
-// NB: questo file è nel bundle della sim headless (server/sim-runtime.js), dove
-// non esistono né localStorage né document: ogni accesso è difeso.
+// NB: this file is in the headless sim bundle (server/sim-runtime.js), where neither
+// localStorage nor document exists: every access is guarded.
 
 const LANGS = ['it', 'en'];
 
-// lingua salvata · altrimenti quella del browser (solo come default del selettore:
-// finché l'utente non sceglie, `langChosen()` resta false e ui.js chiede)
+// The saved language, otherwise the browser's (only as the selector's default: until the
+// user chooses, `langChosen()` stays false and ui.js asks).
 function _storedLang() {
   try { const v = localStorage.getItem('libreCity.lang'); return v ? JSON.parse(v) : null; } catch { return null; }
 }
 function _browserLang() {
   try { return /^it/i.test(navigator.language || '') ? 'it' : 'en'; } catch { return 'it'; }
 }
-// `_langChosen` fotografa la scelta SALVATA: LANG ricade sulla lingua del browser
-// per non mostrare mai una schermata senza testo, ma finché la scelta manca ui.js
-// mostra #langPanel (vedi langChosen()).
+// `_langChosen` captures the SAVED choice: LANG falls back to the browser's language so a
+// screen is never left without text, but until a choice is made ui.js shows #langPanel (see
+// langChosen()).
 const _langChosen = LANGS.includes(_storedLang());
 let LANG = _langChosen ? _storedLang() : _browserLang();
 function langChosen() { return _langChosen; }
@@ -43,8 +43,8 @@ function setLang(l) {
   applyI18n();
 }
 
-// `lang` del documento + manifest della lingua giusta (descrizione dell'app nel
-// prompt d'installazione della PWA: manifest.webmanifest / manifest.en.webmanifest)
+// The document's `lang` + the manifest for the right language (the app description in the
+// PWA install prompt: manifest.webmanifest / manifest.en.webmanifest).
 function applyLangAttrs() {
   try {
     document.documentElement.lang = LANG;
@@ -53,24 +53,24 @@ function applyLangAttrs() {
   } catch {}
 }
 
-// t('k', {a:1}) → stringa tradotta con i segnaposto sostituiti
+// t('k', {a:1}) → the translated string with placeholders substituted.
 function t(k, p) {
   const tbl = STR[LANG] || STR.it;
   let s = tbl[k];
   if (s === undefined) s = STR.it[k];
-  if (s === undefined) return k;                       // chiave sconosciuta: la mostro, così salta all'occhio
+  if (s === undefined) return k;                       // unknown key: show it, so it stands out
   if (Array.isArray(s)) s = s[0];
   if (p) for (const key in p) s = s.split('{' + key + '}').join(p[key]);
   return s;
 }
-// lista di frasi (fumetti): sempre un array, anche se la chiave manca
+// A list of phrases (speech bubbles): always an array, even when the key is missing.
 function tList(k) {
   const tbl = STR[LANG] || STR.it;
   const s = tbl[k] !== undefined ? tbl[k] : STR.it[k];
   return Array.isArray(s) ? s : (s === undefined ? [k] : [s]);
 }
 
-// riempie il DOM statico marcato con data-i18n*
+// Fills in the static DOM marked up with data-i18n*.
 function applyI18n() {
   let root;
   try { root = document; if (!root || !root.querySelectorAll) return; } catch { return; }
@@ -86,12 +86,12 @@ function applyI18n() {
   set('data-i18n-aria',  (el, s) => { el.setAttribute('aria-label', s); });
 }
 
-// formato data della classifica
+// Date format for the high-score table.
 function dateLocale() { return LANG === 'en' ? 'en-GB' : 'it-IT'; }
 
-// testo di un evento di partita ({k, p, s}, vedi pushEvent in js/gameplay.js): il
-// server manda chiavi, ogni client compone il messaggio nella PROPRIA lingua.
-// Una stringa nuda (server di una build precedente) passa così com'è.
+// Text for a match event ({k, p, s}, see pushEvent in js/gameplay.js): the server sends
+// keys and each client composes the message in ITS OWN language. A bare string (from a
+// server on an older build) passes through unchanged.
 function evText(e) {
   if (typeof e === 'string') return e;
   if (!e || !e.k) return '';
@@ -100,10 +100,10 @@ function evText(e) {
 
 const STR = {
   // =======================================================================
-  //  ITALIANO
+  //  ITALIAN
   // =======================================================================
   it: {
-    // ---- scelta della lingua ----
+    // ---- Language choice ----
     'lang.title': '🌍 Lingua · Language',
     'lang.it': '🇮🇹 Italiano',
     'lang.en': '🇬🇧 English',
@@ -119,7 +119,7 @@ const STR = {
     'hud.mapCloseTitle': 'Chiudi (Esc)',
     'hud.meters': '{d} m',
 
-    // ---- guida comandi in basso a sinistra ----
+    // ---- Controls guide, bottom left ----
     'hint.title': 'Mostra o nascondi la guida completa',
     'hint.short': '<b>WASD / frecce</b> muovi &amp; guida · <b>Mouse</b> mira · <b>Click sx</b> pugni/spari<br>' +
       '<b>E</b> sali/scendi · <b>Spazio</b> clacson/sirena 🚨 · <b>1-5</b> armi · <b>M</b> missioni',
@@ -138,11 +138,11 @@ const STR = {
       '&nbsp;&nbsp;&nbsp;&nbsp;e se ti fermano in auto ti <b>arrestano</b> (riparti dalla centrale!)',
     'hint.key': '<b>H</b> (o un clic qui) — guida completa',
 
-    // ---- morte / arresto ----
+    // ---- Death / arrest ----
     'big.dead': 'Ti hanno ucciso',
     'big.busted': 'Arrestato',
 
-    // ---- pausa ----
+    // ---- Pause ----
     'pause.title': '⏸ Pausa',
     'pause.resume': '▶ Riprendi',
     'pause.save': '💾 Salva partita',
@@ -151,7 +151,7 @@ const STR = {
     'pause.share': '📤 Invita un amico',
     'pause.quit': '🏁 Termina e salva il punteggio',
 
-    // ---- fine partita ----
+    // ---- End of match ----
     'go.time': '⏱ Tempo scaduto!',
     'go.quit': '🏁 Partita terminata',
     'go.back': '↩ Torna al menu',
@@ -159,7 +159,7 @@ const STR = {
     'go.noRank': 'Peccato, niente top 10 stavolta…',
     'go.mpRank': '{name}, sei {rank}º su {tot} — 💀 {kills} · ☠️ {deaths}',
 
-    // ---- classifica della partita (multigiocatore) ----
+    // ---- Match scoreboard (multiplayer) ----
     'lad.title': '🏆 Classifica della partita',
     'lad.hint': 'Premi Tab (o tocca 🏆) per chiudere',
     'lad.name': 'Nome',
@@ -168,7 +168,7 @@ const STR = {
     'lad.deaths': '☠️ Morti',
     'lad.bounty': '🎯 Taglia',
 
-    // ---- schermata iniziale ----
+    // ---- Title screen ----
     'start.tag': 'Corri · Consegna · Soccorri',
     'start.hiscore': 'HI-SCORE&nbsp; $0',
     'start.credits': 'CREDITI&nbsp;1',
@@ -176,25 +176,26 @@ const STR = {
     'start.ticker': '🚕 PORTA I CLIENTI A DESTINAZIONE · 🍕 CONSEGNA LA PIZZA FINCHÉ È CALDA · 🚑 SOCCORRI I FERITI · 🚒 SPEGNI GLI INCENDI · 🪙 RACCOGLI LE MONETINE NEI VICOLI · 🚔 OCCHIO ALLE STELLE: LA POLIZIA NON DIMENTICA · 🪖 LA CASERMA È PIENA DI SOLDATI (E DI CARRI ARMATI) · 🚕 PORTA I CLIENTI A DESTINAZIONE · 🍕 CONSEGNA LA PIZZA FINCHÉ È CALDA · 🚑 SOCCORRI I FERITI · 🚒 SPEGNI GLI INCENDI · 🪙 RACCOGLI LE MONETINE NEI VICOLI',
     'hi.score': 'HI-SCORE  ${score} — {name}',
 
-    // ---- primo avvio: nome ----
+    // ---- First run: name ----
     'name.title': 'Come ti chiami?',
     'name.label': 'Nome del personaggio',
     'name.ph': 'Il tuo nome',
     'name.next': 'Avanti ➜',
     'name.required': 'Serve un nome!',
 
-    // ---- menu principale ----
+    // ---- Main menu ----
     'menu.hello': 'Ciao, <b id="menuName"></b>!',
     'menu.play': '▶ Giocatore singolo',
     'menu.load': '💾 Riprendi partita',
     'menu.mp': '🌐 Multigiocatore',
     'menu.settings': '⚙️ Impostazioni',
-    'menu.scores': '🏆 Classifica',
+    'menu.scores': '🏆 Record locali',
+    'menu.lb': '🌐 Classifica online',
     'menu.howto': '❓ Come si gioca',
     'menu.install': '📲 Installa l\'app',
     'menu.installed': 'App installata! 🎉',
 
-    // ---- giocatore singolo ----
+    // ---- Single-player ----
     'sp.title': '▶ Giocatore singolo',
     'sp.violence': 'Violenza',
     'sp.violenceOn': 'Sì — armi e scontri',
@@ -215,7 +216,7 @@ const STR = {
     'dur.5': '5 minuti', 'dur.10': '10 minuti', 'dur.15': '15 minuti',
     'dur.30': '30 minuti', 'dur.60': '60 minuti',
 
-    // ---- multigiocatore ----
+    // ---- Multiplayer ----
     'mp.title': '🌐 Multigiocatore',
     'mp.note': 'Ospita una partita e condividi il link (con password facoltativa e numero massimo di ' +
       'giocatori), oppure entra nella stanza di un amico. In partita la <b>classifica</b> ' +
@@ -271,22 +272,38 @@ const STR = {
     'join.badCode': 'Codice non valido (es. K7PF2M)',
     'join.connecting': 'Connessione…',
 
-    // ---- impostazioni ----
+    // ---- Settings ----
     'set.title': '⚙️ Impostazioni',
     'set.audio': 'Audio',
     'set.audioOn': '🔊 Attivo',
     'set.audioOff': '🔇 Disattivato',
     'set.save': '💾 Salva',
 
-    // ---- classifica locale ----
-    'scores.title': '🏆 Classifica',
+    // ---- Local high scores ----
+    'scores.title': '🏆 Record locali',
     'scores.name': 'Nome',
     'scores.score': 'Punteggio',
     'scores.duration': 'Durata',
     'scores.date': 'Data',
     'scores.empty': 'Nessuna partita giocata — la classifica ti aspetta!',
 
-    // ---- come si gioca ----
+    // ---- Shared online leaderboard (the server's) ----
+    'lb.title': '🌐 Classifica online',
+    'lb.player': 'Giocatore',
+    'lb.ppm': 'Pt/min',
+    'lb.matches': 'Partite',
+    'lb.time': 'Tempo',
+    'lb.best': 'Migliore',
+    'lb.loading': 'Carico la classifica…',
+    'lb.empty': 'Ancora nessuno in classifica — gioca una partita multigiocatore!',
+    'lb.error': 'Classifica non raggiungibile: riprova fra un momento.',
+    'lb.noServer': 'Nessun server multigiocatore configurato.',
+    'lb.note': 'Il punteggio è diviso per i minuti giocati, così partite corte e lunghe si confrontano.',
+    'lb.qualify': 'Si entra in classifica dopo {n} min di gioco totali.',
+    'lb.dur_hm': '{h}h {m}m',
+    'lb.dur_m': '{m}m',
+
+    // ---- How to play ----
     'howto.desc': 'Esplora una grande città con <b>quartieri diversi</b> — case, uffici, fabbriche — e strutture ' +
       'come <b>ospedali 🏥</b> (dove curarti), <b>centrali di polizia 🚔</b>, caserme dei pompieri, banche e ' +
       'mercati. <b>Ruba qualsiasi auto</b>, sfreccia nel traffico e raccogli le <b>monetine 🪙</b> nascoste nei ' +
@@ -320,7 +337,7 @@ const STR = {
     'howto.t6': '<b>Icone in alto</b>', 'howto.t6v': 'cambiare / comprare arma',
     'howto.volume': '🔊 Alza il volume per motori, spari e sirene!',
 
-    // ---- armi ----
+    // ---- Weapons ----
     'weapon.fists': 'Pugni',
     'weapon.pistol': 'Pistola',
     'weapon.smg': 'Mitra',
@@ -329,7 +346,7 @@ const STR = {
     'weapon.flamer': 'Lanciafiamma',
     'weapon.rocket': 'Lanciarazzi',
 
-    // ---- armeria ----
+    // ---- Gun shop ----
     'shop.titleTouch': '🛒 ARMERIA — tocca l\'icona dell\'arma in alto per comprare',
     'shop.titleKb': '🛒 ARMERIA — premi il numero per comprare o equipaggiare',
     'shop.inUse': 'in uso ✔',
@@ -339,7 +356,7 @@ const STR = {
     'shop.tooPoor': '💸 Ti servono ${price} per {name}',
     'shop.locked': '🔒 {name} si compra all\'ARMERIA',
 
-    // ---- etichette in mappa ----
+    // ---- Map labels ----
     'lm.hospital': '✚ OSPEDALE',
     'lm.police': 'POLIZIA',
     'lm.fire': 'POMPIERI',
@@ -350,14 +367,14 @@ const STR = {
     'lm.market': 'MERCATO',
     'lm.taxi': 'TAXI',
 
-    // ---- ospedale ----
+    // ---- Hospital ----
     'heal.done': '🏥 Curato! (−$25)',
     'heal.need': '🏥 Ti servono $25 per farti curare',
 
-    // ---- ricercato ----
+    // ---- Wanted ----
     'wanted.level': '⭐ Livello ricercato: {n}',
 
-    // ---- missioni: taxi ----
+    // ---- Missions: taxi ----
     'taxi.new': '🚕 Un cliente ti sta aspettando — segui la freccia!',
     'taxi.aboard': '🧳 Cliente a bordo! Portalo a destinazione',
     'taxi.doneTip': '💰 Corsa completata! +${pay} · mancia +${tip} ⏱️',
@@ -369,7 +386,7 @@ const STR = {
     'taxi.boxNoTip': '🚕 ${pay} · mancia persa',
     'taxi.enter': '🚕 Sei salito su un TAXI — carica i clienti e portali a destinazione!',
 
-    // ---- missioni: pizza ----
+    // ---- Missions: pizza ----
     'pizza.new': '🍕 Nuovo ordine! Ritira il cibo alla PIZZERIA — segui la freccia',
     'pizza.aboard': '🛵 Ordine nel bauletto! Consegnalo finché è caldo',
     'pizza.doneTip': '💰 Consegnata calda! +${pay} · mancia +${tip} 🔥',
@@ -381,7 +398,7 @@ const STR = {
     'pizza.boxNoTip': '🍕 ${pay} · pizza fredda, niente mancia',
     'pizza.enter': '🍕 Sei salito sulla moto delle consegne — ritira il cibo e portalo ai clienti!',
 
-    // ---- missioni: ambulanza ----
+    // ---- Missions: ambulance ----
     'rescue.new': '🚑 Emergenza! Un ferito ha bisogno di te — segui la freccia',
     'rescue.aboard': '🩹 Ferito a bordo! Corri all\'OSPEDALE',
     'rescue.doneTip': '💰 Paziente salvo! +${pay} · bonus soccorso +${tip} ⏱️',
@@ -393,7 +410,7 @@ const STR = {
     'rescue.boxNoTip': '🚑 ${pay} · bonus soccorso perso',
     'rescue.enter': '🚑 Sei salito sull\'AMBULANZA — soccorri i feriti e portali in ospedale!',
 
-    // ---- missioni: volante ----
+    // ---- Missions: patrol car ----
     'patrol.bank': '🚨 Rapina in BANCA! Ferma il ladro in fuga',
     'patrol.market': '🚨 Furto al MERCATO! Ferma il ladro in fuga',
     'patrol.street': '🚨 Scippo in strada! Ferma il ladro in fuga',
@@ -407,7 +424,7 @@ const STR = {
     'patrol.box': '🚔 ${pay} · fermalo entro {s}s!',
     'patrol.enter': '🚔 Sei salito sulla VOLANTE — rispondi alle chiamate e ferma i criminali!',
 
-    // ---- missioni: pompieri ----
+    // ---- Missions: fire brigade ----
     'fire.new': '🔥 INCENDIO in città! Corri sul posto e spegnilo con l\'idrante',
     'fire.doneBonus': '💧 Incendio spento! +${pay} · bonus rapidità +${bonus} ⏱️',
     'fire.done': '💧 Incendio spento! +${pay}',
@@ -419,7 +436,7 @@ const STR = {
     'fire.enterTouch': '🚒 Sei salito sull\'AUTOPOMPA — spingi lo stick destro per l\'idrante!',
     'fire.enterKb': '🚒 Sei salito sull\'AUTOPOMPA — tieni premuto il mouse per l\'idrante!',
 
-    // ---- veicoli ----
+    // ---- Vehicles ----
     'veh.out': '🚶 Sei sceso',
     'veh.tankTouch': '🪖 Sei salito sul CARRO ARMATO — stick destro: razzi · passa sopra le auto!',
     'veh.tankKb': '🪖 Sei salito sul CARRO ARMATO — mouse: razzi · passa sopra le auto!',
@@ -432,12 +449,12 @@ const STR = {
     'veh.sirenOn': '🚨 Sirena accesa',
     'veh.sirenOff': '🔇 Sirena spenta',
 
-    // ---- missioni on/off ----
+    // ---- Missions on/off ----
     'miss.offTouch': '🚫 Missioni disattivate — tocca 📋 per riattivarle',
     'miss.offKb': '🚫 Missioni disattivate — premi M per riattivarle',
     'miss.on': '✅ Missioni riattivate!',
 
-    // ---- crimini (livello ricercato) ----
+    // ---- Crimes (wanted level) ----
     'crime.punchCop': '🚨 Hai steso un poliziotto a pugni!',
     'crime.punchPed': '🚨 Hai steso un passante a pugni!',
     'crime.hitCop': '🚨 Hai colpito un poliziotto!',
@@ -455,7 +472,7 @@ const STR = {
     'respawn.busted': '👮 Rilasciato dalla centrale — comportati bene!',
     'respawn.dead': '🏥 Rimesso in sesto dall\'ospedale',
 
-    // ---- partita ----
+    // ---- Match ----
     'game.welcome': 'Benvenuto a Libre City, {name}! 🏙️  {hint}{mp}',
     'game.welcomeBack': 'Bentornato a Libre City, {name}! 🏙️ Partita ripresa.',
     'game.hintTouch': 'Avvicinati a un\'auto e tocca 🚗',
@@ -465,7 +482,7 @@ const STR = {
     'game.saved': '💾 Partita salvata',
     'game.noSave': 'Nessuna partita salvata',
 
-    // ---- rete ----
+    // ---- Network ----
     'net.retry': '🔌 Connessione al server… riprovo',
     'net.lost': '🌐 Connessione persa, riaggancio…',
     'net.back': '🌐 Riconnesso alla partita',
@@ -500,7 +517,7 @@ const STR = {
     'streak.7': 'Inarrestabile!',
     'streak.10': 'LEGGENDARIO!',
 
-    // ---- fumetti dei pedoni ----
+    // ---- Pedestrian speech bubbles ----
     'say.greet': ['Ciao {name}!', 'Ehi, ciao!', 'Bella giornata, eh?', 'Buongiorno!', 'Che traffico oggi…', 'Salve!', 'Hai visto che città?'],
     'say.wanted': ['È lui il ricercato!', 'Aiuto, un criminale!', 'Chiamate la polizia!', 'La polizia ti cerca!', 'Scappate, è lui!', 'Eccolo! È qui!'],
     'say.panic': ['AAAH!', 'Attento!', 'È impazzito!', 'Aiutooo!', 'Via! Via!', 'Al pazzo!'],
@@ -596,7 +613,8 @@ const STR = {
     'menu.load': '💾 Resume game',
     'menu.mp': '🌐 Multiplayer',
     'menu.settings': '⚙️ Settings',
-    'menu.scores': '🏆 Leaderboard',
+    'menu.scores': '🏆 Local records',
+    'menu.lb': '🌐 Online leaderboard',
     'menu.howto': '❓ How to play',
     'menu.install': '📲 Install the app',
     'menu.installed': 'App installed! 🎉',
@@ -682,12 +700,27 @@ const STR = {
     'set.audioOff': '🔇 Off',
     'set.save': '💾 Save',
 
-    'scores.title': '🏆 Leaderboard',
+    'scores.title': '🏆 Local records',
     'scores.name': 'Name',
     'scores.score': 'Score',
     'scores.duration': 'Length',
     'scores.date': 'Date',
     'scores.empty': 'No games played yet — the leaderboard is waiting for you!',
+
+    'lb.title': '🌐 Online leaderboard',
+    'lb.player': 'Player',
+    'lb.ppm': 'Pts/min',
+    'lb.matches': 'Games',
+    'lb.time': 'Time',
+    'lb.best': 'Best',
+    'lb.loading': 'Loading the leaderboard…',
+    'lb.empty': 'Nobody on the board yet — go play a multiplayer game!',
+    'lb.error': 'Cannot reach the leaderboard: try again in a moment.',
+    'lb.noServer': 'No multiplayer server configured.',
+    'lb.note': 'Scores are divided by the minutes played, so short and long games compare.',
+    'lb.qualify': 'You make the board after {n} min of total play.',
+    'lb.dur_hm': '{h}h {m}m',
+    'lb.dur_m': '{m}m',
 
     'howto.desc': 'Explore a big city with <b>different districts</b> — houses, offices, factories — and ' +
       'landmarks such as <b>hospitals 🏥</b> (where you heal), <b>police stations 🚔</b>, fire stations, banks ' +
@@ -901,6 +934,6 @@ const STR = {
   },
 };
 
-// applica subito la lingua al DOM (se c'è un DOM: headless è no-op)
+// Applies the language to the DOM right away (if there is a DOM: a no-op when headless).
 applyLangAttrs();
 applyI18n();

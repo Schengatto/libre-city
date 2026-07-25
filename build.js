@@ -1,23 +1,22 @@
 #!/usr/bin/env node
-// build.js — genera in dist/ una versione deployabile del gioco.
+// build.js — produces a deployable version of the game in dist/.
 //
 //   node build.js
 //
-// Cosa fa:
-//   1. Copia ogni js/*.js referenziato da index.html in dist/js/ rinominandolo
-//      con l'hash del contenuto (es. core.a1b2c3d4e5.js) → cache-friendly:
-//      i file possono essere cachati per sempre, un contenuto nuovo = nome nuovo.
-//   2. Riscrive i <script src> in dist/index.html mantenendo l'ordine di
-//      caricamento (vincolo critico: scope globale condiviso tra gli script).
-//   3. index.html resta l'entrypoint col suo nome. Contro la cache dell'HTML:
-//      - genera _headers (Netlify/Cloudflare Pages) e .htaccess (Apache) con
-//        Cache-Control: no-cache sull'HTML e immutable sugli asset hashati;
-//      - inietta nell'HTML un mini-controllo di versione: al load confronta il
-//        BUILD_ID incorporato con dist/version.json (fetch no-store); se il
-//        server ha una build più nuova ricarica la pagina UNA volta
-//        (guardia in sessionStorage → niente loop di reload).
+// What it does:
+//   1. Copies every js/*.js referenced by index.html into dist/js/, renaming it with the
+//      hash of its content (e.g. core.a1b2c3d4e5.js) → cache-friendly: files can be cached
+//      forever, and new content means a new name.
+//   2. Rewrites the <script src> tags in dist/index.html, preserving the load order (a
+//      critical constraint: the scripts share a global scope).
+//   3. index.html keeps its name as the entry point. Against HTML caching it:
+//      - generates _headers (Netlify/Cloudflare Pages) and .htaccess (Apache) with
+//        Cache-Control: no-cache on the HTML and immutable on the hashed assets;
+//      - injects a small version check into the HTML: on load it compares the embedded
+//        BUILD_ID with dist/version.json (fetched no-store); if the server has a newer
+//        build it reloads the page ONCE (guarded in sessionStorage → no reload loop).
 //
-// Il sorgente non viene toccato: in dev il gioco continua a girare da file://.
+// The source tree is left untouched: in development the game still runs from file://.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -28,12 +27,12 @@ const DIST = path.join(ROOT, 'dist');
 
 const hash = (buf) => crypto.createHash('sha256').update(buf).digest('hex').slice(0, 10);
 
-// --- 0. URL del server multigiocatore da iniettare nel <meta name="lc-server"> --
-// Integra la configurazione nel build: niente più modifiche a mano a index.html.
+// --- 0. Multiplayer server URL to inject into <meta name="lc-server"> ---------
+// Folds the configuration into the build: no more hand-editing index.html.
 //   node build.js --server=wss://libre-city.fly.dev
 //   node build.js wss://libre-city.fly.dev
 //   LC_SERVER=wss://libre-city.fly.dev node build.js
-// Vuoto = solo sviluppo locale (il client ripiega su ws://localhost:8787).
+// Empty = local development only (the client falls back to ws://localhost:8787).
 function resolveServerUrl() {
   const args = process.argv.slice(2);
   const flag = args.find(a => a.startsWith('--server='));
@@ -51,21 +50,21 @@ if (SERVER_URL.startsWith('ws://')) {
   console.warn('⚠  Server in ws:// (non cifrato): un sito https lo bloccherà. In produzione usa wss://.');
 }
 
-// --- 1. dist/ pulita -------------------------------------------------------
+// --- 1. A clean dist/ ------------------------------------------------------
 fs.rmSync(DIST, { recursive: true, force: true });
 fs.mkdirSync(path.join(DIST, 'js'), { recursive: true });
 
 let html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 
-// inietta l'URL del server nel meta (o lo aggiunge se assente). Cambiare l'URL
-// cambia il contenuto → nuovo BUILD_ID → i client si aggiornano da soli.
+// Injects the server URL into the meta tag (adding it if absent). Changing the URL changes
+// the content → a new BUILD_ID → clients update themselves.
 const metaRe = /<meta name="lc-server" content="[^"]*">/;
 if (metaRe.test(html)) html = html.replace(metaRe, `<meta name="lc-server" content="${SERVER_URL}">`);
 else if (SERVER_URL) html = html.replace('</head>', `  <meta name="lc-server" content="${SERVER_URL}">\n</head>`);
 console.log(SERVER_URL ? `  server multigiocatore: ${SERVER_URL}`
                        : '  server multigiocatore: (non impostato → solo sviluppo locale)');
 
-// --- 2. hash + copia degli script locali (quelli esterni restano intatti) --
+// --- 2. Hash + copy the local scripts (external ones are left untouched) ---
 const localScripts = [...html.matchAll(/<script src="(js\/[^"]+\.js)"><\/script>/g)].map(m => m[1]);
 if (localScripts.length === 0) {
   console.error('Nessuno <script src="js/..."> trovato in index.html: build annullata.');
@@ -73,7 +72,7 @@ if (localScripts.length === 0) {
 }
 
 const fileHashes = [];
-const hashedRels = []; // per il precache del service worker
+const hashedRels = []; // for the service worker's precache
 for (const rel of localScripts) {
   const buf = fs.readFileSync(path.join(ROOT, rel));
   const h = hash(buf);
@@ -85,24 +84,24 @@ for (const rel of localScripts) {
   console.log(`  ${rel}  →  ${hashedRel}`);
 }
 
-// Sanity check: in dist/js non devono restare riferimenti senza hash.
+// Sanity check: no unhashed references may remain in dist/js.
 const leftover = html.match(/src="js\/[^"]*(?<!\.[0-9a-f]{10})\.js"/);
 if (leftover) {
   console.error(`Riferimento non riscritto: ${leftover[0]} — build annullata.`);
   process.exit(1);
 }
 
-// --- 3. BUILD_ID + controllo versione anti-cache sull'HTML -----------------
-// Deterministico: dipende solo dai contenuti (stessi sorgenti → stessa build).
+// --- 3. BUILD_ID + anti-cache version check on the HTML --------------------
+// Deterministic: it depends only on the contents (same sources → same build).
 const BUILD_ID = hash(fileHashes.join('|') + hash(html));
 
 const versionCheck = `
 <script>
-// Anti-cache per index.html: se il server ha una build più nuova di questa,
-// ricarica la pagina una sola volta (guardia in sessionStorage → no loop).
+// Anti-cache for index.html: if the server has a newer build than this one, reload the page
+// exactly once (guarded in sessionStorage → no loop).
 (function(){
   var BUILD='${BUILD_ID}';
-  window.LC_BUILD=BUILD;   // usata da net.js per l'avviso "aggiorna" al mismatch col server
+  window.LC_BUILD=BUILD;   // used by net.js for the "update" notice on a mismatch with the server
   fetch('version.json?ts='+Date.now(),{cache:'no-store'})
     .then(function(r){return r.json();})
     .then(function(v){
@@ -111,7 +110,7 @@ const versionCheck = `
         location.reload();
       }
     })
-    .catch(function(){}); // offline/file://: nessun problema, si gioca comunque
+    .catch(function(){}); // offline/file://: no problem, the game still runs
 })();
 </script>
 </head>`;
@@ -122,12 +121,11 @@ html = html.replace('<title>', `<!-- build ${BUILD_ID} -->\n<title>`);
 fs.writeFileSync(path.join(DIST, 'index.html'), html);
 fs.writeFileSync(path.join(DIST, 'version.json'), JSON.stringify({ build: BUILD_ID }) + '\n');
 
-// --- 4. header di cache per gli hosting più comuni -------------------------
-// Netlify / Cloudflare Pages leggono _headers; Apache legge .htaccess.
-// GitHub Pages non è configurabile ma serve già l'HTML con max-age=600,
-// e in ogni caso il controllo di versione qui sopra fa da rete di sicurezza.
-// sw.js e manifest devono restare freschi (così gli aggiornamenti arrivano);
-// gli asset con hash sono immutabili; le icone cambiano di rado → cache breve.
+// --- 4. Cache headers for the most common hosts ----------------------------
+// Netlify / Cloudflare Pages read _headers; Apache reads .htaccess. GitHub Pages is not
+// configurable but already serves HTML with max-age=600, and in any case the version check
+// above acts as a safety net. sw.js and the manifests must stay fresh (so updates arrive);
+// hashed assets are immutable; icons change rarely → a short cache.
 fs.writeFileSync(path.join(DIST, '_headers'), `/index.html
   Cache-Control: no-cache, must-revalidate
 /
@@ -168,14 +166,14 @@ fs.writeFileSync(path.join(DIST, '.htaccess'), `AddType application/manifest+jso
 </IfModule>
 `);
 
-// --- 5. PWA: manifest, icone e service worker ------------------------------
-// L'app è installabile dal browser: index.html linka manifest.webmanifest e
-// registra sw.js. Il service worker pre-cacha l'app-shell (index + JS con hash
-// + icone + manifest) così il gioco parte anche offline; version.json resta
-// sempre dalla rete e le risorse cross-origin (font) sono in cache runtime
-// "stale-while-revalidate". Il multigiocatore usa una WebSocket verso il server
-// (vedi server/): non passa dal service worker e richiede la rete.
-// due manifest, uno per lingua: js/i18n.js aggancia quello giusto al <link rel="manifest">
+// --- 5. PWA: manifests, icons and service worker ---------------------------
+// The app is installable from the browser: index.html links manifest.webmanifest and
+// registers sw.js. The service worker precaches the app shell (index + hashed JS + icons +
+// manifests) so the game starts offline too; version.json always comes from the network, and
+// cross-origin resources (fonts) live in a "stale-while-revalidate" runtime cache.
+// Multiplayer uses a WebSocket to the server (see server/): it bypasses the service worker
+// and needs the network.
+// Two manifests, one per language: js/i18n.js hooks the right one onto <link rel="manifest">.
 const manifests = ['manifest.webmanifest', 'manifest.en.webmanifest'];
 for (const f of manifests) fs.copyFileSync(path.join(ROOT, f), path.join(DIST, f));
 
@@ -184,12 +182,12 @@ const iconFiles = fs.readdirSync(iconsDir).filter(f => /\.(png|svg)$/.test(f));
 fs.mkdirSync(path.join(DIST, 'icons'), { recursive: true });
 for (const f of iconFiles) fs.copyFileSync(path.join(iconsDir, f), path.join(DIST, 'icons', f));
 
-// Percorsi RELATIVI (senza slash iniziale): funzionano anche sotto un sottopercorso
-// (es. GitHub Pages di progetto). Nel service worker si risolvono rispetto a sw.js.
+// RELATIVE paths (no leading slash): they work under a sub-path too (e.g. a GitHub Pages
+// project site). Inside the service worker they resolve relative to sw.js.
 const precache = ['./', 'index.html', ...manifests,
   ...hashedRels, ...iconFiles.map(f => `icons/${f}`)];
 
-const sw = `// sw.js — generato da build.js (build ${BUILD_ID}). NON modificare a mano.
+const sw = `// sw.js — generated by build.js (build ${BUILD_ID}). Do NOT edit by hand.
 const CACHE = 'libre-city-${BUILD_ID}';
 const RUNTIME = 'libre-city-runtime';
 const PRECACHE = ${JSON.stringify(precache)};
@@ -211,10 +209,10 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
 
-  // version.json: sempre dalla rete (controllo build anti-cache), mai in cache.
+  // version.json: always from the network (the anti-cache build check), never cached.
   if (url.origin === location.origin && url.pathname.endsWith('version.json')) return;
 
-  // Navigazioni (index.html): rete-prima, con fallback alla cache quando offline.
+  // Navigations (index.html): network-first, falling back to the cache when offline.
   if (req.mode === 'navigate') {
     e.respondWith((async () => {
       try {
@@ -227,7 +225,7 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Stessa origine (JS con hash, icone, manifest): cache-prima.
+  // Same origin (hashed JS, icons, manifests): cache-first.
   if (url.origin === location.origin) {
     e.respondWith((async () => {
       const cached = await caches.match(req);
@@ -239,7 +237,7 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Cross-origin (Google Fonts, ecc.): stale-while-revalidate.
+  // Cross-origin (Google Fonts, etc.): stale-while-revalidate.
   e.respondWith((async () => {
     const c = await caches.open(RUNTIME);
     const cached = await c.match(req);

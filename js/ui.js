@@ -1,4 +1,4 @@
-// LIBRE CITY · js/ui.js — HUD DOM, loop principale, menu, impostazioni, classifica, pausa e avvio.
+// LIBRE CITY · js/ui.js — DOM HUD, main loop, menus, settings, high scores, pause and start-up.
 
 // =========================================================
 //  HUD
@@ -14,13 +14,13 @@ function updateStars() {
 }
 function updateHealth() { const b = $('#healthBar'); if (b) b.style.width = clamp(player.health, 0, 100) + '%'; }
 function updateCash() { const c = $('#cash'); if (c) c.textContent = '$' + cash; }
-// punteggio d'azione: in multigiocatore è quello autoritativo del server (net.score),
-// in singolo quello del player locale
+// Action score: in multiplayer this is the server's authoritative one (net.score), in
+// single-player the local player's.
 function updateScore() {
   const el = $('#score'); if (!el) return;
   el.textContent = '🏆 ' + (netActive() ? (net.score | 0) : (player.score | 0));
 }
-// cronometro della partita a tempo (nascosto in modalità senza limiti)
+// Clock for a timed match (hidden in untimed mode).
 function updateTimer() {
   const el = $('#timer'); if (!el) return;
   el.classList.toggle('hidden', gameMinutes <= 0);
@@ -35,7 +35,7 @@ function updateWeapon() {
   const w = WEAPONS[player.weaponIdx];
   el.textContent = w.melee ? `${w.icon} ${wName(w)}` : `${w.icon} ${wName(w)} · ∞`;
 }
-// marcia attuale: visibile solo alla guida (R in retromarcia)
+// Current gear: only visible while driving (R for reverse).
 function updateGear() {
   const el = $('#gear'); if (!el) return;
   const c = player.car;
@@ -47,7 +47,7 @@ function updateGear() {
 let toastT = 0;
 function toast(msg) { const el = $('#toast'); if (!el) return; el.textContent = msg; el.classList.add('show'); toastT = 150; }
 function updateToast() { if (toastT > 0 && --toastT === 0) $('#toast').classList.remove('show'); }
-// guida comandi (desktop): compatta di default, H o un clic la apre/chiude tutta
+// Controls guide (desktop): compact by default; H or a click expands/collapses it.
 function toggleHelp() { const el = $('#hint'); if (el) el.classList.toggle('open'); }
 const hintBox = $('#hint');
 if (hintBox) hintBox.onclick = toggleHelp;
@@ -55,55 +55,55 @@ if (hintBox) hintBox.onclick = toggleHelp;
 // =========================================================
 //  LOOP
 // =========================================================
-// TIMESTEP FISSO. La sim è tarata su 60 passi/secondo (movimento, fisica, countdown
-// in frame). Prima si avanzava di UN passo per frame renderizzato: su un device a
-// 30fps TUTTO andava a metà velocità (lo "slow" del multigiocatore). Ora un
-// accumulatore scala la logica al tempo REALE — 60 update/s a qualsiasi frame-rate —
-// e si disegna una volta per frame. Il mondo autoritativo (interpolato sul tempo
-// reale) e il player predetto restano così a velocità corretta anche a 30/40 fps.
-const LOGIC_STEP = 1000 / 60;          // durata di un passo logico (ms)
-const LOGIC_MAX = 5;                    // max recuperi per frame (freno alla "spirale della morte")
+// FIXED TIMESTEP. The sim is tuned for 60 steps per second (movement, physics, countdowns
+// in frames). It used to advance ONE step per rendered frame: on a 30fps device EVERYTHING
+// ran at half speed (the multiplayer "slowness"). Now an accumulator scales the logic to
+// REAL time — 60 updates/s at any frame rate — and we draw once per frame. The
+// authoritative world (interpolated against real time) and the predicted player therefore
+// stay at the correct speed even at 30/40 fps.
+const LOGIC_STEP = 1000 / 60;          // duration of one logic step (ms)
+const LOGIC_MAX = 5;                    // max catch-up steps per frame (brake on the "death spiral")
 let _loopLast = 0, _loopAcc = 0;
 function loop(nowT) {
   if (!started) return;
   requestAnimationFrame(loop);
   const t = nowT || performance.now();
-  // in pausa la catena RAF resta viva, ma non si accumula tempo (niente scatto alla ripresa)
+  // While paused the RAF chain stays alive but no time accumulates (no jump on resume).
   if (paused) { _loopLast = t; return; }
   if (!_loopLast) _loopLast = t;
-  _loopAcc += Math.min(t - _loopLast, LOGIC_STEP * LOGIC_MAX);   // clamp: dopo un blocco (tab in background) non esplodere
+  _loopAcc += Math.min(t - _loopLast, LOGIC_STEP * LOGIC_MAX);   // clamp: do not blow up after a stall (backgrounded tab)
   _loopLast = t;
   let n = 0;
   while (_loopAcc >= LOGIC_STEP && n < LOGIC_MAX) { update(); _loopAcc -= LOGIC_STEP; n++; }
-  render();                             // un disegno per frame, a QUALSIASI fps
+  render();                             // one draw per frame, at ANY fps
   if ((frame & 7) === 0) { updateCash(); updateScore(); }
   if ((frame & 3) === 0) updateGear();
   updateToast();
 }
 
 // =========================================================
-//  MENU PRINCIPALE · IMPOSTAZIONI · CLASSIFICA · PAUSA
+//  MAIN MENU · SETTINGS · HIGH SCORES · PAUSE
 // =========================================================
-const PANELS = ['langPanel', 'namePanel', 'menuPanel', 'spPanel', 'settingsPanel', 'scoresPanel', 'howtoPanel',
-                'mpPanel', 'hostPanel', 'queuePanel', 'invitePanel', 'joinPanel'];
+const PANELS = ['langPanel', 'namePanel', 'menuPanel', 'spPanel', 'settingsPanel', 'scoresPanel', 'lbPanel',
+                'howtoPanel', 'mpPanel', 'hostPanel', 'queuePanel', 'invitePanel', 'joinPanel'];
 function showPanel(id) {
   for (const p of PANELS) { const el = $('#' + p); if (el) el.classList.toggle('hidden', p !== id); }
 }
 function showMenu() {
   const nm = $('#menuName'); if (nm) nm.textContent = playerName;
-  const lb = $('#loadBtn'); if (lb) lb.classList.toggle('hidden', !hasSave());   // 💾 solo se c'è un salvataggio
-  updateHiScore();                                                              // dopo un cambio lingua va riscritto
+  const lb = $('#loadBtn'); if (lb) lb.classList.toggle('hidden', !hasSave());   // 💾 only when a save exists
+  updateHiScore();                                                              // must be rewritten after a language change
   showPanel('menuPanel');
 }
-// ---- HI-SCORE da cabinato nella schermata iniziale (miglior punteggio salvato) ----
+// ---- Arcade-cabinet HI-SCORE on the title screen (best saved score) ----
 function updateHiScore() {
   const el = $('#hiScore'); if (!el) return;
   const best = store.get('scores', [])[0];
   if (best) el.textContent = t('hi.score', { score: best.score, name: String(best.name).toUpperCase() });
 }
 
-// ---- classifica (top 10 in localStorage) ----
-// salva la partita appena conclusa e ritorna la posizione in classifica (0 = fuori dalla top 10)
+// ---- High scores (top 10 in localStorage) ----
+// Saves the match just finished and returns its rank (0 = outside the top 10).
 function saveScore() {
   const scores = store.get('scores', []);
   const entry = { name: playerName, score: cash, min: gameMinutes, date: Date.now() };
@@ -139,18 +139,84 @@ function renderScores() {
   });
 }
 
-// ---- pausa (Esc o pulsante ⏸ su touch) ----
+// ---- Shared online leaderboard (the server's, not this device's) ----
+// The high scores above are local: they live in this browser's localStorage and only know
+// about single-player. This one comes from the SERVER and holds everyone who has played
+// multiplayer, ranked on POINTS PER MINUTE — the score divided by the minutes actually
+// played, so a 5-minute room and a 20-minute one are comparable (see server/leaderboard.js).
+// It is fetched over plain HTTP: it is read from the menu, with no match and no socket open.
+function leaderboardUrl() {
+  const ws = netServerUrl();
+  if (!ws) return null;
+  return ws.replace(/^ws/, 'http').replace(/\/+$/, '') + '/leaderboard?limit=20';
+}
+// "2h 05m" / "48m": the total played, which for a regular player quickly goes past the hour.
+function fmtPlayed(ms) {
+  const min = Math.max(0, Math.round(ms / 60000));
+  return min >= 60 ? t('lb.dur_hm', { h: Math.floor(min / 60), m: String(min % 60).padStart(2, '0') })
+                   : t('lb.dur_m', { m: min });
+}
+let lbFetching = false;
+async function renderLeaderboard() {
+  const table = $('#lbTable'), body = $('#lbTable tbody'), msg = $('#lbMsg'), note = $('#lbNote');
+  if (!table || !body || !msg) return;
+  const show = (key, params) => { table.classList.add('hidden'); note.classList.add('hidden');
+                                  msg.classList.remove('hidden'); msg.textContent = t(key, params); };
+  const url = leaderboardUrl();
+  if (!url) { show('lb.noServer'); return; }
+  if (lbFetching) return;                       // a second tap while loading: one request is enough
+  lbFetching = true;
+  show('lb.loading');
+  try {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const rows = data.top || [];
+    if (!rows.length) { show('lb.empty'); return; }
+    body.innerHTML = '';
+    const meKey = String(playerName || '').trim().toLowerCase();
+    for (const r of rows) {
+      const tr = document.createElement('tr');
+      if (String(r.name).trim().toLowerCase() === meKey) tr.className = 'me';
+      const cells = [
+        ['', r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : r.rank === 3 ? '🥉' : r.rank],
+        ['nm', r.name],
+        ['sc', r.ppm],
+        ['', r.matches],
+        ['', fmtPlayed(r.ms)],
+        ['', r.best ? r.best.ppm : '—'],
+      ];
+      for (const [cls, txt] of cells) {
+        const td = document.createElement('td');
+        if (cls) td.className = cls;
+        td.textContent = txt;
+        tr.appendChild(td);
+      }
+      body.appendChild(tr);
+    }
+    table.classList.remove('hidden');
+    msg.classList.add('hidden');
+    // The qualifying threshold explains the absences: without it, "I played and I'm not
+    // there" looks like a bug.
+    note.textContent = t('lb.note') + ' ' + t('lb.qualify', { n: Math.round((data.qualifyMs || 0) / 60000) });
+    note.classList.remove('hidden');
+  } catch (e) {
+    show('lb.error');
+  } finally { lbFetching = false; }
+}
+
+// ---- Pause (Esc, or the ⏸ button on touch) ----
 function togglePause() {
   if (!started) return;
   paused = !paused;
   const el = $('#pause'); if (el) el.classList.toggle('hidden', !paused);
-  const pc = $('#pauseShare'); if (pc) pc.classList.toggle('hidden', !netActive());   // invito in multigiocatore
-  const ps = $('#pauseSave');                                                         // 💾 salva: solo in singolo
+  const pc = $('#pauseShare'); if (pc) pc.classList.toggle('hidden', !netActive());   // invite, in multiplayer
+  const ps = $('#pauseSave');                                                         // 💾 save: single-player only
   if (ps) { ps.classList.toggle('hidden', netActive()); ps.textContent = t('pause.save'); ps.disabled = false; }
   if (paused) { engineGain(0); for (const k in keys) keys[k] = false; mDownL = false; }
 }
 
-// ---- fine partita: tempo scaduto o uscita dalla pausa ----
+// ---- End of match: time up, or quitting from the pause menu ----
 function endGame(reason) {
   if (!started) return;
   started = false; paused = false;
@@ -165,8 +231,8 @@ function endGame(reason) {
   const r = $('#goRank');
   const glw = $('#goLadderWrap');
   if (netActive()) {
-    // multigiocatore: la fine la scandisce il server (messaggio 'end'); qui
-    // mostriamo solo il riepilogo con la ladder
+    // Multiplayer: the server calls time ('end' message); here we only show the summary
+    // with the ladder.
     renderLadder();
     if (glw) glw.classList.remove('hidden');
     const rows = ladderRows(), my = rows.findIndex(x => x.me) + 1;
@@ -180,20 +246,21 @@ function endGame(reason) {
   sfx.coin();
 }
 
-// ---- avvio partita (singolo, host o ospite appena entrato) ----
-// resume=true → partita ripresa da un salvataggio: tempo e punteggio sono già stati
-// applicati da applySave(), non vanno azzerati.
+// ---- Starting a match (single-player, host, or a guest who just joined) ----
+// resume=true → a match resumed from a save: time and score have already been applied by
+// applySave() and must not be reset.
 function startMatch(resume) {
   if (started) return;
   initAudio();
   $('#start').style.display = 'none';
   started = true;
   if (!resume) {
-    timeLeft = gameMinutes * 60 * 60;            // minuti → frame (~60 fps)
-    if (netActive() && net.clockLeft != null) timeLeft = net.clockLeft;   // orologio autoritativo del server
-    player.score = 0;                            // partita nuova: punteggio azzerato (in MP conta net.score)
+    timeLeft = gameMinutes * 60 * 60;            // minutes → frames (~60 fps)
+    if (netActive() && net.clockLeft != null) timeLeft = net.clockLeft;   // the server's authoritative clock
+    player.score = 0;                            // new match: score reset (in MP net.score is what counts)
   }
-  // filtro violenza (singolo): niente armi in mano → via l'indicatore arma e la barra armi
+  // Violence filter (single-player): no weapons in hand → hide the weapon readout and the
+  // weapon bar.
   const peace = peaceMode();
   const wpn = $('#weapon'); if (wpn) wpn.style.display = peace ? 'none' : '';
   const wb = $('#wpnBar'); if (wb) wb.style.display = peace ? 'none' : '';
@@ -202,12 +269,12 @@ function startMatch(resume) {
   const mp = netActive() ? t(usingTouch ? 'game.mpLadderTouch' : 'game.mpLadderKb') : '';
   toast(resume ? t('game.welcomeBack', { name: playerName })
                : t('game.welcome', { name: playerName, hint: hi, mp }));
-  _loopLast = 0; _loopAcc = 0;                    // riparti puliti (niente recupero dal match precedente)
+  _loopLast = 0; _loopAcc = 0;                    // start clean (no catch-up from the previous match)
   loop();
 }
-// ---- giocatore singolo: pannello di creazione (violenza, durata, taglia mappa) ----
-// come per l'host, la taglia mappa è nel seme del codice → serve un reload sulla
-// città giusta; violenza e durata viaggiano nell'intento e si applicano al ritorno.
+// ---- Single-player: creation panel (violence, duration, map size) ----
+// As for the host, the map size lives in the code's seed → a reload onto the right city is
+// needed; violence and duration travel inside the intent and are applied on the way back.
 onClick('playBtn', () => {
   const d = $('#spDuration'); if (d) d.value = String(gameMinutes);
   const v = $('#spViolence'); if (v) v.value = violenceOn ? 'on' : 'off';
@@ -224,7 +291,7 @@ onClick('spGo', () => {
   location.reload();
 });
 
-// ---- navigazione dei pannelli ----
+// ---- Panel navigation ----
 function onClick(id, fn) { const el = $('#' + id); if (el) el.onclick = fn; }
 onClick('settingsBtn', () => {
   const n = $('#setName'), a = $('#setAudio'), l = $('#setLang');
@@ -239,32 +306,38 @@ onClick('settingsSave', () => {
   if (!name) { if (n) { n.focus(); n.placeholder = t('name.required'); } return; }
   playerName = name; store.set('name', playerName);
   audioOn = a ? a.value === 'on' : true; store.set('audio', audioOn);
-  applyAudioSetting();                           // effetto immediato, anche a partita in corso
-  if (l && l.value !== LANG) setLang(l.value);   // riapplica subito tutte le scritte
+  applyAudioSetting();                           // takes effect immediately, even mid-match
+  if (l && l.value !== LANG) setLang(l.value);   // re-applies all the wording straight away
   showMenu();
 });
 onClick('settingsBack', showMenu);
 onClick('scoresBtn', () => { renderScores(); showPanel('scoresPanel'); });
 onClick('scoresBack', showMenu);
+// The online leaderboard is shown FIRST and filled in when the reply arrives: the panel must
+// not wait on the network to open.
+onClick('lbBtn', () => { showPanel('lbPanel'); renderLeaderboard(); });
+onClick('lbBack', showMenu);
 onClick('howtoBtn', () => showPanel('howtoPanel'));
 onClick('howtoBack', showMenu);
 onClick('resumeBtn', togglePause);
-// 💾 salva la partita in corso (solo in singolo): feedback sul pulsante stesso
+// 💾 Saves the running match (single-player only): feedback on the button itself.
 onClick('pauseSave', () => {
   const ok = saveGame();
   const ps = $('#pauseSave');
   if (ps) { ps.textContent = t(ok ? 'pause.saved' : 'pause.saveFail'); ps.disabled = ok; }
   if (ok) toast(t('game.saved'));
 });
-// 💾 riprendi la partita salvata: rigenera la città giusta (reload su #room=…) e applica lo stato
+// 💾 Resumes the saved match: regenerates the right city (reload onto #room=…) and applies
+// the state.
 onClick('loadBtn', () => {
   const s = store.get('save', null);
   if (!hasSave() || !s) { toast(t('game.noSave')); return; }
-  if (s.code === ROOM_CODE) {                     // città già giusta: applica e via
+  if (s.code === ROOM_CODE) {                     // already the right city: apply and go
     if (applySave(s)) startMatch(true);
     return;
   }
-  // città diversa: memorizza l'intento e ricarica sul seme salvato (al ritorno si applica sotto)
+  // A different city: store the intent and reload onto the saved seed (it is applied below
+  // on the way back).
   store.set('loadIntent', true);
   location.hash = 'room=' + s.code;
   location.reload();
@@ -274,7 +347,7 @@ onClick('backToMenu', () => location.reload());
 bindBtn('btnPause', togglePause);
 
 // =========================================================
-//  MULTIGIOCATORE: crea/entra, invito, avvio (la rete è in js/net.js)
+//  MULTIPLAYER: create/join, invite, start (the networking lives in js/net.js)
 // =========================================================
 onClick('mpBtn', () => {
   if (!netServerUrl()) { toast(t('mp.noServer')); return; }
@@ -286,16 +359,16 @@ onClick('mpJoinBtn', () => showJoinPanel());
 onClick('hostBack', () => showPanel('mpPanel'));
 onClick('joinBack', () => showPanel('mpPanel'));
 
-// messaggi d'errore della rete, tradotti (chiave sconosciuta → messaggio generico)
+// Network error messages, translated (an unknown key → a generic message).
 const NET_ERRS = ['offline', 'noserver', 'pass', 'full', 'notfound', 'exists', 'badcode', 'timeout', 'qfull'];
 function netErrText(err) {
   return NET_ERRS.includes(err) ? t('net.err.' + err) : t('net.err.other', { err });
 }
 
-// ---- ospita: crea la stanza e mostra il pannello d'invito ----
-// codice stanza la cui 1ª lettera codifica la taglia della mappa (P/M/G, vedi city.js)
+// ---- Host: creates the room and shows the invite panel ----
+// A room code whose 1st letter encodes the map size (P/M/G, see city.js).
 function makeSizedRoomCode(sizeChar) {
-  const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';        // niente caratteri ambigui (0/O, 1/I/L)
+  const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';        // no ambiguous glyphs (0/O, 1/I/L)
   let tail = '';
   for (let i = 0; i < 5; i++) tail += A[Math.floor(Math.random() * A.length)];
   return (/[PMG]/.test(sizeChar) ? sizeChar : 'P') + tail;
@@ -307,17 +380,17 @@ onClick('hostGo', () => {
   const mins = $('#hostDuration') ? +$('#hostDuration').value : 10;
   const size = $('#hostSize') ? $('#hostSize').value : 'P';
   const code = makeSizedRoomCode(size);
-  // La città della taglia scelta si genera al LOAD dal seme = codice: come per
-  // l'ingresso con un codice, ricarichiamo sulla stanza giusta; al ritorno,
-  // riconosciuto l'hostIntent, creiamo davvero la stanza e mostriamo l'invito.
+  // The city of the chosen size is generated at LOAD time from the seed = code: as when
+  // joining with a code, we reload onto the right room; on the way back, once the hostIntent
+  // is recognised, we actually create the room and show the invite.
   store.set('hostIntent', { code, pass, maxP, mins, name: playerName });
   if (st) st.textContent = t('host.creating');
   location.hash = 'room=' + code;
   location.reload();
 });
-// ---- sala d'attesa: il server è al tetto di stanze, siamo in fila ----
-// Il posto e la stima arrivano dal server (netOnQueued in net.js); qui si disegnano
-// e si fa scorrere il conto alla rovescia tra un aggiornamento e l'altro.
+// ---- Waiting room: the server is at its room cap and we are queued ----
+// The place in line and the estimate come from the server (netOnQueued in net.js); here we
+// draw them and tick the countdown down between refreshes.
 function fmtWait(ms) {
   if (ms < 15_000) return t('queue.etaNow');
   const s = Math.round(ms / 1000);
@@ -338,13 +411,13 @@ onClick('queueCancel', () => { netCancelQueue(); showPanel('hostPanel'); });
 
 onClick('inviteShare', () => shareInvite($('#inviteShare')));
 onClick('inviteCopy', () => copyInvite($('#inviteCopy')));
-onClick('invitePlay', () => startMatch(false));   // NB: senza la lambda, l'evento del clic arriverebbe come `resume` (truthy) e salterebbe l'init dell'orologio → timer a 0:00
+onClick('invitePlay', () => startMatch(false));   // NB: without the lambda the click event would arrive as `resume` (truthy) and skip the clock init → timer stuck at 0:00
 onClick('inviteBack', () => { netShutdown(); showMenu(); });
 onClick('pauseShare', () => shareInvite($('#pauseShare')));
 
-// ---- entra: pannello con nome + codice + password ----
-// prefill: nome salvato, codice dal link (#room=…) e password di un eventuale
-// tentativo interrotto dal ricaricamento (joinIntent, vedi sotto)
+// ---- Join: panel with name + code + password ----
+// Prefilled with: the saved name, the code from the link (#room=…) and the password of any
+// attempt interrupted by the reload (joinIntent, see below).
 function showJoinPanel() {
   const intent = store.get('joinIntent', null);
   const n = $('#joinName'); if (n) n.value = playerName;
@@ -362,8 +435,8 @@ onClick('joinGo', () => {
   if (!/^[A-Z0-9]{4,12}$/.test(code)) { if (st) st.textContent = t('join.badCode'); return; }
   playerName = name; store.set('name', playerName);
   if (code !== ROOM_CODE) {
-    // la città è già stata generata con un altro seme: memorizza l'intento
-    // e ricarica la pagina sul codice giusto (al ritorno il pannello è precompilato)
+    // The city has already been generated from a different seed: store the intent and reload
+    // the page onto the right code (the panel comes back prefilled).
     store.set('joinIntent', { code, pass });
     location.hash = 'room=' + code;
     location.reload();
@@ -376,13 +449,13 @@ onClick('joinGo', () => {
     startMatch();
   });
 });
-// Invio nei campi del pannello "entra" = pulsante Entra
+// Enter in the "join" panel's fields = the Join button.
 for (const id of ['joinCode', 'joinPass', 'joinName']) {
   const el = $('#' + id);
   if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') { const b = $('#joinGo'); if (b) b.onclick(); } });
 }
 
-// ---- primo avvio: chiedi il nome del giocatore ----
+// ---- First run: ask for the player's name ----
 function confirmName() {
   const inp = $('#nameInput');
   const name = inp ? inp.value.trim() : '';
@@ -394,27 +467,27 @@ onClick('nameOk', confirmName);
 const nameInput = $('#nameInput');
 if (nameInput) nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') confirmName(); });
 
-// ---- primo avvio: scelta della lingua (prima di tutto il resto) ----
-// Dopo la scelta si prosegue col nome (o direttamente col menu, se il nome c'è già).
+// ---- First run: language choice (before anything else) ----
+// After choosing, we continue with the name (or straight to the menu if a name already exists).
 function chooseLang(l) {
   setLang(l);
-  if (ROOM_FROM_URL) showJoinPanel();            // arrivato da un link d'invito: prosegue lì (chiede il nome)
+  if (ROOM_FROM_URL) showJoinPanel();            // arrived from an invite link: carry on there (it asks for the name)
   else if (playerName) showMenu();
   else { showPanel('namePanel'); if (nameInput) nameInput.focus(); }
 }
 onClick('langItBtn', () => chooseLang('it'));
 onClick('langEnBtn', () => chooseLang('en'));
 
-// all'avvio decidiamo QUALE schermata mostrare in base a cosa ci ha portato qui
-// (un reload di "Riprendi partita", la creazione di una stanza, un link d'invito…).
+// At start-up we decide WHICH screen to show based on what brought us here (a "Resume
+// match" reload, a room creation, an invite link…).
 const _loadIntent = store.get('loadIntent', null);
 const _save = store.get('save', null);
 const _hostIntent = store.get('hostIntent', null);
 const _spIntent = store.get('spIntent', null);
 if (_spIntent && ROOM_FROM_URL === _spIntent.code) {
-  // ritorno dal reload di creazione partita SINGOLA: la mappa della taglia scelta è
-  // ormai generata dal seme del codice → applica violenza/durata e parti. Ripulisce
-  // l'hash così un refresh successivo riparte da capo dal menu (senza rientrare qui).
+  // Back from the SINGLE-PLAYER creation reload: the map of the chosen size has now been
+  // generated from the code's seed → apply violence/duration and start. Clears the hash so a
+  // later refresh starts over from the menu (without coming back through here).
   store.set('spIntent', null);
   history.replaceState(null, '', location.pathname + location.search);
   if (_spIntent.name) { playerName = _spIntent.name; store.set('name', playerName); }
@@ -423,17 +496,17 @@ if (_spIntent && ROOM_FROM_URL === _spIntent.code) {
   startMatch(false);
 }
 else if (_loadIntent && _save && _save.code && ROOM_FROM_URL === _save.code) {
-  // ritorno dal reload di "Riprendi partita" (singolo): la città è ormai rigenerata dal
-  // seme salvato → applica lo stato e riprendi. Ripulisce l'hash #room= così un refresh
-  // successivo torna al normale singolo (il salvataggio conserva comunque il suo codice).
+  // Back from the "Resume match" reload (single-player): the city has now been regenerated
+  // from the saved seed → apply the state and resume. Clears the #room= hash so a later
+  // refresh returns to ordinary single-player (the save keeps its own code regardless).
   store.set('loadIntent', null);
   history.replaceState(null, '', location.pathname + location.search);
   if (applySave(_save)) startMatch(true);
   else showMenu();
 }
 else if (_hostIntent && ROOM_FROM_URL === _hostIntent.code) {
-  // ritorno dal reload di creazione stanza (host): la mappa della taglia scelta è
-  // ormai generata dal seme del codice → crea davvero la stanza e mostra l'invito
+  // Back from the room-creation reload (host): the map of the chosen size has now been
+  // generated from the code's seed → actually create the room and show the invite.
   store.set('hostIntent', null);
   if (_hostIntent.name) { playerName = _hostIntent.name; store.set('name', playerName); }
   gameMinutes = _hostIntent.mins;
@@ -446,14 +519,14 @@ else if (_hostIntent && ROOM_FROM_URL === _hostIntent.code) {
       const st = $('#hostStatus'); if (st) st.textContent = netErrText(err);
       return;
     }
-    showPanel('invitePanel');       // se eravamo in sala d'attesa: ora la stanza è nostra
+    showPanel('invitePanel');       // if we were in the waiting room: the room is ours now
     netRefreshBadge();
   });
 }
-// primo avvio in assoluto: prima di tutto la lingua (poi nome, poi menu)
+// Very first run: language first of all (then name, then menu).
 else if (!langChosen()) showPanel('langPanel');
-// arrivati da un link d'invito (#room=…): dritti al pannello "entra in partita"
-// (che chiede anche il nome, quindi va bene pure al primo avvio)
+// Arrived from an invite link (#room=…): straight to the "join match" panel (which also asks
+// for the name, so it works on a first run too).
 else if (ROOM_FROM_URL) showJoinPanel();
 else if (playerName) showMenu();
 else { showPanel('namePanel'); if (nameInput) nameInput.focus(); }

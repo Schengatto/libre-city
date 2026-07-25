@@ -18,8 +18,12 @@ services:
       STATIC_DIR: /app/public          # i file del gioco (build di dist/, montati sotto)
       MAX_ROOMS: "20"                  # partite simultanee: oltre, i nuovi host vanno in sala d'attesa
       MAX_QUEUE: "30"                  # lunghezza massima della sala d'attesa
+      LEADERBOARD_FILE: /app/data/leaderboard.json   # classifica condivisa (sul volume: sopravvive ai deploy)
     volumes:
       - ./public:/app/public:ro
+      # Dati di runtime del server. In SCRITTURA e FUORI dall'immagine: il container viene
+      # ricostruito a ogni deploy, la classifica no.
+      - ./data:/app/data
     networks:
       - edge
     healthcheck:

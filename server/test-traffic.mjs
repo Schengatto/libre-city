@@ -1,12 +1,12 @@
-// LIBRE CITY · server/test-traffic.mjs — traffico: collisioni e distanze di sicurezza.
+// LIBRE CITY · server/test-traffic.mjs — traffic: collisions and safe distances.
 //
-// Gira la simulazione headless (la STESSA del client) e verifica che:
-//  1) le sagome delle auto non si compenetrano (l'urto è sul bordo, non dentro
-//     la grafica);
-//  2) le auto guidate dall'IA tengono una distanza di sicurezza dal veicolo che
-//     precede (non finiscono attaccate);
-//  3) il traffico continua a scorrere (nessuno stallo permanente per via delle
-//     precedenze o dello sblocca-stalli).
+// Runs the headless simulation (the SAME one as the client) and checks that:
+//  1) the car silhouettes do not interpenetrate (impact is on the edge, not inside the
+//     artwork);
+//  2) AI-driven cars keep a safe distance from the vehicle in front (they do not end up
+//     stuck together);
+//  3) traffic keeps flowing (no permanent stall from the right-of-way rules or the
+//     stall-breaker).
 
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
@@ -18,12 +18,12 @@ const check = (cond, msg, extra) => {
   else { fail++; console.log('  ✗   ' + msg + (extra ? ' → ' + extra : '')); }
 };
 
-// mezza-estensione della scatola orientata di un veicolo lungo l'asse u (unitario)
+// Half-extent of a vehicle's oriented box along the unit axis u.
 const proj = (c, ux, uy) => {
   const ca = Math.cos(c.angle), sa = Math.sin(c.angle);
   return c.w / 2 * Math.abs(ux * ca + uy * sa) + c.h / 2 * Math.abs(uy * ca - ux * sa);
 };
-// compenetrazione fra le due sagome (0 = si sfiorano, <0 = staccate): SAT
+// Interpenetration between the two silhouettes (0 = just touching, <0 = apart): SAT.
 function overlap(a, b) {
   const ca = Math.cos(a.angle), sa = Math.sin(a.angle);
   const cb = Math.cos(b.angle), sb = Math.sin(b.angle);
@@ -34,15 +34,15 @@ function overlap(a, b) {
     pen = Math.min(pen, proj(a, ux, uy) + proj(b, ux, uy) - Math.abs(dx * ux + dy * uy));
   return pen;
 }
-// spazio libero fra il muso di c e la coda di chi lo precede NELLA SUA CORSIA
-// (solo veicoli con la stessa direzione di marcia: è la coda del traffico, non
-// chi taglia l'incrocio di traverso)
+// Free space between c's nose and the tail of whoever is ahead IN ITS OWN LANE (only
+// vehicles travelling the same way: this is the traffic queue, not someone cutting across
+// the junction).
 function queueGap(c, cars) {
   const ax = c.dir.x, ay = c.dir.y;
   let gap = Infinity;
   for (const o of cars) {
     if (o === c || o.role === 'parked') continue;
-    if (ax * o.dir.x + ay * o.dir.y < 0.85) continue;      // non è incolonnato con me
+    if (ax * o.dir.x + ay * o.dir.y < 0.85) continue;      // not queued up behind/ahead of me
     const dx = o.x - c.x, dy = o.y - c.y;
     const along = dx * ax + dy * ay;
     if (along <= 0) continue;
@@ -56,26 +56,26 @@ const sim = createRoomSim('TRAFFIC');
 sim.addPlayer('Tester', 0, 'p1');
 
 const TICKS = 1200;
-let worstPen = -Infinity, worstPenPair = '';   // compenetrazione peggiore fra due sagome
-let worstGap = Infinity, worstGapAt = 0;       // distanza di sicurezza peggiore in coda
-const moved = new Map();                       // id → px percorsi (per lo stallo)
-const seenAt = new Map();                      // id → ultimo tick visto
+let worstPen = -Infinity, worstPenPair = '';   // worst interpenetration between two silhouettes
+let worstGap = Infinity, worstGapAt = 0;       // worst safe distance in a queue
+const moved = new Map();                       // id → px travelled (for stall detection)
+const seenAt = new Map();                      // id → last tick seen
 const lastPos = new Map();
 
 for (let f = 0; f < TICKS; f++) {
   sim.tick();
   const cars = sim._cars();
-  // 1) compenetrazioni
+  // 1) Interpenetrations.
   for (let i = 0; i < cars.length; i++) for (let j = i + 1; j < cars.length; j++) {
     const a = cars[i], b = cars[j];
     if (a.exploded || b.exploded) continue;
-    if (a.isTank || b.isTank) continue;                       // i cingoli passano sopra
+    if (a.isTank || b.isTank) continue;                       // tracks drive straight over
     const d2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
     if (d2 > 64 * 64) continue;
     const pen = overlap(a, b);
     if (pen > worstPen) { worstPen = pen; worstPenPair = `${a.role}#${a.id} vs ${b.role}#${b.id}`; }
   }
-  // 2) distanze di sicurezza fra auto AI in coda + 3) scorrimento
+  // 2) Safe distances between queuing AI cars + 3) flow.
   for (const c of cars) {
     if (c.role !== 'traffic' || c.driver) continue;
     const g = queueGap(c, cars);
@@ -92,14 +92,14 @@ const traffic = cars.filter(c => c.role === 'traffic' && !c.driver);
 
 console.log(`1) ${TICKS} tick, ${cars.length} veicoli (${traffic.length} guidati dall'IA)`);
 
-// le sagome possono sfiorarsi e, nell'istante dell'urto, sovrapporsi di poco (la
-// risoluzione le separa nello stesso frame): tolleriamo qualche pixel, non mezza auto.
+// The silhouettes may touch and, at the instant of impact, overlap slightly (resolution
+// separates them within the same frame): we tolerate a few pixels, not half a car.
 check(worstPen < 6, `nessuna compenetrazione oltre 6px (peggiore ${worstPen.toFixed(1)}px)`, worstPenPair);
 
-// distanza di sicurezza: mai meno di SAFE_GAP (16) meno un margine di frenata
+// Safe distance: never less than SAFE_GAP (16) minus a braking margin.
 check(worstGap > 8, `distanza minima dal veicolo che precede > 8px (peggiore ${worstGap.toFixed(1)}px al tick ${worstGapAt})`);
 
-// nessuno stallo permanente: le auto vive da un po' devono aver percorso strada
+// No permanent stall: cars alive for a while must have covered some ground.
 const stalled = [...moved.entries()].filter(([id, d]) => d < 60 && seenAt.get(id) === TICKS - 1);
 check(stalled.length === 0, `nessuna auto in stallo permanente (${stalled.length} ferme su ${traffic.length})`,
       stalled.slice(0, 4).map(([id, d]) => `#${id}: ${d.toFixed(0)}px`).join(', '));

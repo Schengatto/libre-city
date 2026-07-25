@@ -1,13 +1,12 @@
 #!/usr/bin/env node
-// gen-icons.js — genera le icone PWA (in icons/) senza dipendenze esterne.
+// gen-icons.js — generates the PWA icons (into icons/) with no external dependencies.
 //
 //   node tools/gen-icons.js
 //
-// Non servono ImageMagick/sharp/canvas: un piccolo encoder PNG (via node:zlib)
-// e un rasterizzatore con supersampling disegnano un taxi visto dall'alto su un
-// incrocio, con la palette del gioco (navy #0d0b28, giallo taxi #ffc832).
-// Le PNG risultanti sono asset sorgente: build.js le copia in dist/, quindi
-// questo script va rilanciato solo se vuoi ridisegnare l'icona.
+// ImageMagick/sharp/canvas are not needed: a small PNG encoder (via node:zlib) and a
+// supersampling rasteriser draw a top-down taxi on a junction, using the game's palette
+// (navy #0d0b28, taxi yellow #ffc832). The resulting PNGs are source assets: build.js copies
+// them into dist/, so this script only needs rerunning if you want to redraw the icon.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -57,12 +56,12 @@ function encodePNG(w, h, rgba) {
   return Buffer.concat([sig, chunk('IHDR', ihdr), chunk('IDAT', idat), chunk('IEND', Buffer.alloc(0))]);
 }
 
-// ------------------------------------------------------------------- disegno
+// ------------------------------------------------------------------- drawing
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
 const lerp3 = (A, B, t) => [lerp(A[0], B[0], t), lerp(A[1], B[1], t), lerp(A[2], B[2], t)];
 
-// composite "source over" (alpha dritto, rgb 0..255, a 0..1)
+// "Source over" compositing (straight alpha, rgb 0..255, a 0..1).
 function over(dst, r, g, b, a) {
   if (a <= 0) return;
   const na = a + dst.a * (1 - a);
@@ -72,7 +71,7 @@ function over(dst, r, g, b, a) {
   dst.b = (b * a + dst.b * dst.a * (1 - a)) / na;
   dst.a = na;
 }
-// test "dentro" di un rettangolo con angoli arrotondati (coord normalizzate 0..1)
+// "Inside" test for a rounded rectangle (normalised 0..1 coordinates).
 function inRR(u, v, x0, y0, x1, y1, r) {
   if (u < x0 || u > x1 || v < y0 || v > y1) return false;
   const cx = clamp(u, x0 + r, x1 - r);
@@ -86,21 +85,21 @@ function inCircle(u, v, cx, cy, r) {
   return dx * dx + dy * dy <= r * r;
 }
 
-const NAVY_HI = [0x2b, 0x2c, 0x6e];  // indaco in alto a sinistra
-const NAVY_LO = [0x0c, 0x0a, 0x22];  // navy profondo (≈ #0d0b28) in basso a destra
-const ASPH = [0x24, 0x27, 0x36];     // asfalto
-const DASH = [0xff, 0xc8, 0x32];     // strisce gialle
-const TAXI_HI = [0xff, 0xcf, 0x3a];  // giallo taxi chiaro (tetto)
-const TAXI_LO = [0xf0, 0xad, 0x0e];  // giallo taxi scuro (coda)
-const RIM = [0x8a, 0x5a, 0x08];      // bordo ambra scuro
-const GLASS = [0x22, 0x30, 0x49];    // vetri
-const WHEEL = [0x14, 0x15, 0x1c];    // gomme
-const BEACON = [0xff, 0x50, 0x40];   // luce sul tetto / fari posteriori
-const HEAD = [0xff, 0xf3, 0xc4];     // fari anteriori
+const NAVY_HI = [0x2b, 0x2c, 0x6e];  // indigo, top left
+const NAVY_LO = [0x0c, 0x0a, 0x22];  // deep navy (≈ #0d0b28), bottom right
+const ASPH = [0x24, 0x27, 0x36];     // asphalt
+const DASH = [0xff, 0xc8, 0x32];     // yellow road markings
+const TAXI_HI = [0xff, 0xcf, 0x3a];  // light taxi yellow (roof)
+const TAXI_LO = [0xf0, 0xad, 0x0e];  // dark taxi yellow (rear)
+const RIM = [0x8a, 0x5a, 0x08];      // dark amber outline
+const GLASS = [0x22, 0x30, 0x49];    // glass
+const WHEEL = [0x14, 0x15, 0x1c];    // tyres
+const BEACON = [0xff, 0x50, 0x40];   // roof light / tail lights
+const HEAD = [0xff, 0xf3, 0xc4];     // headlights
 
 function bgColor(u, v) {
   const base = lerp3(NAVY_HI, NAVY_LO, clamp((u + v) / 2, 0, 1));
-  // alone di luce dietro il taxi
+  // Halo of light behind the taxi.
   const dx = u - 0.5, dy = v - 0.5;
   const d = Math.sqrt(dx * dx + dy * dy) / 0.5;
   const glow = Math.pow(clamp(1 - d, 0, 1), 1.6) * 0.32;
@@ -111,7 +110,7 @@ function bgColor(u, v) {
   ];
 }
 
-// strisce tratteggiate al centro delle strade, saltando l'incrocio (dove sta il taxi)
+// Dashed centre lines on the roads, skipping the junction (where the taxi sits).
 function dash(dst, u, v) {
   const segs = [[0.05, 0.13], [0.16, 0.24], [0.76, 0.84], [0.87, 0.95]];
   for (const [a, b] of segs) {
@@ -121,26 +120,26 @@ function dash(dst, u, v) {
   }
 }
 
-// disegna strade + taxi in coordinate modello [0,1]
+// Draws roads + taxi in model coordinates [0,1].
 function foreground(dst, u, v) {
-  // asfalto (incrocio)
+  // Asphalt (the junction).
   if (inRect(u, v, 0.35, 0, 0.65, 1)) over(dst, ASPH[0], ASPH[1], ASPH[2], 1);
   if (inRect(u, v, 0, 0.35, 1, 0.65)) over(dst, ASPH[0], ASPH[1], ASPH[2], 1);
   dash(dst, u, v);
 
-  // ombra morbida (due passate concentriche)
+  // Soft shadow (two concentric passes).
   if (inRR(u, v, 0.33, 0.235, 0.67, 0.80, 0.10)) over(dst, 0, 0, 0, 0.18);
   if (inRR(u, v, 0.345, 0.25, 0.655, 0.79, 0.09)) over(dst, 0, 0, 0, 0.22);
 
-  // gomme (sporgono dai lati; il corpo le coprirà all'interno)
+  // Tyres (they stick out at the sides; the body will cover them inboard).
   const wheels = [
-    [0.315, 0.31, 0.362, 0.42], [0.638, 0.31, 0.685, 0.42], // anteriori
-    [0.315, 0.58, 0.362, 0.69], [0.638, 0.58, 0.685, 0.69], // posteriori
+    [0.315, 0.31, 0.362, 0.42], [0.638, 0.31, 0.685, 0.42], // front
+    [0.315, 0.58, 0.362, 0.69], [0.638, 0.58, 0.685, 0.69], // rear
   ];
   for (const [x0, y0, x1, y1] of wheels)
     if (inRR(u, v, x0, y0, x1, y1, 0.016)) over(dst, WHEEL[0], WHEEL[1], WHEEL[2], 1);
 
-  // bordo del corpo (leggermente più grande) + corpo
+  // Body outline (slightly larger) + body.
   if (inRR(u, v, 0.337, 0.217, 0.663, 0.783, 0.088)) over(dst, RIM[0], RIM[1], RIM[2], 1);
   if (inRR(u, v, 0.345, 0.225, 0.655, 0.775, 0.082)) {
     const t = clamp((v - 0.225) / 0.55, 0, 1);
@@ -148,14 +147,14 @@ function foreground(dst, u, v) {
     over(dst, c[0], c[1], c[2], 1);
   }
 
-  // parabrezza + lunotto
+  // Windscreen + rear window.
   if (inRR(u, v, 0.388, 0.288, 0.612, 0.40, 0.05)) over(dst, GLASS[0], GLASS[1], GLASS[2], 1);
   if (inRR(u, v, 0.388, 0.60, 0.612, 0.712, 0.05)) over(dst, GLASS[0], GLASS[1], GLASS[2], 1);
 
-  // luce/insegna sul tetto (tocco di rosso al centro)
+  // Roof light/sign (a touch of red at the centre).
   if (inRR(u, v, 0.458, 0.455, 0.542, 0.545, 0.02)) over(dst, BEACON[0], BEACON[1], BEACON[2], 1);
 
-  // fari
+  // Headlights.
   if (inCircle(u, v, 0.383, 0.247, 0.023)) over(dst, HEAD[0], HEAD[1], HEAD[2], 1);
   if (inCircle(u, v, 0.617, 0.247, 0.023)) over(dst, HEAD[0], HEAD[1], HEAD[2], 1);
   if (inCircle(u, v, 0.383, 0.753, 0.02)) over(dst, BEACON[0], BEACON[1], BEACON[2], 1);
@@ -164,7 +163,7 @@ function foreground(dst, u, v) {
 
 // opt: { round:bool, rNorm, scale, bleed:bool }
 function render(size, opt) {
-  const SS = 4;                 // supersampling per lato → 16 campioni/pixel
+  const SS = 4;                 // supersampling per side → 16 samples/pixel
   const rgba = Buffer.alloc(size * size * 4);
   const scale = opt.scale || 1;
   for (let y = 0; y < size; y++) {
@@ -176,7 +175,7 @@ function render(size, opt) {
           const v = (y + (sy + 0.5) / SS) / size;
           const dst = { r: 0, g: 0, b: 0, a: 0 };
           if (opt.round && !inRR(u, v, 0, 0, 1, 1, opt.rNorm)) {
-            // fuori dagli angoli arrotondati → trasparente
+            // Outside the rounded corners → transparent.
           } else {
             const bc = bgColor(u, v);
             over(dst, bc[0], bc[1], bc[2], 1);
@@ -190,7 +189,7 @@ function render(size, opt) {
       const n = SS * SS;
       const A = a / n;
       const i = (y * size + x) * 4;
-      // de-premultiplica per lo storage (alpha dritto)
+      // Un-premultiply for storage (straight alpha).
       rgba[i] = A > 0 ? Math.round(clamp(r / a, 0, 255)) : 0;
       rgba[i + 1] = A > 0 ? Math.round(clamp(g / a, 0, 255)) : 0;
       rgba[i + 2] = A > 0 ? Math.round(clamp(b / a, 0, 255)) : 0;

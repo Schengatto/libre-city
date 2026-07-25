@@ -5,6 +5,7 @@ test-sim.mjs
 test-server-sim.mjs
 docker-compose.yml
 public
+data
 fly.toml
 .dockerignore
 .DS_Store

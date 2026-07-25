@@ -1,52 +1,50 @@
-// LIBRE CITY · js/train.js — ferrovia e treno di passaggio.
-// Ogni mappa ha UN binario orizzontale, a una quota verticale casuale ma
-// deterministica (dipende solo dal codice stanza, come tutta la generazione:
-// host, ospiti e server autoritativo vedono la stessa linea). Un treno la
-// percorre ogni 30 secondi: le auto del traffico si fermano al passaggio
-// (tranne le volanti in inseguimento), la locomotiva schiaccia le auto che
-// tocca, i vagoni le sballottano come un normale urto.
+// LIBRE CITY · js/train.js — railway and passing train.
+// Every map has ONE horizontal track at a random but deterministic vertical position
+// (it depends only on the room code, like all generation: host, guests and the
+// authoritative server see the same line). A train runs along it every 30 seconds:
+// traffic stops at the crossing (except patrol cars mid-chase), the locomotive crushes
+// any car it touches, and the carriages knock them about like a normal collision.
 
-// ---------- Geometria del binario (deterministica dal seme) ----------
-// Riga di tile su cui corre la ferrovia: fascia centrale, mai sui bordi.
-// hashStr (core.js) NON pesca dal generatore seedato della città: così
-// aggiungere il binario non altera la sequenza RNG di city.js.
+// ---------- Track geometry (deterministic from the seed) ----------
+// Tile row the railway runs along: central band, never on the edges. hashStr (core.js)
+// does NOT draw from the city's seeded generator, so adding the track does not disturb
+// city.js's RNG sequence.
 const RAIL_TY = 20 + hashStr(ROOM_CODE + ':RAIL') % Math.max(1, MAP_H - 40);
-const RAIL_Y = (RAIL_TY + 0.5) * T;      // quota verticale del binario (px mondo)
-const RAIL_GAUGE = 20;                    // scartamento: distanza fra le due rotaie
-const RAIL_BALLAST = RAIL_GAUGE + 24;     // massicciata (ghiaia) attorno alle rotaie
-const RAIL_TIE_H = RAIL_GAUGE + 14;       // lunghezza delle traversine
+const RAIL_Y = (RAIL_TY + 0.5) * T;      // vertical position of the track (world px)
+const RAIL_GAUGE = 20;                    // gauge: distance between the two rails
+const RAIL_BALLAST = RAIL_GAUGE + 24;     // ballast (gravel) around the rails
+const RAIL_TIE_H = RAIL_GAUGE + 14;       // sleeper length
 
-// ---------- Il treno ----------
-const TRAIN_PERIOD = 60 * 30;             // un passaggio ogni 30 s (frame)
-const LOCO_L = 66, WAG_L = 52, WAG_N = 3, TRAIN_GAP = 8;   // locomotiva + 3 vagoni
-const TRAIN_BODY_H = 30;                  // larghezza (in Y) della sagoma del treno
+// ---------- The train ----------
+const TRAIN_PERIOD = 60 * 30;             // one pass every 30 s (frames)
+const LOCO_L = 66, WAG_L = 52, WAG_N = 3, TRAIN_GAP = 8;   // locomotive + 3 carriages
+const TRAIN_BODY_H = 30;                  // width (in Y) of the train's silhouette
 const TRAIN_LEN = LOCO_L + WAG_N * (WAG_L + TRAIN_GAP);
-const TRAIN_EDGE = TRAIN_LEN + 120;       // margine fuori mappa a inizio/fine corsa
+const TRAIN_EDGE = TRAIN_LEN + 120;       // off-map margin at the start/end of a run
 const TRAIN_TRAVEL = WORLD_W + 2 * TRAIN_EDGE;
-const TRAIN_CROSS_F = Math.round(TRAIN_PERIOD * 0.72);     // frame per attraversare tutta la mappa
-const TRAIN_SPEED = TRAIN_TRAVEL / TRAIN_CROSS_F;          // px/frame (scala con la mappa)
-const TRAIN_STOP_BAND = 2.6 * T;          // entro questa distanza dal binario le auto si fermano
-const TRAIN_WARN = 360;                   // margine orizzontale entro cui il treno "blocca" il traffico
+const TRAIN_CROSS_F = Math.round(TRAIN_PERIOD * 0.72);     // frames to cross the whole map
+const TRAIN_SPEED = TRAIN_TRAVEL / TRAIN_CROSS_F;          // px/frame (scales with the map)
+const TRAIN_STOP_BAND = 2.6 * T;          // cars within this distance of the track stop
+const TRAIN_WARN = 360;                   // horizontal margin within which the train holds traffic
 
-// stato del treno: rigenerato ogni frame in updateTrainKinematics(); `segs` sono i
-// riquadri (locomotiva + vagoni) con centro X, larghezza e flag locomotiva.
+// Train state: rebuilt every frame in updateTrainKinematics(); `segs` are the boxes
+// (locomotive + carriages) with centre X, width and a locomotive flag.
 const train = { active: false, isTrain: true, x: 0, y: RAIL_Y, dir: 1, headX: 0, minX: 0, maxX: 0, segs: [] };
 
-// posizione del treno in funzione del solo `frame` (nessuna casualità: identica
-// su ogni client/server). Solo cinematica: gli urti sono in trainCollide(),
-// chiamato DOPO il movimento di auto e player così il muro è solido (niente
-// compenetrazione di un frame). Il client che rende un server autoritativo
-// chiama solo questa (gli urti li decide il server).
+// Train position as a function of `frame` alone (no randomness: identical on every
+// client/server). Kinematics only — collisions live in trainCollide(), called AFTER
+// cars and players have moved so the wall is solid (no one-frame overlap). A client
+// rendering an authoritative server calls only this one (the server rules on impacts).
 function updateTrainKinematics() {
   const phase = frame % TRAIN_PERIOD;
   const pass = Math.floor(frame / TRAIN_PERIOD);
-  const dir = pass % 2 === 0 ? 1 : -1;                     // direzione alternata a ogni passaggio
+  const dir = pass % 2 === 0 ? 1 : -1;                     // direction alternates each pass
   train.active = phase <= TRAIN_CROSS_F;
   if (!train.active) { train.segs.length = 0; return; }
   const traveled = phase * TRAIN_SPEED;
-  const headX = dir > 0 ? -TRAIN_EDGE + traveled : WORLD_W + TRAIN_EDGE - traveled;   // muso del treno
+  const headX = dir > 0 ? -TRAIN_EDGE + traveled : WORLD_W + TRAIN_EDGE - traveled;   // nose of the train
   train.dir = dir; train.headX = headX; train.x = headX;
-  // sagome: dal muso verso la coda (all'indietro rispetto alla marcia)
+  // Silhouettes: from the nose back towards the tail (against the direction of travel).
   train.segs.length = 0;
   let off = 0;
   const addSeg = (len, loco) => { train.segs.push({ cx: headX - dir * (off + len / 2), w: len, loco }); off += len + TRAIN_GAP; };
@@ -55,45 +53,44 @@ function updateTrainKinematics() {
   let minX = Infinity, maxX = -Infinity;
   for (const s of train.segs) { if (s.cx - s.w / 2 < minX) minX = s.cx - s.w / 2; if (s.cx + s.w / 2 > maxX) maxX = s.cx + s.w / 2; }
   train.minX = minX; train.maxX = maxX;
-  // rombo/tromba del treno vicino al giocatore (sul server hear() è nullo ⇒ muto)
+  // Rumble/whistle when near the player (on the server hear() is null ⇒ silent).
   if (frame % 10 === 0) { const h = hear(headX, RAIL_Y, 1000); if (h) sfx.train(h, phase < TRAIN_SPEED); }
 }
 
-// true se il treno impone lo STOP a un'auto del traffico (near il binario e near il treno)
+// True if the train forces a traffic car to STOP (near the track and near the train).
 function trainBlocking(c) {
   if (!train.active) return false;
   if (Math.abs(c.y - RAIL_Y) > TRAIN_STOP_BAND) return false;
   return c.x > train.minX - TRAIN_WARN && c.x < train.maxX + TRAIN_WARN;
 }
 
-// urti del treno (chiamato DOPO il movimento). Il treno è un MURO immobile: non
-// lo si sposta mai. La locomotiva schiaccia (distrugge) le auto che tocca; i
-// vagoni sono pareti solide — l'auto che li tocca viene ricacciata fuori dalla
-// sagoma e frenata, come contro un muro. A piedi la locomotiva è letale, un
-// vagone ti respinge ferendoti.
+// Train collisions (called AFTER movement). The train is an immovable WALL: it is never
+// pushed. The locomotive crushes (destroys) any car it touches; the carriages are solid
+// walls — a car touching one is shoved back out of the silhouette and slowed, as against
+// a wall. On foot the locomotive is lethal, while a carriage knocks you back and hurts.
 function trainCollide() {
   if (!train.active) return;
   const halfH = TRAIN_BODY_H / 2;
-  // --- auto (all'indietro: explodeCar rimuove dall'array) ---
+  // --- cars (backwards: explodeCar removes from the array) ---
   for (let i = cars.length - 1; i >= 0; i--) {
     const c = cars[i];
-    const cr = c.colH;                                    // mezza-estensione di collisione
+    const cr = c.colH;                                    // collision half-extent
     if (Math.abs(c.y - RAIL_Y) >= halfH + cr) continue;
     for (const s of train.segs) {
-      if (c.x <= s.cx - s.w / 2 - cr || c.x >= s.cx + s.w / 2 + cr) continue;   // niente sovrapposizione
-      if (s.loco) { explodeCar(c); break; }              // schiacciata: distrutta
-      // vagone = muro: spingi l'auto fuori dal fianco (lato su cui si trova) e frena
+      if (c.x <= s.cx - s.w / 2 - cr || c.x >= s.cx + s.w / 2 + cr) continue;   // no overlap
+      if (s.loco) { explodeCar(c); break; }              // run over: destroyed
+      // Carriage = wall: push the car out of the side it is on, and brake it.
       const sign = c.y < RAIL_Y ? -1 : 1;
       const penY = (halfH + cr) - Math.abs(c.y - RAIL_Y);
       moveBox(c, 0, sign * (penY + 0.5), c.colH, c.colH);
-      c.speed *= 0.3; c.kvx *= 0.5; c.kvy *= 0.5;         // urto contro il muro: quasi ferma
+      c.speed *= 0.3; c.kvx *= 0.5; c.kvy *= 0.5;         // hit a wall: almost stopped
       damageCar(c, 4);
       if (c.driver === 'player') { shake(5, 6); sfx.crash(); }
       break;
     }
   }
-  eachActivePlayer(v => { if (v.car) { v.x = v.car.x; v.y = v.car.y; } });   // ri-sincronizza chi guida
-  // --- giocatori a piedi ---
+  eachActivePlayer(v => { if (v.car) { v.x = v.car.x; v.y = v.car.y; } });   // resync whoever is driving
+  // --- players on foot ---
   eachActivePlayer(v => {
     if (v.car || v.downT > 0) return;
     if (Math.abs(v.y - RAIL_Y) >= halfH + v.r) return;
@@ -101,9 +98,9 @@ function trainCollide() {
       if (v.x <= s.cx - s.w / 2 - v.r || v.x >= s.cx + s.w / 2 + v.r) continue;
       const away = v.y < RAIL_Y ? -1 : 1;
       asPlayer(v, () => {
-        hurtPlayer(s.loco ? 120 : 45, Math.atan2(away, train.dir));   // locomotiva = letale
+        hurtPlayer(s.loco ? 120 : 45, Math.atan2(away, train.dir));   // locomotive = lethal
         const penY = (halfH + player.r) - Math.abs(player.y - RAIL_Y);
-        moveBox(player, 0, away * (penY + 1), player.r, player.r);     // respinto fuori dal treno
+        moveBox(player, 0, away * (penY + 1), player.r, player.r);     // pushed clear of the train
         shake(7, 9);
       });
       break;
@@ -111,11 +108,11 @@ function trainCollide() {
   });
 }
 
-// ---------- Disegno della ferrovia (statico, cotto nei chunk da render.js) ----------
+// ---------- Drawing the railway (static, baked into the chunks by render.js) ----------
 function drawRailway() {
   const sy = Math.round(RAIL_Y - camY);
-  if (sy < -RAIL_BALLAST || sy > vh + RAIL_BALLAST) return;               // binario fuori dal chunk
-  // massicciata (ghiaia)
+  if (sy < -RAIL_BALLAST || sy > vh + RAIL_BALLAST) return;               // track outside this chunk
+  // Ballast (gravel).
   ctx.fillStyle = '#484440';
   ctx.fillRect(0, sy - RAIL_BALLAST / 2, vw, RAIL_BALLAST);
   ctx.fillStyle = 'rgba(255,255,255,.05)';
@@ -123,12 +120,12 @@ function drawRailway() {
     const px = Math.round(wx - camX), h = hash2(wx | 0, RAIL_TY);
     ctx.fillRect(px + (h & 3), sy - RAIL_BALLAST / 2 + (h >> 2) % RAIL_BALLAST, 2, 2);
   }
-  // traversine
+  // Sleepers.
   ctx.fillStyle = '#5a3f2a';
   const step = 16;
   for (let wx = Math.floor(camX / step) * step; wx < camX + vw + step; wx += step)
     ctx.fillRect(Math.round(wx - camX), sy - RAIL_TIE_H / 2, 6, RAIL_TIE_H);
-  // le due rotaie d'acciaio, con luce sopra
+  // The two steel rails, with a highlight along the top.
   ctx.fillStyle = '#8a9098';
   ctx.fillRect(0, sy - RAIL_GAUGE / 2 - 1, vw, 3);
   ctx.fillRect(0, sy + RAIL_GAUGE / 2 - 1, vw, 3);
@@ -137,7 +134,7 @@ function drawRailway() {
   ctx.fillRect(0, sy + RAIL_GAUGE / 2 - 1, vw, 1);
 }
 
-// ---------- Disegno del treno (entità dinamica, ordinata per Y in render()) ----------
+// ---------- Drawing the train (dynamic entity, Y-sorted in render()) ----------
 function drawTrain() {
   if (!train.active) return;
   const y = RAIL_Y - camY;
@@ -151,19 +148,19 @@ function drawTrain() {
     const x = s.cx - camX;
     if (x + s.w / 2 < -20 || x - s.w / 2 > vw + 20) continue;
     const hw = s.w / 2, hh = TRAIN_BODY_H / 2;
-    // corpo
+    // Body.
     ctx.fillStyle = s.loco ? '#8a2f2f' : (i % 2 ? '#3f6a8c' : '#3a7a5a');
     roundRect(x - hw, y - hh, s.w, TRAIN_BODY_H, 5); ctx.fill();
     ctx.strokeStyle = 'rgba(0,0,0,.4)'; ctx.lineWidth = 1.5; roundRect(x - hw, y - hh, s.w, TRAIN_BODY_H, 5); ctx.stroke();
-    // tetto
+    // Roof.
     ctx.fillStyle = 'rgba(0,0,0,.22)'; roundRect(x - hw + 6, y - hh + 4, s.w - 12, TRAIN_BODY_H - 8, 3); ctx.fill();
-    // finestrini
+    // Windows.
     ctx.fillStyle = 'rgba(150,210,255,.8)';
     for (let wx = x - hw + 11; wx < x + hw - 9; wx += 14) ctx.fillRect(wx, y - 4, 8, 8);
     if (s.loco) {
       const front = train.dir > 0 ? x + hw : x - hw;
-      ctx.fillStyle = '#ffe9a0'; ctx.beginPath(); ctx.arc(front - train.dir * 4, y, 3, 0, TAU); ctx.fill();   // faro
-      ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(x - train.dir * hw * 0.4, y, 4, 0, TAU); ctx.fill();   // comignolo
+      ctx.fillStyle = '#ffe9a0'; ctx.beginPath(); ctx.arc(front - train.dir * 4, y, 3, 0, TAU); ctx.fill();   // headlight
+      ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(x - train.dir * hw * 0.4, y, 4, 0, TAU); ctx.fill();   // chimney
     }
   }
 }

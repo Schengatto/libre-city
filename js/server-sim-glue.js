@@ -1,27 +1,28 @@
-// LIBRE CITY · js/server-sim-glue.js — colla HEADLESS per la simulazione autoritativa (Fase 2).
+// LIBRE CITY · js/server-sim-glue.js — HEADLESS glue for the authoritative simulation
+// (Phase 2).
 //
-// NON è incluso in index.html: viene concatenato IN CODA al bundle della sim solo
-// da server/sim-runtime.js (Node + vm), così condivide lo scope globale dei
-// <script> classici del gioco e può leggere/scrivere player/cars/peds e chiamare
-// le funzioni della sim. Qui vivono:
-//   1) gli SHIM DI INPUT che nel browser stanno in input.js (assente sul server);
-//   2) lo stato MULTI-GIOCATORE (players[]) e l'orchestrazione del tick;
-//   3) enter/exit auto e clacson (compatti, da input.js);
-//   4) l'API di controllo `__sim` che l'harness Node richiama oltre il confine vm.
+// This is NOT included in index.html: it is appended to the END of the sim bundle by
+// server/sim-runtime.js alone (Node + vm), so it shares the global scope of the game's
+// classic <script> tags and can read/write player/cars/peds and call the sim's functions.
+// It holds:
+//   1) the INPUT SHIMS that live in input.js in the browser (absent on the server);
+//   2) the MULTIPLAYER state (players[]) and the tick orchestration;
+//   3) vehicle enter/exit and the horn (condensed, from input.js);
+//   4) the `__sim` control API the Node harness calls across the vm boundary.
 //
-// Modello: UNA sola città autoritativa per stanza. L'IA e i danni sono resi
-// multi-player dagli helper in entities.js (nearestPlayer/eachActivePlayer/asPlayer),
-// attivati impostando MP = players. Il livello "ricercato" è di STANZA (heat
-// condiviso) in questa prima versione; cash/morte/respawn sono per-giocatore.
+// Model: ONE authoritative city per room. The AI and damage are made multiplayer-aware by
+// the helpers in entities.js (nearestPlayer/eachActivePlayer/asPlayer), switched on by
+// setting MP = players. The wanted level is per-ROOM (shared heat) in this first version;
+// cash/death/respawn are per player.
 
-started = true;                          // abilita weaponKey ecc. (nessun rendering sul server)
+started = true;                          // enables weaponKey etc. (no rendering on the server)
 
-// ---- shim di input: leggono il comando del giocatore attualmente in simulazione ----
+// ---- Input shims: they read the command of the player currently being simulated ----
 var __curInput = { ax: 0, ay: 0, aim: 0, fireHeld: false, fireEdge: false };
 var keys = {};
 var touchDrive = { active: false, angle: 0 };
 var usingTouch = false;
-var missionsOn = false;                  // niente missioni in autoritativo
+var missionsOn = false;                  // no missions in authoritative mode
 var mDownL = false, mClicked = false;
 
 function held(...codes) {
@@ -34,15 +35,16 @@ function held(...codes) {
   }
   return false;
 }
-// niente mouse sul server: ricostruiamo un punto davanti al player dall'angolo di
-// mira trasmesso, così atan2(mouseWY-y, mouseWX-x) torna quell'angolo (armi/torretta/idrante)
+// There is no mouse on the server: we rebuild a point in front of the player from the
+// transmitted aim angle, so that atan2(mouseWY-y, mouseWX-x) returns that angle
+// (weapons/turret/hydrant).
 function mouseWX() { return player.x + Math.cos(__curInput.aim) * 130; }
 function mouseWY() { return player.y + Math.sin(__curInput.aim) * 130; }
-function applyTouchInput() {}            // il tick lo guida la glue
+function applyTouchInput() {}            // the glue drives the tick
 
-// ===== stato multi-giocatore =====
+// ===== Multiplayer state =====
 var players = [];
-MP = players;                            // attiva il percorso multi-player negli helper della sim
+MP = players;                            // switches the sim helpers onto the multiplayer path
 var __playerSeq = 0;
 
 function makeSimPlayer(name, shirtIdx) {
@@ -53,24 +55,24 @@ function makeSimPlayer(name, shirtIdx) {
     car: null, shootCd: 0, hurtCd: 0, punchT: 0,
     weaponIdx: 0, owned: WEAPONS.map(w => !w.price),
     shirt: '#e0533a', skin: '#f6c79a', hair: '#5a3a1a',
-    wanted: 0, wantedHeat: 0, crimeCd: 0,         // livello ricercato PER-GIOCATORE
+    wanted: 0, wantedHeat: 0, crimeCd: 0,         // PER-PLAYER wanted level
     cash: 0, downT: 0, downKind: null, kills: 0, deaths: 0,
-    score: 0, streak: 0, bounty: 0, events: [],   // punteggio/serie/taglia + coda messaggi (toast) del player
+    score: 0, streak: 0, bounty: 0, events: [],   // score/streak/bounty + the player's queued toast messages
     input: { ax: 0, ay: 0, aim: 0, fireHeld: false, fireEdge: false, enterExit: false, horn: false, weapon: null },
   };
 }
 function playerById(id) { for (const p of players) if (p.id === id) return p; return null; }
-// marshalling dei globali per-giocatore (downT/downKind/cash) attorno alla sua fase
+// Marshals the per-player globals (downT/downKind/cash) around that player's phase.
 function loadP(pl) { player = pl; downT = pl.downT | 0; downKind = pl.downKind; cash = pl.cash | 0;
   wantedHeat = pl.wantedHeat || 0; wanted = pl.wanted | 0; crimeCd = pl.crimeCd | 0; }
 function saveP(pl) { pl.downT = downT; pl.downKind = downKind; pl.cash = cash;
   pl.wantedHeat = wantedHeat; pl.wanted = wanted; pl.crimeCd = crimeCd; }
 
-// ---- carjacking: sbalza fuori il guidatore (da input.js:tossDriver) ----
-// input.js NON è nel bundle del server, ma la glue lo richiama quando un giocatore
-// entra in un'auto del traffico/polizia/esercito: senza questa copia la sim lanciava
-// "tossDriver is not defined" a OGNI tick (flag enterExit mai azzerato) e il mondo
-// autoritativo si congelava per tutti. `hear`/`sfx` sono già stub no-op sul server.
+// ---- Carjacking: throws the driver out (from input.js:tossDriver) ----
+// input.js is NOT in the server bundle, but the glue calls this when a player gets into a
+// traffic/police/army car: without this copy the sim threw "tossDriver is not defined" on
+// EVERY tick (the enterExit flag was never cleared) and the authoritative world froze for
+// everyone. `hear`/`sfx` are already no-op stubs on the server.
 function tossDriver(c) {
   const nx = Math.cos(c.angle + Math.PI / 2), ny = Math.sin(c.angle + Math.PI / 2);
   const side = (player.x - c.x) * nx + (player.y - c.y) * ny > 0 ? -1 : 1;
@@ -90,17 +92,17 @@ function tossDriver(c) {
   sfx.thud(); sfx.yell(hear(ex, ey, 700));
 }
 
-// ---- sali / scendi (compatto, da input.js:toggleCar, senza toast/missioni/net) ----
+// ---- Enter / exit (condensed, from input.js:toggleCar, without toasts/missions/net) ----
 function simEnterExit(pl) {
   if (pl.downT > 0) return;
-  if (pl.car) {                          // scendi accanto all'auto, in un punto libero
+  if (pl.car) {                          // step out beside the car, onto a free spot
     const c = pl.car;
     const nx = Math.cos(c.angle + Math.PI / 2), ny = Math.sin(c.angle + Math.PI / 2);
     let ex = c.x + nx * 34, ey = c.y + ny * 34;
     if (boxHits(ex, ey, pl.r, pl.r)) { ex = c.x - nx * 34; ey = c.y - ny * 34; }
     if (boxHits(ex, ey, pl.r, pl.r)) { ex = c.x; ey = c.y; }
     pl.x = ex; pl.y = ey;
-    c.driver = null; c.speed = 0; c.role = 'parked'; c.edge = null;   // resta ferma: la vedono tutti
+    c.driver = null; c.speed = 0; c.role = 'parked'; c.edge = null;   // it stays put: everyone sees it
     pl.car = null;
     return;
   }
@@ -110,7 +112,7 @@ function simEnterExit(pl) {
   if (best.role === 'traffic' || best.role === 'police' || best.role === 'armycar') { player = pl; tossDriver(best); }
   pl.car = best; best.driver = 'player'; best.owner = pl.id;
   if (best.role === 'traffic' || best.role === 'parked') best.role = 'player';
-  if (best.isTank) {                     // rubare un carro armato scatena l'esercito
+  if (best.isTank) {                     // stealing a tank sets the army off
     let lm = null, bdl = Infinity;
     for (const l of landmarks) if (l.type === 'army') { const d = dist(l.cx, l.cy, pl.x, pl.y); if (d < bdl) { bdl = d; lm = l; } }
     if (lm) { player = pl; triggerArmyAlert(lm); }
@@ -121,10 +123,10 @@ function simHorn(pl) {
   if (c.wasPolice || c.livery === 'ambulance' || c.livery === 'fire') c.sirenOn = !c.sirenOn;
 }
 
-// ===== il tick del mondo autoritativo (rimpiazza update() di gameplay.js) =====
+// ===== The authoritative world's tick (replaces gameplay.js's update()) =====
 function tickWorld() {
   updateLights();
-  // --- FASE PER-GIOCATORE: ognuno agisce con i propri globali marshalati ---
+  // --- PER-PLAYER PHASE: each acts with their own globals marshalled in ---
   for (const pl of players) {
     loadP(pl);
     __curInput = pl.input;
@@ -132,27 +134,27 @@ function tickWorld() {
     if (pl.hurtCd > 0) pl.hurtCd--;
     if (downT > 0) {
       const wasDown = downT;
-      updateDown();                              // allo scadere respawna in ospedale/centrale (sposta player.x/y)
-      // appena respawnato: la posizione la comanda il SERVER finché il client non si
-      // riallinea al punto di respawn. Senza, al tick dopo pl.rx/pl.ry (ancora il punto
-      // di MORTE riportato dal client) sovrascriverebbe il respawn → si riparte dov'è morto.
+      updateDown();                              // on expiry respawns at hospital/station (moves player.x/y)
+      // Just respawned: the SERVER commands the position until the client realigns to the
+      // respawn point. Without this, on the next tick pl.rx/pl.ry (still the DEATH point
+      // reported by the client) would overwrite the respawn → you restart where you died.
       if (wasDown > 0 && downT === 0) pl.teleHold = true;
     } else {
-      // i flag one-shot vanno azzerati PRIMA di agire: se l'azione lancia
-      // un'eccezione, il flag non resta "incastrato" a rifar throw ogni tick
+      // One-shot flags must be cleared BEFORE acting: if the action throws, the flag does
+      // not stay "stuck" and throw again on every tick.
       if (pl.input.weapon != null) { const w = pl.input.weapon; pl.input.weapon = null; weaponKey(w); }
       if (pl.input.enterExit) { pl.input.enterExit = false; simEnterExit(pl); }
       if (pl.input.horn)      { pl.input.horn = false;      simHorn(pl); }
       if (pl.car) updateDrive(pl.car); else updatePlayerFoot();
-      // CLIENT-AUTHORITATIVE: la posizione la decide il client. Sovrascrivo quella
-      // simulata dal server (il movimento del server è scartato; lo sparo/le interazioni
-      // qui sopra sono già avvenuti dalla posizione riportata). Solo da vivo.
+      // CLIENT-AUTHORITATIVE: the client decides the position. We overwrite the one the
+      // server simulated (the server's movement is discarded; the firing/interactions above
+      // already happened from the reported position). Only while alive.
       if (pl.hasReport && pl.teleHold) {
-        // dopo un respawn il client riporta ancora il punto di morte: ignoralo finché
-        // non combacia col punto di respawn (il client, ricevendo lo snapshot, ci si
-        // teletrasporta e ricomincia a riportare quella posizione). Soglia SOPRA quella
-        // di teletrasporto del client (300, net.js): così quando il client è abbastanza
-        // vicino da NON teletrasportarsi, qui sblocchiamo comunque (niente stallo).
+        // After a respawn the client still reports the death point: ignore it until it
+        // matches the respawn point (on receiving the snapshot the client teleports there
+        // and starts reporting that position). The threshold is ABOVE the client's teleport
+        // threshold (300, net.js): so once the client is close enough NOT to teleport, we
+        // unblock here anyway (no stall).
         if (dist(pl.rx, pl.ry, pl.x, pl.y) < 320) pl.teleHold = false;
       } else if (pl.hasReport) {
         pl.x = pl.rx; pl.y = pl.ry;
@@ -161,22 +163,22 @@ function tickWorld() {
       }
       updateHealPads();
     }
-    // decadimento del livello ricercato PER-GIOCATORE (heat individuale)
+    // PER-PLAYER wanted-level decay (individual heat).
     if (crimeCd > 0) crimeCd--;
     else if (wantedHeat > 0) { wantedHeat = Math.max(0, wantedHeat - 0.0016); wanted = Math.floor(wantedHeat); }
     pl.input.fireEdge = false;
     saveP(pl);
   }
-  // il mondo CONDIVISO (densità polizia, reazioni dei pedoni) risponde al giocatore
-  // PIÙ ricercato presente: imposto i globali di stanza al massimo tra i player.
+  // The SHARED world (police density, pedestrian reactions) responds to the MOST wanted
+  // player present: set the room globals to the maximum across the players.
   { let mh = 0, mw = 0; for (const pl of players) { if (pl.wantedHeat > mh) mh = pl.wantedHeat; if ((pl.wanted | 0) > mw) mw = pl.wanted | 0; }
     wantedHeat = mh; wanted = mw; }
-  // --- FASE MONDO CONDIVISA (funzioni della sim invariate) ---
-  updateTrainKinematics();                       // treno: posizione (serve a trainBlocking negli updateCar)
+  // --- SHARED WORLD PHASE (sim functions unchanged) ---
+  updateTrainKinematics();                       // train position (needed by trainBlocking inside updateCar)
   for (const c of cars) updateCar(c);
   resolveCarCollisions();
-  for (const pl of players) if (pl.car) { pl.x = pl.car.x; pl.y = pl.car.y; }   // ri-sincronizza chi guida
-  trainCollide();                                // treno = muro solido: dopo il movimento
+  for (const pl of players) if (pl.car) { pl.x = pl.car.x; pl.y = pl.car.y; }   // resync whoever is driving
+  trainCollide();                                // train = solid wall: after movement
   for (const p of peds) updatePed(p);
   updateBullets();
   updateRockets();
@@ -190,7 +192,7 @@ function tickWorld() {
   frame++;
 }
 
-// ===== payload di rete (stesse forme che il client sa già decodificare) =====
+// ===== Network payloads (the same shapes the client already knows how to decode) =====
 const R2 = v => Math.round(v);
 function carPayload(c) {
   return { id: c.id, x: R2(c.x), y: R2(c.y), an: c.angle, sp: Math.round(c.speed * 100) / 100,
@@ -199,7 +201,7 @@ function carPayload(c) {
            liv: c.livery || null, pol: !!c.wasPolice, hel: c.helmet || null,
            tur: c.isTank ? c.turretA : null, siren: !!c.sirenOn, lp: c.lightPhase || 0,
            burn: !!c.burning, smk: !!c.smoking,
-           // fisica di guida: serve al client per PREDIRE il moto del proprio mezzo
+           // Driving physics: the client needs it to PREDICT its own vehicle's motion.
            top: c.top, acc: c.accel, mass: c.mass, gears: c.gears };
 }
 function pedPayload(p) {
@@ -212,20 +214,20 @@ function playerView(p) {
            gun: !WEAPONS[p.weaponIdx].melee, hp: R2(p.health), down: p.downT > 0,
            punch: p.punchT > 0, car: p.car ? carPayload(p.car) : null };
 }
-// ---- effetti cosmetici → eventi 'fx' per il client ----
-// Sul server le particelle non servono: intercettiamo gli spawn* di gameplay.js e li
-// trasformiamo in eventi leggeri (posizione + tipo), inviati negli snapshot. Il client
-// li ricrea (particelle + audio via hear). Così muzzle/sangue/scintille/esplosioni si
-// vedono e si sentono anche in multigiocatore, senza far crescere `parts` sul server.
+// ---- Cosmetic effects → 'fx' events for the client ----
+// Particles are of no use on the server: we intercept gameplay.js's spawn* calls and turn
+// them into lightweight events (position + type), sent inside the snapshots. The client
+// recreates them (particles + audio via hear). Muzzle flashes/blood/sparks/explosions are
+// therefore seen and heard in multiplayer too, without growing `parts` on the server.
 var __fx = [];
 spawnMuzzle = (x, y, a) => { __fx.push({ k: 0, x: R2(x), y: R2(y), a }); };
 spawnBlood = (x, y) => { __fx.push({ k: 1, x: R2(x), y: R2(y) }); };
 spawnSparks = (x, y, n) => { __fx.push({ k: 2, x: R2(x), y: R2(y), n: n | 0 }); };
 spawnExplosion = (x, y) => { __fx.push({ k: 3, x: R2(x), y: R2(y) }); };
 
-const AOI_R = 1200;                       // raggio di interesse attorno a ciascun giocatore
+const AOI_R = 1200;                       // area-of-interest radius around each player
 
-// snapshot del mondo per il giocatore `id`: solo entità entro AOI_R da lui
+// World snapshot for player `id`: only entities within AOI_R of them.
 function snapshotFor(id) {
   const me = playerById(id); if (!me) return null;
   const mx = me.x, my = me.y, R = me.aoi || AOI_R, R2q = R * R;
@@ -235,15 +237,15 @@ function snapshotFor(id) {
     me: { x: R2(me.x), y: R2(me.y), aim: me.aim, hp: R2(me.health), cash: me.cash,
           wanted: me.wanted | 0, down: me.downT > 0, dt: me.downT, dk: me.downKind, wp: me.weaponIdx, own: me.owned,
           k: me.kills, d: me.deaths, sco: me.score | 0, stk: me.streak | 0, bty: me.bounty | 0,
-          ev: (me.events && me.events.length) ? me.events.splice(0) : null,   // toast in coda → li consumo qui
+          ev: (me.events && me.events.length) ? me.events.splice(0) : null,   // queued toasts → consumed here
           car: me.car ? carPayload(me.car) : null },
     players: [], cars: [], peds: [], bul: [], rkt: [], coins: [], fires: [], fx: [],
   };
   for (const e of __fx) if (near(e.x, e.y)) out.fx.push(e);
-  // I GIOCATORI si propagano SEMPRE, a qualunque distanza (NIENTE filtro AOI): sono
-  // pochissimi (<=8) e la loro posizione serve a tutti per la minimappa/indicatori e per
-  // non "congelare" il ghost del rivale quando ci si allontana. Solo il mondo condiviso
-  // (traffico/pedoni/proiettili) resta filtrato per AOI, che è dove sta il vero costo.
+  // PLAYERS are ALWAYS propagated, at any distance (NO AOI filter): there are very few of
+  // them (<=8) and everyone needs their position for the minimap/indicators and to avoid
+  // "freezing" a rival's ghost as you move away. Only the shared world
+  // (traffic/pedestrians/bullets) stays AOI-filtered, which is where the real cost is.
   for (const p of players) if (p !== me) out.players.push(playerView(p));
   for (const c of cars) if (c.driver !== 'player' && near(c.x, c.y)) out.cars.push(carPayload(c));
   for (const p of peds) if (near(p.x, p.y)) out.peds.push(pedPayload(p));
@@ -254,7 +256,7 @@ function snapshotFor(id) {
   return out;
 }
 
-// ===== API di controllo esposta all'harness Node (var top-level ⇒ prop del global) =====
+// ===== Control API exposed to the Node harness (top-level var ⇒ property of the global) =====
 var __sim = {
   addPlayer(name, shirtIdx, id) { const pl = makeSimPlayer(name, shirtIdx); if (id) pl.id = id; players.push(pl); return pl.id; },
   removePlayer(id) {
@@ -270,28 +272,28 @@ var __sim = {
     if (cmd.b != null) { i.fireHeld = !!(cmd.b & 1); if (cmd.b & 2) i.fireEdge = true; if (cmd.b & 4) i.enterExit = true; if (cmd.b & 8) i.horn = true; }
     if (cmd.drive) { touchDrive.active = !!cmd.drive.active; touchDrive.angle = cmd.drive.angle || 0; }
     if (cmd.w != null) i.weapon = cmd.w;
-    // POSIZIONE client-authoritative: il player possiede il proprio movimento. La
-    // memorizziamo qui e tickWorld la applica dopo il sim del player (lo sparo/le
-    // interazioni restano lato server, dalla posizione riportata dal client).
+    // CLIENT-AUTHORITATIVE POSITION: the player owns their own movement. We store it here
+    // and tickWorld applies it after the player's sim (firing/interactions stay server-side,
+    // from the position the client reported).
     if (cmd.px != null) {
       pl.rx = cmd.px; pl.ry = cmd.py; pl.hasReport = true;
       if (cmd.cx != null) { pl.rcx = cmd.cx; pl.rcy = cmd.cy; pl.rca = cmd.ca; pl.rcsp = cmd.csp; }
       else pl.rcx = null;
     }
-    // raggio d'interesse adattivo richiesto dal client (clamp: mai troppo piccolo da
-    // far comparire entità a vista, mai più del tetto di default)
+    // Adaptive area-of-interest radius requested by the client (clamped: never so small
+    // that entities pop in on screen, never above the default cap).
     if (cmd.vr != null) pl.aoi = Math.max(650, Math.min(AOI_R, cmd.vr));
   },
   tick() { tickWorld(); },
   snapshotFor,
-  clearFx() { __fx.length = 0; },        // il server svuota gli fx dopo ogni giro di snapshot
+  clearFx() { __fx.length = 0; },        // the server clears the fx after each snapshot round
   playerState(id) { const p = playerById(id); return p ? { id: p.id, x: R2(p.x), y: R2(p.y), hp: R2(p.health), cash: p.cash, down: p.downT > 0, inCar: !!p.car, wanted: p.wanted | 0 } : null; },
   scores() { return players.map(p => ({ id: p.id, name: p.name, k: p.kills, d: p.deaths, c: p.cash, s: p.score | 0, b: p.bounty | 0 })); },
   playerCount() { return players.length; },
-  _player(id) { return playerById(id); },   // solo per i test: riferimento diretto all'oggetto player
-  _spawnPed(x, y, role) { const p = makePed(x, y, role); peds.push(p); return p; },   // solo per i test
-  _cars() { return cars; },                 // solo per i test: traffico/collisioni
-  // --- diagnostica per i test ---
+  _player(id) { return playerById(id); },   // tests only: direct reference to the player object
+  _spawnPed(x, y, role) { const p = makePed(x, y, role); peds.push(p); return p; },   // tests only
+  _cars() { return cars; },                 // tests only: traffic/collisions
+  // --- Diagnostics for the tests ---
   worldInfo() {
     let sig = 0;
     for (let i = 0; i < grid.length; i++) sig = (sig * 31 + grid[i]) | 0;

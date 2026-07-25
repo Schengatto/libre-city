@@ -1,43 +1,42 @@
 'use strict';
-// LIBRE CITY · server/sim-runtime.js — harness HEADLESS della simulazione (Fase 2).
+// LIBRE CITY · server/sim-runtime.js — HEADLESS harness for the simulation (Phase 2).
 //
-// Esegue la STESSA simulazione del client (core → city → entities → missions →
-// army → gameplay) su Node, senza browser, così il server può possedere il mondo
-// (traffico, pedoni, polizia) ed eliminare il disallineamento tra i giocatori.
+// Runs the SAME simulation as the client (core → city → entities → missions → army →
+// gameplay) on Node, without a browser, so the server can own the world (traffic,
+// pedestrians, police) and remove the divergence between players.
 //
-// I file del gioco sono <script> classici che condividono UN unico scope globale:
-// in Node li riproduciamo concatenandoli in UN solo bundle ed eseguendolo come UN
-// unico `vm.Script` per stanza (così i const/let top-level di un file restano
-// visibili agli altri). La glue headless (js/server-sim-glue.js) è in coda: fornisce
-// gli shim di input (input.js è escluso) ed espone l'API `__sim`. Tutto ciò che è
-// presentazione/IO (render/audio/ui/net) è assente e viene STUBBATO a no-op sul
-// global del contesto.
+// The game's files are classic <script> tags sharing ONE single global scope: in Node we
+// reproduce that by concatenating them into ONE bundle and running it as a SINGLE
+// `vm.Script` per room (so one file's top-level const/let stay visible to the others). The
+// headless glue (js/server-sim-glue.js) goes last: it supplies the input shims (input.js is
+// excluded) and exposes the `__sim` API. Everything presentational or IO-bound
+// (render/audio/ui/net) is absent and STUBBED to no-ops on the context's global.
 
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-// I sorgenti sim vivono in ../js in sviluppo; il deploy li copia in ./sim (vedi
-// deploy-vps.sh / Dockerfile), quindi proviamo prima ./sim e poi ../js.
+// The sim sources live in ../js during development; the deploy copies them into ./sim (see
+// deploy-vps.sh / Dockerfile), so we try ./sim first and then ../js.
 const SIM_DIRS = [path.resolve(__dirname, 'sim'), path.resolve(__dirname, '..', 'js')];
 const JS_DIR = SIM_DIRS.find(d => fs.existsSync(path.join(d, 'gameplay.js')));
 if (!JS_DIR) throw new Error('sim-runtime: sorgenti della simulazione non trovati in ' + SIM_DIRS.join(' | '));
 
-// ordine di caricamento del browser meno input/render/audio/ui/net, + la glue.
-// i18n.js serve perché la sim chiama t()/tList() (fumetti dei pedoni, messaggi
-// che in locale finiscono nei toast): senza, il bundle non gira.
+// The browser's load order minus input/render/audio/ui/net, plus the glue. i18n.js is needed
+// because the sim calls t()/tList() (pedestrian speech bubbles, and messages that locally end
+// up in toasts): without it the bundle does not run.
 const SIM_FILES = ['core.js', 'i18n.js', 'city.js', 'train.js', 'entities.js', 'missions.js', 'army.js', 'gameplay.js', 'server-sim-glue.js'];
 const BUNDLE = SIM_FILES
   .map(f => `\n//# ${f} ------------------------------------------------------------\n` + fs.readFileSync(path.join(JS_DIR, f), 'utf8'))
   .join('\n');
-// compilato UNA volta e riusato per ogni stanza (ammortizza il parse)
+// Compiled ONCE and reused for every room (amortises the parse).
 const SCRIPT = new vm.Script(BUNDLE, { filename: 'libre-sim-bundle.js' });
 
 const NOOP = () => {};
 
-// il "browser finto" su cui gira la sim: DOM/finestra inerti + tutto lo strato di
-// presentazione/rete stubbato a no-op. `view` è il raggio di simulazione fisso
-// (rimpiazza la dimensione della finestra: sul server il mondo non dipende da uno schermo).
+// The "fake browser" the sim runs on: an inert DOM/window plus the whole
+// presentation/network layer stubbed to no-ops. `view` is the fixed simulation radius (it
+// replaces the window size: on the server the world does not depend on a screen).
 function makeBrowserStub(code, view) {
   const fakeEl = {
     width: 0, height: 0, style: {}, textContent: '', value: '',
@@ -49,7 +48,7 @@ function makeBrowserStub(code, view) {
   };
   const sfx = new Proxy({}, { get: () => NOOP });
   const stub = {
-    // ---- ambiente browser inerte ----
+    // ---- Inert browser environment ----
     document: { getElementById: () => fakeEl, querySelector: () => fakeEl, querySelectorAll: () => [],
                 createElement: () => fakeEl, body: fakeEl, addEventListener: NOOP },
     window: {}, navigator: {}, location: { hash: '#room=' + code, search: '', href: '' },
@@ -60,14 +59,14 @@ function makeBrowserStub(code, view) {
     matchMedia: () => ({ matches: false, addEventListener: NOOP }),
     visualViewport: undefined, AudioContext: undefined, webkitAudioContext: undefined,
     console,
-    // ---- presentazione assente (render/audio/ui): no-op ----
+    // ---- No presentation layer (render/audio/ui): no-ops ----
     sfx, sfxCd: {}, hear: () => null, initAudio: NOOP, engineGain: NOOP, updateTrafficEngine: NOOP,
-    playerSirenOn: () => false,           // la sirena è audio del client: niente logica lato server
+    playerSirenOn: () => false,           // the siren is client-side audio: no server-side logic
     toast: NOOP, $: () => fakeEl,
     updateHealth: NOOP, updateCash: NOOP, updateStars: NOOP, updateWeapon: NOOP,
     updateTimer: NOOP, updateGear: NOOP, updateWpnBar: NOOP, updateToast: NOOP,
     endGame: NOOP, renderLadder: NOOP,
-    // ---- rete (net.js) assente: il server È l'autorità, quindi no-op ----
+    // ---- No networking (net.js): the server IS the authority, so no-ops ----
     netActive: () => false, netTick: NOOP, netSolidCars: out => out || [],
     netAssignCarId: NOOP, netAbandonCar: NOOP, netDestroyCar: NOOP,
     netShotFired: NOOP, netPunched: NOOP, netRocketFired: NOOP,
@@ -77,13 +76,13 @@ function makeBrowserStub(code, view) {
   return stub;
 }
 
-// crea la simulazione di una stanza: contesto isolato, seme = codice stanza.
-// Ritorna l'API __sim esposta dalla glue.
+// Creates a room's simulation: isolated context, seed = room code. Returns the __sim API
+// exposed by the glue.
 function createRoomSim(code, opts = {}) {
-  const view = opts.view || 900;                 // raggio di simulazione fisso
+  const view = opts.view || 900;                 // fixed simulation radius
   const ctx = makeBrowserStub(String(code).toUpperCase(), view);
   vm.createContext(ctx);
-  SCRIPT.runInContext(ctx, { timeout: 5000 });   // qui girano city gen + seedWorld()
+  SCRIPT.runInContext(ctx, { timeout: 5000 });   // city gen + seedWorld() run here
   if (!ctx.__sim) throw new Error('sim-runtime: la glue non ha esposto __sim');
   return ctx.__sim;
 }

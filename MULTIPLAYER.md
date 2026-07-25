@@ -133,6 +133,52 @@ tra simulazioni finché la Fase 2 non le unifica.
 
 ---
 
+## Classifica condivisa
+
+La ladder in partita (Tab / 🏆) muore con la stanza. La **classifica condivisa**
+(`server/leaderboard.js`) è l'altra metà: vive sul server, vale per tutte le
+stanze e sopravvive ai riavvii.
+
+La metrica sono i **punti al minuto**. Le stanze durano da pochi minuti a mezz'ora
+(`minutes` lo sceglie chi crea), quindi il punteggio grezzo non è confrontabile:
+per ogni giocatore si sommano i punti fatti e il tempo **effettivamente giocato**,
+e si ordina sul rapporto `punti / minuti`.
+
+- Il tempo è quello **connesso e in gioco**: la finestra di grazia di chi cade
+  dalla rete non conta (il cronometro si ferma alla disconnessione).
+- Ci si entra dopo **3 minuti** di gioco totali (`LEADERBOARD_QUALIFY_MS`):
+  senza soglia, chi fa un'uccisione fortunata nei primi trenta secondi e se ne va
+  resterebbe primo per sempre.
+- Il punteggio è **solo quello della sim autoritativa**. Se la sim non è attiva
+  (ripiego Fase 1, relay puro) non si registra nulla: meglio un buco che numeri
+  che il client dichiara su se stesso.
+- L'identità è il **nome** scritto nel menu, normalizzato (spazi/maiuscole).
+  Non ci sono account: gli omonimi condividono la riga.
+
+Il client la legge in **HTTP semplice**, non via WebSocket: si consulta dal menu
+(`🌐 Classifica online`), senza partita né socket aperto.
+
+```
+GET /leaderboard?limit=20
+→ { ok, metric:'ppm', qualifyMs, tracked, ranked,
+    top:[ {rank,name,ppm,score,ms,matches,kills,deaths,best:{ppm,score,ms,at}} ] }
+```
+
+| Variabile | Default | Cosa fa |
+|-----------|---------|---------|
+| `LEADERBOARD_FILE` | `server/data/leaderboard.json` | dove si salva (in produzione: volume `./data`) |
+| `LEADERBOARD_QUALIFY_MS` | `180000` | gioco totale necessario per entrare in classifica |
+| `LEADERBOARD_MIN_SESSION_MS` | `30000` | sotto questa permanenza non si registra nulla |
+| `LEADERBOARD_MAX` | `500` | voci conservate (le più deboli escono) |
+
+Il file è riscritto **atomico** (tmp + rename) e con un ritardo di qualche secondo,
+più un flush allo spegnimento: un redeploy non butta via gli ultimi minuti. Se il
+volume è in sola lettura la classifica prosegue in RAM e lo dice **una volta** nel log.
+
+Test: `node server/test-leaderboard.mjs` (nella catena di `npm test` in `server/`).
+
+---
+
 ## Roadmap Fase 2 (server autoritativo)
 
 1. **Isolare la simulazione headless.** Estrarre da `core.js` gli util puri
