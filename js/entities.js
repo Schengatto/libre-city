@@ -70,6 +70,11 @@ const store = {
 let playerName  = store.get('name', '');       // vuoto = primo avvio: chiedi il nome
 let gameMinutes = store.get('minutes', 0);     // durata partita in minuti · 0 = senza limiti
 let timeLeft = 0;                              // frame rimanenti (solo con durata impostata)
+// Filtro violenza (solo GIOCATORE SINGOLO): false = niente armi, nessuno spara né
+// uccide (né player né NPC), le missioni polizia si chiudono raggiungendo il ladro.
+// In MULTIGIOCATORE la violenza c'è SEMPRE, quindi peaceMode() richiede anche !net.
+let violenceOn = true;
+function peaceMode() { return !violenceOn && !(typeof net !== 'undefined' && net && net.mode !== null); }
 let camX = 0, camY = 0;
 let cameraActive = false;   // true solo sul client che renderizza (mai sul server headless): abilita lo spawn attorno al centro inquadratura
 let shakeT = 0, shakeMag = 0;

@@ -502,6 +502,42 @@
       <button id="installBtn" class="mbtn hidden">📲 Installa l'app</button>
     </div>
 
+    <!-- Giocatore singolo: crea la partita (violenza, durata, taglia mappa) -->
+    <div id="spPanel" class="panel hidden">
+      <h2>▶ Giocatore singolo</h2>
+      <div class="field">
+        <label for="spViolence">Violenza</label>
+        <select id="spViolence">
+          <option value="on" selected>Sì — armi e scontri</option>
+          <option value="off">No — nessuna arma, non si uccide</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="spDuration">Durata della partita</label>
+        <select id="spDuration">
+          <option value="5">5 minuti</option>
+          <option value="10" selected>10 minuti</option>
+          <option value="15">15 minuti</option>
+          <option value="30">30 minuti</option>
+          <option value="60">60 minuti</option>
+          <option value="0">Senza limiti di tempo</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="spSize">Dimensione della mappa</label>
+        <select id="spSize">
+          <option value="P" selected>Piccola</option>
+          <option value="M">Media (area 2×)</option>
+          <option value="G">Grande (area 4×)</option>
+        </select>
+      </div>
+      <p class="mpnote">Col filtro violenza su <b>No</b> non ci sono armi: nessuno spara né viene
+         ucciso (nemmeno gli NPC) e per le missioni in volante 🚔 basta <b>raggiungere il ladro
+         in fuga</b>.</p>
+      <button id="spGo" class="mbtn">🏙️ Inizia a giocare</button>
+      <button id="spBack" class="mbtn back">↩ Indietro</button>
+    </div>
+
     <!-- Multigiocatore: scelta ospita/entra -->
     <div id="mpPanel" class="panel hidden">
       <h2>🌐 Multigiocatore</h2>

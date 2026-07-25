@@ -26,6 +26,7 @@ function nearGunshop() {
 }
 function weaponKey(i) {
   if (!started) return;
+  if (peaceMode()) return;                            // filtro violenza: nessuna arma da comprare/impugnare
   if (authClient()) { net.weaponReq = i; return; }   // equipaggia/compra: lo fa il server
   const w = WEAPONS[i];
   if (player.owned[i]) {                              // già tua: la impugni
@@ -70,7 +71,8 @@ function updatePlayerFoot() {
   if (player.punchT > 0) player.punchT--;
   const w = WEAPONS[player.weaponIdx];
   // su un client autoritativo lo sparo lo decide il server (predizione senza proiettili locali)
-  if (!authClient() && (w.auto ? mDownL : mClicked) && player.shootCd === 0) { (w.melee ? playerPunch : playerShoot)(w); player.shootCd = w.cd; }
+  // col filtro violenza (singolo) il player non attacca affatto: né spari né pugni
+  if (!authClient() && !peaceMode() && (w.auto ? mDownL : mClicked) && player.shootCd === 0) { (w.melee ? playerPunch : playerShoot)(w); player.shootCd = w.cd; }
   mClicked = false;
 }
 function playerShoot(w) {
@@ -241,6 +243,7 @@ function runOver(c, byPlayer) {
     const lx = dx * ca + dy * sa;         // avanti/indietro nell'auto
     const ly = -dx * sa + dy * ca;        // laterale
     if (Math.abs(lx) < c.w / 2 + p.r && Math.abs(ly) < c.h / 2 + p.r) {
+      if (peaceMode()) { shovePed(p, c.angle); continue; }   // filtro violenza: nessuno viene travolto, il pedone schizza via illeso
       knockPed(p, c.angle, sp);
       if (byPlayer && p.role !== 'robber') {          // fermare il ladro non è reato
         // investire è di chi guida: cash/punteggio/stelle vanno al driver, non al
@@ -257,6 +260,16 @@ function runOver(c, byPlayer) {
 }
 
 // ---------- Pedoni ----------
+// filtro violenza: al posto di essere travolto, il pedone fa un balzo di lato in
+// preda al panico e resta illeso (niente KO, niente sangue, niente morte).
+function shovePed(p, angle) {
+  if (p.ko || p.dead) return;
+  const side = angle + (Math.random() < 0.5 ? Math.PI / 2 : -Math.PI / 2);
+  p.dir = { x: Math.cos(side), y: Math.sin(side) };
+  p.speed = 2.6; p.panic = 60; p.thinkCd = 20;
+  pedSay(p, SAY_PANIC, '#c22822', true);
+  sfx.scream(hear(p.x, p.y, 800));
+}
 function knockPed(p, angle, force) {
   p.ko = true; p.koT = 60 * 7;
   p.getsUp = false; p.angryT = 0;                   // un colpo vero non perdona: niente rialzata
@@ -454,6 +467,7 @@ function updateCop(p) {
   }
 }
 function copShoot(p, tp) {
+  if (peaceMode()) return;                          // filtro violenza: la polizia non spara (arresta di persona)
   tp = tp || nearestPlayer(p.x, p.y);
   const a = Math.atan2(tp.y - p.y, tp.x - p.x) + rnd(-0.13, 0.13);
   const bx = p.x + Math.cos(a) * 12, by = p.y + Math.sin(a) * 12;
@@ -1209,15 +1223,19 @@ function updateCamera() {
 
 // ---------- Update principale ----------
 function update() {
-  // Fase 2: su un server autoritativo il client non simula il mondo, lo RENDE
-  // (predizione del proprio player + interpolazione degli snapshot). Vedi net.js.
-  if (authClient()) { updateNetClient(); return; }
-  // partita a tempo: il cronometro scorre sempre, anche da morto/arrestato
+  // partita a tempo: il cronometro scorre sempre, anche da morto/arrestato e
+  // anche su server autoritativo (dove il resto del mondo lo RENDE updateNetClient).
+  // In MP la FINE vera la scandisce il server (messaggio 'end'); qui il countdown
+  // parte dall'orologio ricevuto al join (net.clockLeft) e serve solo a mostrarlo.
   if (gameMinutes > 0) {
     timeLeft--;
     if (timeLeft % 20 === 0) updateTimer();
-    if (timeLeft <= 0) { endGame('time'); return; }
+    // in solitaria è il client a decretare la fine; in MP aspetta il server
+    if (timeLeft <= 0 && !authClient()) { endGame('time'); return; }
   }
+  // Fase 2: su un server autoritativo il client non simula il mondo, lo RENDE
+  // (predizione del proprio player + interpolazione degli snapshot). Vedi net.js.
+  if (authClient()) { updateNetClient(); return; }
   // fuori gioco (morto/arrestato): scena congelata, conta solo il countdown
   // (la rete però resta viva: i ghost si muovono e lo stato "a terra" parte lo stesso)
   if (downT > 0) { updateDown(); netTick(); frame++; return; }

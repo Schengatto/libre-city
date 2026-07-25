@@ -84,7 +84,7 @@ function loop(nowT) {
 // =========================================================
 //  MENU PRINCIPALE · IMPOSTAZIONI · CLASSIFICA · PAUSA
 // =========================================================
-const PANELS = ['namePanel', 'menuPanel', 'settingsPanel', 'scoresPanel', 'howtoPanel',
+const PANELS = ['namePanel', 'menuPanel', 'spPanel', 'settingsPanel', 'scoresPanel', 'howtoPanel',
                 'mpPanel', 'hostPanel', 'invitePanel', 'joinPanel'];
 function showPanel(id) {
   for (const p of PANELS) { const el = $('#' + p); if (el) el.classList.toggle('hidden', p !== id); }
@@ -185,6 +185,10 @@ function startMatch(resume) {
     if (netActive() && net.clockLeft != null) timeLeft = net.clockLeft;   // orologio autoritativo del server
     player.score = 0;                            // partita nuova: punteggio azzerato (in MP conta net.score)
   }
+  // filtro violenza (singolo): niente armi in mano → via l'indicatore arma e la barra armi
+  const peace = peaceMode();
+  const wpn = $('#weapon'); if (wpn) wpn.style.display = peace ? 'none' : '';
+  const wb = $('#wpnBar'); if (wb) wb.style.display = peace ? 'none' : '';
   updateStars(); updateHealth(); updateCash(); updateScore(); updateWeapon(); updateTimer();
   const hi = usingTouch ? 'Avvicinati a un\'auto e tocca 🚗' : 'Ruba un\'auto con E';
   const mp = netActive() ? (usingTouch ? ' · 🏆 per la classifica' : ' · Tab per la classifica') : '';
@@ -193,8 +197,24 @@ function startMatch(resume) {
   _loopLast = 0; _loopAcc = 0;                    // riparti puliti (niente recupero dal match precedente)
   loop();
 }
-const playBtn = $('#playBtn');
-if (playBtn) playBtn.onclick = () => startMatch(false);
+// ---- giocatore singolo: pannello di creazione (violenza, durata, taglia mappa) ----
+// come per l'host, la taglia mappa è nel seme del codice → serve un reload sulla
+// città giusta; violenza e durata viaggiano nell'intento e si applicano al ritorno.
+onClick('playBtn', () => {
+  const d = $('#spDuration'); if (d) d.value = String(gameMinutes);
+  const v = $('#spViolence'); if (v) v.value = violenceOn ? 'on' : 'off';
+  showPanel('spPanel');
+});
+onClick('spBack', showMenu);
+onClick('spGo', () => {
+  const mins = $('#spDuration') ? +$('#spDuration').value : 0;
+  const viol = $('#spViolence') ? $('#spViolence').value === 'on' : true;
+  const size = $('#spSize') ? $('#spSize').value : 'P';
+  const code = makeSizedRoomCode(size);
+  store.set('spIntent', { code, mins, violence: viol, name: playerName });
+  location.hash = 'room=' + code;
+  location.reload();
+});
 
 // ---- navigazione dei pannelli ----
 function onClick(id, fn) { const el = $('#' + id); if (el) el.onclick = fn; }
@@ -292,7 +312,7 @@ onClick('hostGo', () => {
 });
 onClick('inviteShare', () => shareInvite($('#inviteShare')));
 onClick('inviteCopy', () => copyInvite($('#inviteCopy')));
-onClick('invitePlay', startMatch);
+onClick('invitePlay', () => startMatch(false));   // NB: senza la lambda, l'evento del clic arriverebbe come `resume` (truthy) e salterebbe l'init dell'orologio → timer a 0:00
 onClick('inviteBack', () => { netShutdown(); showMenu(); });
 onClick('pauseShare', () => shareInvite($('#pauseShare')));
 
@@ -353,7 +373,19 @@ if (nameInput) nameInput.addEventListener('keydown', e => { if (e.key === 'Enter
 const _loadIntent = store.get('loadIntent', null);
 const _save = store.get('save', null);
 const _hostIntent = store.get('hostIntent', null);
-if (_loadIntent && _save && _save.code && ROOM_FROM_URL === _save.code) {
+const _spIntent = store.get('spIntent', null);
+if (_spIntent && ROOM_FROM_URL === _spIntent.code) {
+  // ritorno dal reload di creazione partita SINGOLA: la mappa della taglia scelta è
+  // ormai generata dal seme del codice → applica violenza/durata e parti. Ripulisce
+  // l'hash così un refresh successivo riparte da capo dal menu (senza rientrare qui).
+  store.set('spIntent', null);
+  history.replaceState(null, '', location.pathname + location.search);
+  if (_spIntent.name) { playerName = _spIntent.name; store.set('name', playerName); }
+  gameMinutes = _spIntent.mins | 0; store.set('minutes', gameMinutes);
+  violenceOn = _spIntent.violence !== false;
+  startMatch(false);
+}
+else if (_loadIntent && _save && _save.code && ROOM_FROM_URL === _save.code) {
   // ritorno dal reload di "Riprendi partita" (singolo): la città è ormai rigenerata dal
   // seme salvato → applica lo stato e riprendi. Ripulisce l'hash #room= così un refresh
   // successivo torna al normale singolo (il salvataggio conserva comunque il suo codice).

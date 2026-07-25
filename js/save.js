@@ -27,6 +27,7 @@ function captureSave() {
     code: ROOM_CODE,                       // seme della città: la rigenera identica al reload
     name: playerName,
     minutes: gameMinutes,
+    violence: violenceOn,                  // filtro violenza scelto a inizio partita
     timeLeft,                              // frame rimasti (0 = partita senza limiti)
     cash,
     wanted, wantedHeat, crimeCd,
@@ -50,6 +51,7 @@ function applySave(s) {
   if (!s || s.v !== SAVE_VERSION) return false;
   playerName = s.name || playerName; store.set('name', playerName);
   gameMinutes = s.minutes | 0; store.set('minutes', gameMinutes);
+  violenceOn = s.violence !== false;     // salvataggi vecchi (senza campo) = violenza attiva
   timeLeft = s.timeLeft | 0;
   cash = s.cash | 0;
   wanted = s.wanted | 0; wantedHeat = +s.wantedHeat || 0; crimeCd = s.crimeCd | 0;

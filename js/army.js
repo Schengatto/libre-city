@@ -9,7 +9,7 @@ function updateTankGun(c) {
   // la torretta è pesante: ruota piano verso il mirino
   c.turretA = steerToward(c.turretA, Math.atan2(mouseWY() - c.y, mouseWX() - c.x), 0.055);
   if (c.gunCd > 0) c.gunCd--;
-  if (mDownL && c.gunCd === 0) {
+  if (!peaceMode() && mDownL && c.gunCd === 0) {    // filtro violenza: il cannone del carro non spara
     const a = c.turretA;
     rockets.push({ x: c.x + Math.cos(a) * 44, y: c.y + Math.sin(a) * 44,
                    vx: Math.cos(a) * 6.5, vy: Math.sin(a) * 6.5, life: 120, src: c });
@@ -201,6 +201,7 @@ function updateGuardIdle(p) {
   } else p.walk = 0;
 }
 function soldierShoot(p, tp) {
+  if (peaceMode()) return;                          // filtro violenza: le guardie non sparano
   tp = tp || nearestPlayer(p.x, p.y);
   const a = Math.atan2(tp.y - p.y, tp.x - p.x) + rnd(-0.1, 0.1);
   bullets.push({ x: p.x + Math.cos(a) * 12, y: p.y + Math.sin(a) * 12,
@@ -219,7 +220,7 @@ function updateArmyCar(c) {
   applyKnockback(c);                                  // rimbalzo residuo dagli urti
   c.dir = { x: Math.cos(c.angle), y: Math.sin(c.angle) };
   if (c.shootCd > 0) c.shootCd--;
-  if (d < 380 && c.shootCd === 0 && lineClear(c.x, c.y, tp.x, tp.y)) {
+  if (!peaceMode() && d < 380 && c.shootCd === 0 && lineClear(c.x, c.y, tp.x, tp.y)) {   // filtro violenza: la jeep non spara
     const a = Math.atan2(tp.y - c.y, tp.x - c.x) + rnd(-0.11, 0.11);
     bullets.push({ x: c.x + Math.cos(a) * 26, y: c.y + Math.sin(a) * 26,
                    vx: Math.cos(a) * 12, vy: Math.sin(a) * 12, life: 55, fromPlayer: false });
@@ -276,6 +277,7 @@ function updateTurrets() {
   }
 }
 function turretShoot(tr) {
+  if (peaceMode()) return;                          // filtro violenza: le torrette non sparano
   const a = tr.ang + rnd(-0.05, 0.05);
   bullets.push({ x: tr.x + Math.cos(a) * 16, y: tr.y + Math.sin(a) * 16,
                  vx: Math.cos(a) * 13, vy: Math.sin(a) * 13, life: 46, fromPlayer: false });

@@ -560,6 +560,7 @@ function drawGunPads() {
 }
 // listino dell'armeria: compare quando sei sul pad, a piedi
 function drawGunshopMenu() {
+  if (peaceMode()) return;                            // filtro violenza: l'armeria non vende
   if (!nearGunshop()) return;
   ctx.font = 'bold 14px Trebuchet MS';
   const title = usingTouch ? '🛒 ARMERIA — tocca l\'icona dell\'arma in alto per comprare'
