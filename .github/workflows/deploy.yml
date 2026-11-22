@@ -1,0 +1,112 @@
+name: Test and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PUBLIC_URL: https://libre-city.schengatto.cloud
+  SERVER_URL: wss://libre-city.schengatto.cloud
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - name: Install server dependencies
+        working-directory: server
+        run: npm ci
+      - name: Run tests
+        working-directory: server
+        run: npm test
+      - name: Build client
+        run: node build.js
+        env:
+          LC_SERVER: ${{ env.SERVER_URL }}
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/root/libre-city' }}
+    steps:
+      - name: Check deploy secrets
+        run: |
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS; do
+            [ -n "${!name}" ] || { echo "::error::missing secret $name"; exit 1; }
+          done
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build client
+        run: node build.js
+        env:
+          LC_SERVER: ${{ env.SERVER_URL }}
+
+      - name: Stage release
+        run: |
+          mkdir -p release/sim
+          sim_files=$(node -p "require('./server/sim-runtime.js').SIM_FILES.join(' ')")
+          for file in $sim_files; do cp "js/$file" release/sim/; done
+          cp server/Dockerfile server/docker-compose.yml server/index.js server/sim-runtime.js \
+             server/leaderboard.js server/package.json server/package-lock.json release/
+          cp -r dist release/public
+
+      - name: Configure SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+
+      - name: Upload release
+        run: |
+          ssh_cmd="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes"
+          target="$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH"
+          rsync -az --delete -e "$ssh_cmd" release/public/ "$target/public/"
+          rsync -az --delete -e "$ssh_cmd" release/sim/ "$target/sim/"
+          rsync -az -e "$ssh_cmd" --exclude public --exclude sim --exclude data release/ "$target/"
+
+      - name: Rebuild and restart container
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd '$DEPLOY_PATH' && docker compose up -d --build"
+
+      - name: Wait for health check
+        run: |
+          for attempt in $(seq 1 12); do
+            if curl -fsS "$PUBLIC_URL/health"; then exit 0; fi
+            sleep 5
+          done
+          echo "::error::health check failed after deploy"
+          exit 1
