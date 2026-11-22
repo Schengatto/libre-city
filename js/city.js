@@ -270,6 +270,9 @@ function carveArmyBase(lm) {
   for (let y = lm.y0; y <= lm.y1; y++) { grid[gi(lm.x0, y)] = BUILDING; grid[gi(lm.x1, y)] = BUILDING; }
   for (let y = lm.y0 + 1; y < lm.y1; y++) for (let x = lm.x0 + 1; x < lm.x1; x++)
     grid[gi(x, y)] = SIDEWALK;                        // inner yard
+  lm.layout = armyBaseLayout(lm);
+  for (const r of lm.layout.buildings)
+    for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) grid[gi(x, y)] = BUILDING;
   // Gate on whichever fence side faces the entrance (lm.door).
   const dtx = Math.floor(lm.door.x / T), dty = Math.floor(lm.door.y / T);
   const dl = Math.abs(dtx - lm.x0), dr = Math.abs(dtx - lm.x1);
@@ -294,6 +297,38 @@ function carveArmyBase(lm) {
     }
   }
   lm.gate = { x: (g[0][0] + g[2][0] + 1) / 2 * T, y: (g[0][1] + g[2][1] + 1) / 2 * T };
+  lm.guardDuties = armyGuardDuties(lm, out);
+}
+function armyBaseLayout(lm) {
+  const rect = (ix0, iy0, ix1, iy1) => ({ x0: lm.x0 + ix0, y0: lm.y0 + iy0, x1: lm.x0 + ix1, y1: lm.y0 + iy1 });
+  const layout = {
+    interior: rect(1, 1, ARMY_W - 2, ARMY_H - 2),
+    lawns: [rect(3, 3, 11, 8), rect(14, 3, 22, 8), rect(3, 11, 11, 16), rect(14, 11, 22, 16)],
+    barracks: [rect(3, 3, 11, 4), rect(3, 7, 11, 8)],
+    musterYard: rect(3, 5, 11, 6),
+    headquarters: rect(15, 4, 21, 7),
+    motorPool: rect(3, 11, 11, 14),
+    garage: rect(3, 15, 11, 16),
+    helipad: rect(14, 11, 19, 16),
+    depot: rect(20, 11, 22, 16),
+    flagpole: { x: (lm.x0 + 18.5) * T, y: (lm.y0 + 8.5) * T },
+  };
+  layout.buildings = [...layout.barracks, layout.headquarters, layout.garage, layout.depot];
+  return layout;
+}
+function armyGuardDuties(lm, gateOutward) {
+  const lateral = { x: -gateOutward.y, y: gateOutward.x };
+  const towardCentre = Math.sign((lm.cx - lm.gate.x) * lateral.x + (lm.cy - lm.gate.y) * lateral.y) || 1;
+  const besideGate = (depth, side) => ({
+    x: lm.gate.x - gateOutward.x * depth * T + lateral.x * towardCentre * side * T,
+    y: lm.gate.y - gateOutward.y * depth * T + lateral.y * towardCentre * side * T,
+  });
+  const sentry = { ...besideGate(1.5, 2), facing: Math.atan2(gateOutward.y, gateOutward.x), booth: besideGate(1.1, 3) };
+  const near = 2.5 * T;
+  const left = lm.x0 * T + near, right = (lm.x1 + 1) * T - near;
+  const top = lm.y0 * T + near, bottom = (lm.y1 + 1) * T - near;
+  const patrolRoute = [{ x: left, y: top }, { x: right, y: top }, { x: right, y: bottom }, { x: left, y: bottom }];
+  return [{ post: sentry }, { route: patrolRoute }];
 }
 function placeLandmarks() {
   for (const def of LM_DEFS) for (let k = 0; k < def.count; k++) {
@@ -500,4 +535,4 @@ function randomTileNear(cx, cy, rmin, rmax, ok) {
 }
 const randomRoadNear = (cx, cy, rmin, rmax) => randomTileNear(cx, cy, rmin, rmax, (tx, ty) => tileAt(tx, ty) === ROAD);
 const randomWalkNear = (cx, cy, rmin, rmax) => randomTileNear(cx, cy, rmin, rmax,
-  (tx, ty) => { const t = tileAt(tx, ty); return t === SIDEWALK || t === GRASS || t === ROAD || t === ALLEY; });
+  (tx, ty) => { const t = tileAt(tx, ty); return (t === SIDEWALK || t === GRASS || t === ROAD || t === ALLEY) && !inArmyZone(tx, ty); });

@@ -273,15 +273,17 @@ function makeServiceCar(type, p) {
 // How many vehicles to park in front of each building (at least 1).
 const SERVICE_COUNT = { police: 2, hospital: 2, pizzeria: 2, fire: 2, bank: 1, market: 1, gunshop: 1, army: 1 };
 // A free spot in the barracks yard (for parked vehicles and guards).
-function armyInteriorSpot(lm, clear) {
+function armySpotIn(area, clear) {
   for (let i = 0; i < 40; i++) {
-    const tx = rndi(lm.x0 + 2, lm.x1 - 2), ty = rndi(lm.y0 + 2, lm.y1 - 2);
+    const tx = rndi(area.x0, area.x1), ty = rndi(area.y0, area.y1);
     const wx = (tx + 0.5) * T, wy = (ty + 0.5) * T;
     if (cars.some(c => dist(c.x, c.y, wx, wy) < clear)) continue;
-    return { x: wx, y: wy, angle: pick([0, Math.PI / 2, Math.PI, -Math.PI / 2]) };
+    return { x: wx, y: wy, angle: -Math.PI / 2 };
   }
   return null;
 }
+const motorPoolBay = lm => ({ x0: lm.layout.motorPool.x0, y0: lm.layout.motorPool.y0 + 1,
+                              x1: lm.layout.motorPool.x1, y1: lm.layout.motorPool.y1 - 1 });
 // Army soldier (the AI lives in js/army.js).
 function makeSoldier(x, y) {
   const p = makePed(x, y, 'soldier');
@@ -299,26 +301,31 @@ function makeArmyCar(x, y) {
 }
 // Military jeep parked in the base yard (stealable… at your own risk).
 function parkArmyJeep(lm) {
-  const sp = armyInteriorSpot(lm, 70);
+  const sp = armySpotIn(motorPoolBay(lm), 70);
   if (!sp) return;
   const c = makeArmyCar(sp.x, sp.y);
   c.role = 'parked'; c.speed = 0; c.angle = sp.angle; c.serviceType = 'armyjeep';
   cars.push(c);
 }
 // Barracks guard: patrols the yard and shoots intruders on sight.
-function makeGuard(lm) {
-  const sp = armyInteriorSpot(lm, 40);
-  if (!sp) return null;
-  const p = makeSoldier(sp.x, sp.y);
-  p.guard = true; p.baseLm = landmarks.indexOf(lm);
+function makeGuard(lm, duty) {
+  const start = duty.post || duty.route[0];
+  const p = makeSoldier(start.x, start.y);
+  p.guard = true; p.baseLm = landmarks.indexOf(lm); p.duty = duty;
+  p.routeIndex = 0; p.pauseT = 0;
+  p.facing = duty.post ? duty.post.facing : 0;
   return p;
+}
+function restoreArmyGuards(lm) {
+  for (const duty of lm.guardDuties)
+    if (!peds.some(p => p.guard && p.duty === duty)) peds.push(makeGuard(lm, duty));
 }
 // Parks a service vehicle on the street nearest the building's entrance; if there is no
 // room there, widens the search towards the nearest road (large blocks).
 // Army vehicles instead sit INSIDE the barracks fence.
 function parkServiceCar(lm) {
   if (lm.type === 'army') {
-    const sp = armyInteriorSpot(lm, 70);
+    const sp = armySpotIn(motorPoolBay(lm), 70);
     if (sp) cars.push(makeServiceCar('army', sp));
     return;
   }
@@ -418,7 +425,6 @@ function spawnAlleyCoin(cx, cy, rmax) {
   // The base is garrisoned: jeeps around the yard plus a guard detail.
   for (const lm of landmarks) if (lm.type === 'army') {
     for (let k = 0; k < 2; k++) parkArmyJeep(lm);
-    // Few guards on foot: the 4 corner turrets do most of the work.
-    for (let k = 0; k < 3; k++) { const g = makeGuard(lm); if (g) peds.push(g); }
+    restoreArmyGuards(lm);
   }
 })();

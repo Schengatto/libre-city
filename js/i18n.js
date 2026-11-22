@@ -110,7 +110,7 @@ const STR = {
     'lang.label': 'Lingua del gioco',
 
     // ---- HUD ----
-    'hud.wanted': '★ CERCATO ★',
+    'hud.wanted': '★ RICERCATO ★',
     'hud.fists': '👊 Pugni',
     'hud.gear': '⚙️ {g}ª',
     'hud.gearR': '⚙️ R',
