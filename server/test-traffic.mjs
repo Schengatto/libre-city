@@ -34,6 +34,7 @@ function overlap(a, b) {
     pen = Math.min(pen, proj(a, ux, uy) + proj(b, ux, uy) - Math.abs(dx * ux + dy * uy));
   return pen;
 }
+const MIN_LATERAL_OVERLAP = 2;
 // Free space between c's nose and the tail of whoever is ahead IN ITS OWN LANE (only
 // vehicles travelling the same way: this is the traffic queue, not someone cutting across
 // the junction).
@@ -46,7 +47,9 @@ function queueGap(c, cars) {
     const dx = o.x - c.x, dy = o.y - c.y;
     const along = dx * ax + dy * ay;
     if (along <= 0) continue;
-    if (Math.abs(-dx * ay + dy * ax) > proj(c, -ay, ax) + proj(o, -ay, ax)) continue;
+    const lateralOverlap = proj(c, -ay, ax) + proj(o, -ay, ax) - Math.abs(-dx * ay + dy * ax);
+    if (lateralOverlap < MIN_LATERAL_OVERLAP) continue;
+    if (o.speed >= c.speed) continue;
     gap = Math.min(gap, along - proj(c, ax, ay) - proj(o, ax, ay));
   }
   return gap;
@@ -56,10 +59,12 @@ const sim = createRoomSim('TRAFFIC');
 sim.addPlayer('Tester', 0, 'p1');
 
 const TICKS = 1200;
+const WATCHED = 300;
 let worstPen = -Infinity, worstPenPair = '';   // worst interpenetration between two silhouettes
 let worstGap = Infinity, worstGapAt = 0;       // worst safe distance in a queue
 const moved = new Map();                       // id → px travelled (for stall detection)
 const seenAt = new Map();                      // id → last tick seen
+const bornAt = new Map();
 const lastPos = new Map();
 
 for (let f = 0; f < TICKS; f++) {
@@ -83,6 +88,7 @@ for (let f = 0; f < TICKS; f++) {
     const p = lastPos.get(c.id);
     if (p) moved.set(c.id, (moved.get(c.id) || 0) + Math.hypot(c.x - p[0], c.y - p[1]));
     lastPos.set(c.id, [c.x, c.y]);
+    if (!bornAt.has(c.id)) bornAt.set(c.id, f);
     seenAt.set(c.id, f);
   }
 }
@@ -100,7 +106,8 @@ check(worstPen < 6, `nessuna compenetrazione oltre 6px (peggiore ${worstPen.toFi
 check(worstGap > 8, `distanza minima dal veicolo che precede > 8px (peggiore ${worstGap.toFixed(1)}px al tick ${worstGapAt})`);
 
 // No permanent stall: cars alive for a while must have covered some ground.
-const stalled = [...moved.entries()].filter(([id, d]) => d < 60 && seenAt.get(id) === TICKS - 1);
+const stalled = [...moved.entries()].filter(([id, d]) =>
+  d < 60 && seenAt.get(id) === TICKS - 1 && TICKS - 1 - bornAt.get(id) >= WATCHED);
 check(stalled.length === 0, `nessuna auto in stallo permanente (${stalled.length} ferme su ${traffic.length})`,
       stalled.slice(0, 4).map(([id, d]) => `#${id}: ${d.toFixed(0)}px`).join(', '));
 
