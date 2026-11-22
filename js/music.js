@@ -1,4 +1,4 @@
-const MUSIC_BPM = 100;
+const MUSIC_BPM = 132;
 const MUSIC_STEP_SECONDS = 60 / MUSIC_BPM / 4;
 const MUSIC_STEPS_PER_BAR = 16;
 const MUSIC_BAR_SECONDS = MUSIC_STEP_SECONDS * MUSIC_STEPS_PER_BAR;
@@ -7,21 +7,23 @@ const MUSIC_LOOKAHEAD_SECONDS = 0.15;
 const MUSIC_TICK_MS = 25;
 
 const MENU_SONG_CHORDS = [
-  { bass: 33, pad: [57, 60, 64, 71] },
-  { bass: 29, pad: [53, 57, 60, 64] },
-  { bass: 36, pad: [55, 60, 64, 67] },
-  { bass: 31, pad: [55, 59, 62, 67] },
+  { bass: 38, pad: [62, 66, 69] },
+  { bass: 33, pad: [61, 64, 69] },
+  { bass: 35, pad: [62, 66, 71] },
+  { bass: 31, pad: [62, 67, 71] },
 ];
-const MENU_SONG_ARP_PATTERN = [0, 1, 2, 3, 2, 3, 1, 2];
+const MENU_SONG_ARP_PATTERN = [0, 1, 2, 1];
+const MENU_SONG_STAB_STEPS = new Set([2, 6, 10, 14]);
+const MENU_SONG_TOM_FILL = [55, 50, 45];
 const MENU_SONG_LEAD = [
-  [0, 76, 6], [6, 74, 2], [8, 72, 4], [12, 69, 4],
-  [16, 72, 6], [22, 69, 2], [24, 67, 8],
-  [32, 76, 4], [36, 79, 4], [40, 76, 4], [44, 74, 4],
-  [48, 74, 8], [56, 71, 4],
-  [64, 81, 6], [70, 79, 2], [72, 76, 8],
-  [80, 77, 4], [84, 76, 4], [88, 72, 8],
-  [96, 79, 4], [100, 76, 4], [104, 72, 4], [108, 76, 4],
-  [112, 74, 12],
+  [0, 74, 2], [2, 74, 2], [4, 76, 2], [6, 78, 4], [10, 76, 2], [12, 74, 4],
+  [16, 73, 2], [18, 73, 2], [20, 74, 2], [22, 76, 6], [28, 69, 4],
+  [32, 78, 2], [34, 78, 2], [36, 79, 2], [38, 81, 4], [42, 79, 2], [44, 78, 4],
+  [48, 79, 4], [52, 78, 2], [54, 76, 2], [56, 74, 8],
+  [64, 74, 2], [66, 74, 2], [68, 76, 2], [70, 78, 4], [74, 76, 2], [76, 74, 4],
+  [80, 73, 2], [82, 76, 2], [84, 81, 4], [88, 78, 2], [90, 76, 6],
+  [96, 78, 2], [98, 81, 2], [100, 83, 4], [104, 81, 2], [106, 78, 2], [108, 76, 4],
+  [112, 74, 4], [116, 76, 4], [120, 74, 8],
 ];
 const MENU_SONG_LEAD_BY_STEP = new Map(MENU_SONG_LEAD.map(([step, midi, length]) => [step, { midi, length }]));
 const MENU_SONG_LEAD_STEPS = 128;
@@ -37,13 +39,17 @@ function musicMidiToFrequency(midi) {
 
 function menuMusicStep(step) {
   const stepInBar = step % MUSIC_STEPS_PER_BAR;
-  const chord = MENU_SONG_CHORDS[Math.floor(step / MUSIC_STEPS_PER_BAR) % MENU_SONG_CHORDS.length];
+  const chordIndex = Math.floor(step / MUSIC_STEPS_PER_BAR) % MENU_SONG_CHORDS.length;
+  const chord = MENU_SONG_CHORDS[chordIndex];
+  const phraseEnds = chordIndex === MENU_SONG_CHORDS.length - 1;
   const leadStep = step - MENU_SONG_LEAD_STEPS;
   return {
     kick: stepInBar % 4 === 0,
     snare: stepInBar === 4 || stepInBar === 12,
     hatAccent: stepInBar % 4 === 2,
-    bass: stepInBar % 2 === 0 ? chord.bass + (stepInBar % 4 === 2 ? 12 : 0) : null,
+    tom: phraseEnds && stepInBar > 12 ? MENU_SONG_TOM_FILL[stepInBar - 13] : null,
+    bass: stepInBar % 2 === 0 ? chord.bass + (stepInBar % 8 === 6 ? 12 : 0) : null,
+    stab: MENU_SONG_STAB_STEPS.has(stepInBar) ? chord.pad : null,
     pad: stepInBar === 0 ? chord.pad : null,
     arp: chord.pad[MENU_SONG_ARP_PATTERN[stepInBar % MENU_SONG_ARP_PATTERN.length]] + 12,
     lead: leadStep >= 0 ? MENU_SONG_LEAD_BY_STEP.get(leadStep) || null : null,
@@ -130,41 +136,58 @@ function playMusicNoise({ time, duration, volume, filterType, frequency, reverb 
   source.start(time, Math.random() * 0.5, duration + 0.02);
 }
 
-function playMusicKick(time) {
+function playMusicDrum({ time, fromFrequency, toFrequency, volume, duration, reverb = 0 }) {
   const oscillator = AC.createOscillator();
   const envelope = AC.createGain();
-  oscillator.frequency.setValueAtTime(150, time);
-  oscillator.frequency.exponentialRampToValueAtTime(45, time + 0.12);
-  envelope.gain.setValueAtTime(0.6, time);
-  envelope.gain.exponentialRampToValueAtTime(0.001, time + 0.32);
+  oscillator.frequency.setValueAtTime(fromFrequency, time);
+  oscillator.frequency.exponentialRampToValueAtTime(toFrequency, time + duration * 0.4);
+  envelope.gain.setValueAtTime(volume, time);
+  envelope.gain.exponentialRampToValueAtTime(0.001, time + duration);
   oscillator.connect(envelope);
-  routeMusicVoice(envelope, 0, 0);
+  routeMusicVoice(envelope, reverb, 0);
   oscillator.start(time);
-  oscillator.stop(time + 0.35);
+  oscillator.stop(time + duration + 0.03);
+}
+
+function playMusicClap(time) {
+  for (const offset of [0, 0.011, 0.022]) {
+    playMusicNoise({ time: time + offset, duration: 0.03, volume: 0.22, filterType: 'bandpass', frequency: 1200 });
+  }
+  playMusicNoise({ time: time + 0.033, duration: 0.16, volume: 0.16, filterType: 'bandpass', frequency: 1200, reverb: 0.6 });
 }
 
 function playMenuMusicStep(events, time) {
-  if (events.kick) playMusicKick(time);
+  if (events.kick) playMusicDrum({ time, fromFrequency: 150, toFrequency: 45, volume: 0.6, duration: 0.3 });
   if (events.snare) {
-    playMusicNoise({ time, duration: 0.22, volume: 0.3, filterType: 'bandpass', frequency: 1900, reverb: 0.9 });
-    playMusicOscillator({ type: 'triangle', midi: 55, time, duration: 0.1, volume: 0.2, cutoff: 4000, reverb: 0.5 });
+    playMusicNoise({ time, duration: 0.2, volume: 0.26, filterType: 'bandpass', frequency: 2100, reverb: 0.8 });
+    playMusicOscillator({ type: 'triangle', midi: 55, time, duration: 0.1, volume: 0.18, cutoff: 4000, reverb: 0.4 });
+    playMusicClap(time);
   }
-  playMusicNoise({ time, duration: events.hatAccent ? 0.06 : 0.03, volume: events.hatAccent ? 0.1 : 0.05, filterType: 'highpass', frequency: 7500 });
+  if (events.tom !== null) {
+    const frequency = musicMidiToFrequency(events.tom);
+    playMusicDrum({ time, fromFrequency: frequency * 1.5, toFrequency: frequency, volume: 0.4, duration: 0.35, reverb: 0.8 });
+  }
+  playMusicNoise({ time, duration: events.hatAccent ? 0.09 : 0.03, volume: events.hatAccent ? 0.09 : 0.05, filterType: 'highpass', frequency: 7500 });
   if (events.bass !== null) {
-    playMusicOscillator({ type: 'sawtooth', midi: events.bass, time, duration: MUSIC_STEP_SECONDS * 1.8, volume: 0.18, cutoff: 700 });
+    playMusicOscillator({ type: 'sawtooth', midi: events.bass, time, duration: MUSIC_STEP_SECONDS * 1.1, volume: 0.2, cutoff: 950 });
   }
   if (events.pad) {
     for (const midi of events.pad) {
-      for (const detune of [-9, 9]) {
-        playMusicOscillator({ type: 'sawtooth', midi, time, duration: MUSIC_BAR_SECONDS + 0.3, volume: 0.022, cutoff: 1500, detune, attack: 0.6, release: 0.8, reverb: 0.7 });
+      playMusicOscillator({ type: 'triangle', midi: midi - 12, time, duration: MUSIC_BAR_SECONDS + 0.2, volume: 0.03, cutoff: 1200, attack: 0.3, release: 0.5, reverb: 0.6 });
+    }
+  }
+  if (events.stab) {
+    for (const midi of events.stab) {
+      for (const detune of [-7, 7]) {
+        playMusicOscillator({ type: 'sawtooth', midi, time, duration: MUSIC_STEP_SECONDS * 1.2, volume: 0.028, cutoff: 3200, detune, reverb: 0.35 });
       }
     }
   }
-  playMusicOscillator({ type: 'square', midi: events.arp, time, duration: MUSIC_STEP_SECONDS * 0.9, volume: 0.03, cutoff: 2200, reverb: 0.2, delay: 0.5 });
+  playMusicOscillator({ type: 'square', midi: events.arp, time, duration: MUSIC_STEP_SECONDS * 0.7, volume: 0.018, cutoff: 2600, reverb: 0.15, delay: 0.4 });
   if (events.lead) {
-    for (const detune of [-6, 6]) {
-      playMusicOscillator({ type: 'sawtooth', midi: events.lead.midi, time, duration: events.lead.length * MUSIC_STEP_SECONDS, volume: 0.04, cutoff: 3200, detune, attack: 0.03, release: 0.25, reverb: 0.4, delay: 0.35 });
-    }
+    const duration = events.lead.length * MUSIC_STEP_SECONDS;
+    playMusicOscillator({ type: 'square', midi: events.lead.midi, time, duration, volume: 0.04, cutoff: 4200, attack: 0.01, release: 0.12, reverb: 0.25, delay: 0.2 });
+    playMusicOscillator({ type: 'sawtooth', midi: events.lead.midi + 12, time, duration, volume: 0.015, cutoff: 5000, detune: 5, attack: 0.01, release: 0.12, reverb: 0.25 });
   }
 }
 

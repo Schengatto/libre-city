@@ -4,7 +4,7 @@ import { readSource } from './render-test-kit.mjs';
 
 const ROOT = path.join(import.meta.dirname, '..');
 const MUSIC_SOURCE = readSource('music.js');
-const A_NATURAL_MINOR = new Set([9, 11, 0, 2, 4, 5, 7]);
+const D_MAJOR = new Set([2, 4, 6, 7, 9, 11, 1]);
 
 let pass = 0, fail = 0;
 const ok = (condition, message) => { if (condition) { pass++; console.log('  OK ', message); } else { fail++; console.log('  XX FAIL:', message); } };
@@ -59,10 +59,13 @@ console.log('1) song pattern');
   ok(bar.filter(e => e.kick).length === 4 && [0, 4, 8, 12].every(s => bar[s].kick), 'kick on every beat');
   ok(bar.filter(e => e.snare).length === 2 && bar[4].snare && bar[12].snare, 'snare on beats 2 and 4');
   ok(bar.every((e, step) => (step % 2 === 0) === (e.bass !== null)), 'bass plays straight eighths');
-  ok(bar[0].bass === 33 && bar[2].bass === 45, 'bass alternates root and octave');
+  ok(bar[0].bass === 38 && bar[2].bass === 38 && bar[6].bass === 50 && bar[14].bass === 50, 'bass pumps the root with an octave pop');
   ok(bar[0].pad && bar.slice(1).every(e => e.pad === null), 'pad chord only on the downbeat');
+  ok(bar.every((e, step) => (e.stab !== null) === (step % 4 === 2)), 'chord stabs on every offbeat');
   const roots = [0, 1, 2, 3].map(barIndex => api.menuMusicStep(barIndex * 16).bass % 12);
-  ok(JSON.stringify(roots) === JSON.stringify([9, 5, 0, 7]), 'progression is Am F C G');
+  ok(JSON.stringify(roots) === JSON.stringify([2, 9, 11, 7]), 'progression is D A Bm G');
+  const tomSteps = Array.from({ length: 64 }, (_, step) => step).filter(step => api.menuMusicStep(step).tom !== null);
+  ok(JSON.stringify(tomSteps) === JSON.stringify([61, 62, 63]), 'tom fill closes each four-bar phrase');
   const arpInChord = Array.from({ length: 64 }, (_, step) => step).every(step => {
     const chord = api.MENU_SONG_CHORDS[Math.floor(step / 16) % 4].pad.map(n => n % 12);
     return chord.includes(api.menuMusicStep(step).arp % 12);
@@ -70,9 +73,9 @@ console.log('1) song pattern');
   ok(arpInChord, 'arpeggio notes belong to the current chord');
   const intro = Array.from({ length: api.MENU_SONG_LEAD_STEPS }, (_, step) => api.menuMusicStep(step));
   ok(intro.every(e => e.lead === null), 'no lead during the intro half');
-  ok(api.menuMusicStep(api.MENU_SONG_LEAD_STEPS).lead?.midi === 76, 'lead enters on the second half');
+  ok(api.menuMusicStep(api.MENU_SONG_LEAD_STEPS).lead?.midi === 74, 'lead enters on the second half');
   ok(api.MENU_SONG_STEPS === api.MENU_SONG_LEAD_STEPS * 2, 'song loops after intro plus lead');
-  ok(api.MENU_SONG_LEAD.every(([, midi]) => A_NATURAL_MINOR.has(midi % 12)), 'lead stays in A natural minor');
+  ok(api.MENU_SONG_LEAD.every(([, midi]) => D_MAJOR.has(midi % 12)), 'lead stays in D major');
   ok(api.MENU_SONG_LEAD.every(([step, , length]) => step + length <= api.MENU_SONG_LEAD_STEPS), 'lead notes end inside the loop');
 }
 
