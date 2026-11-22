@@ -4,14 +4,14 @@ import { readSource } from './render-test-kit.mjs';
 
 const ROOT = path.join(import.meta.dirname, '..');
 const MUSIC_SOURCE = readSource('music.js');
-const D_MAJOR = new Set([2, 4, 6, 7, 9, 11, 1]);
+const E_NATURAL_MINOR = new Set([4, 6, 7, 9, 11, 0, 2]);
 
 let pass = 0, fail = 0;
 const ok = (condition, message) => { if (condition) { pass++; console.log('  OK ', message); } else { fail++; console.log('  XX FAIL:', message); } };
 
 function createFakeAudioContext() {
   const startTimes = [];
-  const createParam = () => ({ value: 0, target: null, setValueAtTime() {}, exponentialRampToValueAtTime() {}, setTargetAtTime(value) { this.target = value; } });
+  const createParam = () => ({ value: 0, target: null, setValueAtTime() {}, exponentialRampToValueAtTime() {}, linearRampToValueAtTime() {}, setTargetAtTime(value) { this.target = value; } });
   const createNode = () => ({
     connect() {}, stop() {}, start(time) { startTimes.push(time); },
     gain: createParam(), frequency: createParam(), detune: createParam(), delayTime: createParam(),
@@ -56,26 +56,29 @@ console.log('1) song pattern');
 {
   const { api } = loadMusic();
   const bar = Array.from({ length: 16 }, (_, step) => api.menuMusicStep(step));
-  ok(bar.filter(e => e.kick).length === 4 && [0, 4, 8, 12].every(s => bar[s].kick), 'kick on every beat');
-  ok(bar.filter(e => e.snare).length === 2 && bar[4].snare && bar[12].snare, 'snare on beats 2 and 4');
-  ok(bar.every((e, step) => (step % 2 === 0) === (e.bass !== null)), 'bass plays straight eighths');
-  ok(bar[0].bass === 38 && bar[2].bass === 38 && bar[6].bass === 50 && bar[14].bass === 50, 'bass pumps the root with an octave pop');
+  const stepsWhere = predicate => bar.flatMap((e, step) => predicate(e) ? [step] : []);
+  ok(JSON.stringify(stepsWhere(e => e.kick)) === '[0,10]', 'kick on the downbeat and the pushed third beat');
+  ok(JSON.stringify(stepsWhere(e => e.snare)) === '[4,12]', 'snare on beats 2 and 4');
+  ok(JSON.stringify(stepsWhere(e => e.hat)) === '[0,2,4,6,8,10,12,14]', 'hats on straight eighths');
+  ok(JSON.stringify(stepsWhere(e => e.bass)) === '[0,6,10]', 'bass plays the syncopated 0-6-10 figure');
+  ok(bar[0].bass.length + bar[6].bass.length + bar[10].bass.length === 16, 'bass notes fill the bar without overlapping');
   ok(bar[0].pad && bar.slice(1).every(e => e.pad === null), 'pad chord only on the downbeat');
-  ok(bar.every((e, step) => (e.stab !== null) === (step % 4 === 2)), 'chord stabs on every offbeat');
-  const roots = [0, 1, 2, 3].map(barIndex => api.menuMusicStep(barIndex * 16).bass % 12);
-  ok(JSON.stringify(roots) === JSON.stringify([2, 9, 11, 7]), 'progression is D A Bm G');
+  const roots = [0, 1, 2, 3].map(barIndex => api.menuMusicStep(barIndex * 16).bass.midi % 12);
+  ok(JSON.stringify(roots) === JSON.stringify([4, 0, 9, 2]), 'progression is Em C Am D');
   const tomSteps = Array.from({ length: 64 }, (_, step) => step).filter(step => api.menuMusicStep(step).tom !== null);
   ok(JSON.stringify(tomSteps) === JSON.stringify([61, 62, 63]), 'tom fill closes each four-bar phrase');
-  const arpInChord = Array.from({ length: 64 }, (_, step) => step).every(step => {
+  const bellInChord = Array.from({ length: 64 }, (_, step) => step).every(step => {
     const chord = api.MENU_SONG_CHORDS[Math.floor(step / 16) % 4].pad.map(n => n % 12);
-    return chord.includes(api.menuMusicStep(step).arp % 12);
+    const bell = api.menuMusicStep(step).bell;
+    return step % 2 === 0 ? chord.includes(bell % 12) : bell === null;
   });
-  ok(arpInChord, 'arpeggio notes belong to the current chord');
+  ok(bellInChord, 'electric piano plays chord tones on eighths');
   const intro = Array.from({ length: api.MENU_SONG_LEAD_STEPS }, (_, step) => api.menuMusicStep(step));
   ok(intro.every(e => e.lead === null), 'no lead during the intro half');
-  ok(api.menuMusicStep(api.MENU_SONG_LEAD_STEPS).lead?.midi === 74, 'lead enters on the second half');
+  const firstLead = api.menuMusicStep(api.MENU_SONG_LEAD_STEPS).lead;
+  ok(firstLead?.midi === 83 && firstLead.bend === true, 'lead enters on the second half with a bend');
   ok(api.MENU_SONG_STEPS === api.MENU_SONG_LEAD_STEPS * 2, 'song loops after intro plus lead');
-  ok(api.MENU_SONG_LEAD.every(([, midi]) => D_MAJOR.has(midi % 12)), 'lead stays in D major');
+  ok(api.MENU_SONG_LEAD.every(([, midi]) => E_NATURAL_MINOR.has(midi % 12)), 'lead stays in E natural minor');
   ok(api.MENU_SONG_LEAD.every(([step, , length]) => step + length <= api.MENU_SONG_LEAD_STEPS), 'lead notes end inside the loop');
 }
 
