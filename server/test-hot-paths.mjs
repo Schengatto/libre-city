@@ -53,12 +53,15 @@ for (let round = 0; round < 40; round++) {
   const cars = sim._cars();
   const probes = sim._peds().map(p => ({ x: p.x, y: p.y }));
   for (const c of cars) probes.push({ x: c.x + 60, y: c.y - 40 }, { x: c.x - 149, y: c.y });
+  const originalSpeeds = cars.map(c => c.speed);
+  cars.forEach((c, index) => { if (index % 2 === 0) c.speed = index % 4 === 0 ? 4 : -4; });
   for (const probe of probes) {
     threatQueries++;
     const expected = referenceNearestThreatCar(cars, probe.x, probe.y, 150);
     if (expected) threatsFound++;
     if (sim._nearestThreatCar(probe.x, probe.y, 150) !== expected) threatMismatches++;
   }
+  cars.forEach((c, index) => { c.speed = originalSpeeds[index]; });
   for (const c of cars) {
     if (!c.dir) continue;
     for (const push of [false, true]) {
