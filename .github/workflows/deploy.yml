@@ -15,8 +15,8 @@ permissions:
   contents: read
 
 env:
-  PUBLIC_URL: https://libre-city.schengatto.cloud
-  SERVER_URL: wss://libre-city.schengatto.cloud
+  PUBLIC_URL: https://libre-city.schengatto.com
+  SERVER_URL: wss://libre-city.schengatto.com
 
 jobs:
   test:
