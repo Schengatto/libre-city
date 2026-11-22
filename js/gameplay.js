@@ -419,11 +419,15 @@ function updateAngryDriver(p) {
   if (p.sayT === 0 && Math.random() < 0.03) pedSay(p, SAY_CARJACK, '#c22822', true);
 }
 function nearestThreatCar(x, y, range) {
-  let best = null, bd = range;
+  let best = null, bestDistSq = range * range;
   for (const c of cars) {
     if (Math.abs(c.speed) < 3) continue;
-    const d = dist(c.x, c.y, x, y);
-    if (d < bd) { bd = d; best = c; }
+    const dx = c.x - x;
+    if (dx >= range || dx <= -range) continue;
+    const dy = c.y - y;
+    if (dy >= range || dy <= -range) continue;
+    const distSq = dx * dx + dy * dy;
+    if (distSq < bestDistSq) { bestDistSq = distSq; best = c; }
   }
   return best;
 }
@@ -525,7 +529,10 @@ function gapAhead(c, maxLook, push) {
     const dx = o.x - c.x, dy = o.y - c.y;
     const along = dx * ax + dy * ay;                   // ahead (>0)
     if (along <= 0) continue;                          // it is behind me
+    const otherMaxReach = ((o.w || 46) + (o.h || 24)) / 2;
+    if (along - myFront - otherMaxReach >= gap) continue;
     const side = -dx * ay + dy * ax;                   // lateral
+    if (Math.abs(side) > myHalfW + otherMaxReach + 4) continue;
     // The other vehicle's extent on MY axes (it may be rotated relative to me).
     if (Math.abs(side) > myHalfW + carProj(o, -ay, ax) + 4) continue;   // not in my path
     const g = along - myFront - carProj(o, ax, ay);    // empty space between the two bumpers
