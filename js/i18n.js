@@ -105,8 +105,8 @@ const STR = {
   it: {
     // ---- Language choice ----
     'lang.title': '🌍 Lingua · Language',
-    'lang.it': '🇮🇹 Italiano',
-    'lang.en': '🇬🇧 English',
+    'lang.it': 'Italiano',
+    'lang.en': 'English',
     'lang.label': 'Lingua del gioco',
 
     // ---- HUD ----
@@ -539,8 +539,8 @@ const STR = {
   // =======================================================================
   en: {
     'lang.title': '🌍 Language · Lingua',
-    'lang.it': '🇮🇹 Italiano',
-    'lang.en': '🇬🇧 English',
+    'lang.it': 'Italiano',
+    'lang.en': 'English',
     'lang.label': 'Game language',
 
     'hud.wanted': '★ WANTED ★',
