@@ -4,7 +4,7 @@ import { readSource } from './render-test-kit.mjs';
 
 const ROOT = path.join(import.meta.dirname, '..');
 const MUSIC_SOURCE = readSource('music.js');
-const E_NATURAL_MINOR = new Set([4, 6, 7, 9, 11, 0, 2]);
+const D_HARMONIC_MINOR = new Set([2, 4, 5, 7, 9, 10, 1]);
 
 let pass = 0, fail = 0;
 const ok = (condition, message) => { if (condition) { pass++; console.log('  OK ', message); } else { fail++; console.log('  XX FAIL:', message); } };
@@ -14,12 +14,12 @@ function createFakeAudioContext() {
   const createParam = () => ({ value: 0, target: null, setValueAtTime() {}, exponentialRampToValueAtTime() {}, linearRampToValueAtTime() {}, setTargetAtTime(value) { this.target = value; } });
   const createNode = () => ({
     connect() {}, stop() {}, start(time) { startTimes.push(time); },
-    gain: createParam(), frequency: createParam(), detune: createParam(), delayTime: createParam(),
+    gain: createParam(), frequency: createParam(), detune: createParam(), delayTime: createParam(), pan: createParam(),
   });
   return {
     currentTime: 0, sampleRate: 100, startTimes,
     createGain: createNode, createOscillator: createNode, createBiquadFilter: createNode,
-    createConvolver: createNode, createDelay: createNode, createBufferSource: createNode,
+    createConvolver: createNode, createDelay: createNode, createBufferSource: createNode, createStereoPanner: createNode,
     createBuffer: (channels, length) => ({ getChannelData: () => new Float32Array(length) }),
   };
 }
@@ -44,7 +44,7 @@ function loadMusic({ started = false, storedMusic, startDisplay = '' } = {}) {
   const fakeSetInterval = () => { const id = nextTimerId++; activeTimers.add(id); return id; };
   const fakeClearInterval = id => { activeTimers.delete(id); };
   const audio = createFakeAudioContext();
-  const exportedNames = ['menuMusicStep', 'scheduleMenuMusic', 'startMenuMusic', 'stopMenuMusic', 'MENU_SONG_CHORDS',
+  const exportedNames = ['menuMusicStep', 'playMenuMusicStep', 'scheduleMenuMusic', 'startMenuMusic', 'stopMenuMusic', 'MENU_SONG_CHORDS',
     'MENU_SONG_LEAD', 'MENU_SONG_LEAD_STEPS', 'MENU_SONG_STEPS', 'MUSIC_STEP_SECONDS', 'MUSIC_LOOKAHEAD_SECONDS', 'MUSIC_VOLUME'];
   const api = new Function('store', 'document', 'setInterval', 'clearInterval', 'AC', 'MASTER', 'initAudio', 'started',
     `${MUSIC_SOURCE}\n;return { ${exportedNames.join(', ')}, bus: () => musicBus };`)(
@@ -57,28 +57,24 @@ console.log('1) song pattern');
   const { api } = loadMusic();
   const bar = Array.from({ length: 16 }, (_, step) => api.menuMusicStep(step));
   const stepsWhere = predicate => bar.flatMap((e, step) => predicate(e) ? [step] : []);
-  ok(JSON.stringify(stepsWhere(e => e.kick)) === '[0,10]', 'kick on the downbeat and the pushed third beat');
+  ok(JSON.stringify(stepsWhere(e => e.kick)) === '[0,3,8,10]', 'driving kick pattern');
   ok(JSON.stringify(stepsWhere(e => e.snare)) === '[4,12]', 'snare on beats 2 and 4');
-  ok(JSON.stringify(stepsWhere(e => e.hat)) === '[0,2,4,6,8,10,12,14]', 'hats on straight eighths');
-  ok(JSON.stringify(stepsWhere(e => e.bass)) === '[0,6,10]', 'bass plays the syncopated 0-6-10 figure');
-  ok(bar[0].bass.length + bar[6].bass.length + bar[10].bass.length === 16, 'bass notes fill the bar without overlapping');
+  ok(JSON.stringify(stepsWhere(e => e.hatAccent)) === '[2,6,10,14]', 'hat accents on the offbeats');
+  ok(JSON.stringify(bar.map(e => e.bass - 38)) === '[0,0,12,0,0,12,0,0,0,0,12,0,0,12,7,12]', 'bass runs the sixteenth-note ostinato');
+  ok(JSON.stringify(stepsWhere(e => e.stab)) === '[0,10]' && bar[0].stab === api.MENU_SONG_CHORDS[0].pad, 'chord stabs hit on 1 and the pushed 3');
   ok(bar[0].pad && bar.slice(1).every(e => e.pad === null), 'pad chord only on the downbeat');
-  const roots = [0, 1, 2, 3].map(barIndex => api.menuMusicStep(barIndex * 16).bass.midi % 12);
-  ok(JSON.stringify(roots) === JSON.stringify([4, 0, 9, 2]), 'progression is Em C Am D');
+  const roots = [0, 1, 2, 3].map(barIndex => api.menuMusicStep(barIndex * 16).bass % 12);
+  ok(JSON.stringify(roots) === JSON.stringify([2, 10, 0, 9]), 'progression is Dm Bb C A');
   const tomSteps = Array.from({ length: 64 }, (_, step) => step).filter(step => api.menuMusicStep(step).tom !== null);
-  ok(JSON.stringify(tomSteps) === JSON.stringify([61, 62, 63]), 'tom fill closes each four-bar phrase');
-  const bellInChord = Array.from({ length: 64 }, (_, step) => step).every(step => {
-    const chord = api.MENU_SONG_CHORDS[Math.floor(step / 16) % 4].pad.map(n => n % 12);
-    const bell = api.menuMusicStep(step).bell;
-    return step % 2 === 0 ? chord.includes(bell % 12) : bell === null;
-  });
-  ok(bellInChord, 'electric piano plays chord tones on eighths');
+  ok(JSON.stringify(tomSteps) === JSON.stringify([60, 61, 62, 63]), 'tom fill closes each four-bar phrase');
+  const effects = Array.from({ length: api.MENU_SONG_STEPS }, (_, step) => [step, api.menuMusicStep(step).effect]).filter(([, effect]) => effect);
+  ok(JSON.stringify(effects) === '[[48,"car"],[124,"shot"],[126,"shot"],[192,"siren"]]', 'car, gunshots and siren once per loop');
   const intro = Array.from({ length: api.MENU_SONG_LEAD_STEPS }, (_, step) => api.menuMusicStep(step));
   ok(intro.every(e => e.lead === null), 'no lead during the intro half');
   const firstLead = api.menuMusicStep(api.MENU_SONG_LEAD_STEPS).lead;
-  ok(firstLead?.midi === 83 && firstLead.bend === true, 'lead enters on the second half with a bend');
+  ok(firstLead?.midi === 81 && firstLead.bend === true, 'lead enters on the second half with a bend');
   ok(api.MENU_SONG_STEPS === api.MENU_SONG_LEAD_STEPS * 2, 'song loops after intro plus lead');
-  ok(api.MENU_SONG_LEAD.every(([, midi]) => E_NATURAL_MINOR.has(midi % 12)), 'lead stays in E natural minor');
+  ok(api.MENU_SONG_LEAD.every(([, midi]) => D_HARMONIC_MINOR.has(midi % 12)), 'lead stays in D harmonic minor');
   ok(api.MENU_SONG_LEAD.every(([step, , length]) => step + length <= api.MENU_SONG_LEAD_STEPS), 'lead notes end inside the loop');
 }
 
@@ -132,6 +128,18 @@ console.log('3) scheduler');
   music.audio.currentTime = 20;
   music.api.scheduleMenuMusic();
   ok(scheduled.length === count, 'schedules nothing while the tab is hidden');
+}
+
+{
+  const music = loadMusic();
+  music.listeners.pointerdown();
+  for (const step of [48, 124, 192]) {
+    const before = music.audio.startTimes.length;
+    let error = null;
+    try { music.api.playMenuMusicStep(music.api.menuMusicStep(step), 5); } catch (caught) { error = caught; }
+    const effect = music.api.menuMusicStep(step).effect;
+    ok(!error && music.audio.startTimes.length > before, `${effect} effect plays without errors`);
+  }
 }
 
 console.log('4) wiring');
