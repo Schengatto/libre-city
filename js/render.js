@@ -82,6 +82,7 @@ function drawWorldStatic() {
   drawMarkings();
   drawCrosswalks();
   drawRailway();                                  // the train track (a horizontal line)
+  drawBuildingShadows();
   drawLandmarks();
 }
 // A pavement counts as "kerbside" (covered by the smooth ribbon) if it touches asphalt.
@@ -238,6 +239,136 @@ function shade(hex, f) {
   return `rgb(${r | 0},${g | 0},${b | 0})`;
 }
 
+const SHADOW_LENGTH_PER_LIFT = 1.6;
+const WINDOW_TONES = ['rgba(255,226,150,.80)', 'rgba(176,204,228,.55)', 'rgba(150,184,212,.45)', 'rgba(26,36,50,.75)'];
+const WALL_LAYOUT = {
+  house:     { floorHeight: 99, bay: 11, windowWidth: 4 },
+  apartment: { floorHeight: 5, bay: 7, windowWidth: 3 },
+  shop:      { floorHeight: 5, bay: 8, windowWidth: 4 },
+  tower:     { floorHeight: 4, bay: 4, windowWidth: 3 },
+  warehouse: null,
+  workshop:  { floorHeight: 99, bay: 12, windowWidth: 8 },
+};
+
+function tracePolygon(points) {
+  ctx.moveTo(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+  ctx.closePath();
+}
+function fillPolygon(points, color) {
+  ctx.fillStyle = color; ctx.beginPath(); tracePolygon(points); ctx.fill();
+}
+function buildingShadowPolygon(px, py, W, H, length) {
+  return [[px, py], [px + W, py], [px + W + length, py + length],
+          [px + W + length, py + H + length], [px + length, py + H + length], [px, py + H]];
+}
+function hipRoofPlanes(x, y, w, h) {
+  const inset = Math.min(w, h) / 2;
+  const ax = x + inset, ay = y + inset, bx = x + w - inset, by = y + h - inset;
+  return {
+    north: [[x, y], [x + w, y], [bx, ay], [ax, ay]],
+    west:  [[x, y + h], [x, y], [ax, ay], [ax, by]],
+    south: [[x + w, y + h], [x, y + h], [ax, by], [bx, by]],
+    east:  [[x + w, y], [x + w, y + h], [bx, by], [bx, ay]],
+  };
+}
+function drawBuildingShadows() {
+  const casters = [];
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, vw, vh);
+  for (const b of bldgs) {
+    const px = b.x0 * T - camX, py = b.y0 * T - camY;
+    const W = (b.x1 - b.x0 + 1) * T, H = (b.y1 - b.y0 + 1) * T;
+    const length = b.lift * SHADOW_LENGTH_PER_LIFT;
+    if (px + W + length < 0 || py + H + length < 0 || px > vw || py > vh) continue;
+    ctx.rect(px, py, W, H);
+    casters.push({ px, py, W, H, length });
+  }
+  ctx.clip('evenodd');
+  for (const [lengthFactor, alpha] of [[1, 0.22], [0.5, 0.16]]) {
+    ctx.fillStyle = `rgba(14,20,34,${alpha})`;
+    ctx.beginPath();
+    for (const c of casters) tracePolygon(buildingShadowPolygon(c.px, c.py, c.W, c.H, c.length * lengthFactor));
+    ctx.fill();
+  }
+  ctx.restore();
+}
+function windowTone(b, column, floor) {
+  const roll = hash2(b.h + column * 31, floor * 17 + 5) % 10;
+  return WINDOW_TONES[roll === 0 ? 0 : roll < 3 ? 1 : roll < 5 ? 2 : 3];
+}
+function drawBuildingWalls(b, px, py, W, H, L) {
+  const rw = W - L, rh = H - L;
+  fillPolygon([[px, py + rh], [px + rw, py + rh], [px + W, py + H], [px, py + H]], shade(b.col, -0.30));
+  fillPolygon([[px + rw, py], [px + W, py], [px + W, py + H], [px + rw, py + rh]], shade(b.col, -0.50));
+  const layout = WALL_LAYOUT[b.style];
+  if (!layout) {
+    ctx.fillStyle = 'rgba(0,0,0,.14)';
+    for (let sx = px + 2; sx < px + rw; sx += 3) ctx.fillRect(sx, py + rh, 1, L);
+    for (let sy = py + 2; sy < py + rh; sy += 3) ctx.fillRect(px + rw, sy, L, 1);
+  } else {
+    const floors = Math.max(1, Math.floor((L - 2) / layout.floorHeight));
+    const windowDepth = Math.min(layout.floorHeight, L - 2) - 2;
+    for (let floor = 0; floor < floors; floor++) {
+      const offset = 2 + floor * layout.floorHeight;
+      for (let sx = px + 4, column = 0; sx <= px + rw - layout.windowWidth - 3; sx += layout.bay, column++) {
+        ctx.fillStyle = windowTone(b, column, floor); ctx.fillRect(sx, py + rh + offset, layout.windowWidth, windowDepth);
+      }
+      for (let sy = py + 4, column = 0; sy <= py + rh - layout.windowWidth - 3; sy += layout.bay, column++) {
+        ctx.fillStyle = windowTone(b, column + 97, floor); ctx.fillRect(px + rw + offset, sy, windowDepth, layout.windowWidth);
+      }
+    }
+  }
+  ctx.fillStyle = 'rgba(0,0,0,.28)';
+  ctx.fillRect(px, py + H - 2, W, 2); ctx.fillRect(px + W - 2, py, 2, H);
+  ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(px + rw + 0.5, py + rh + 0.5); ctx.lineTo(px + W - 0.5, py + H - 0.5); ctx.stroke();
+}
+function drawParapet(b, px, py, rw, rh) {
+  ctx.strokeStyle = shade(b.col, 0.24); ctx.lineWidth = 2; ctx.strokeRect(px + 1, py + 1, rw - 2, rh - 2);
+  ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(px + 2, py + 2, rw - 4, 3); ctx.fillRect(px + 2, py + 5, 3, rh - 7);
+}
+function drawRoofWeathering(b, px, py, rw, rh) {
+  for (let k = 0; k < 4; k++) {
+    const roll = hash2(b.h + k * 41, k * 23 + 9);
+    const radius = 8 + roll % 14;
+    const sx = px + 6 + (roll >> 5) % Math.max(1, rw - 12), sy = py + 6 + (roll >> 11) % Math.max(1, rh - 12);
+    const stain = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius);
+    stain.addColorStop(0, 'rgba(0,0,0,.09)'); stain.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = stain; ctx.fillRect(sx - radius, sy - radius, radius * 2, radius * 2);
+  }
+}
+function drawRoofBox(x, y, w, h, color, height) {
+  ctx.fillStyle = 'rgba(10,14,24,.30)'; ctx.fillRect(x + height, y + height, w, h);
+  ctx.fillStyle = color; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = 'rgba(255,255,255,.20)'; ctx.fillRect(x, y, w, 1); ctx.fillRect(x, y, 1, h);
+  ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(x, y + h - 1, w, 1); ctx.fillRect(x + w - 1, y, 1, h);
+}
+function drawHipRoof(b, px, py, rw, rh) {
+  const roofColor = ROOF_COLS[b.h % ROOF_COLS.length];
+  const planes = hipRoofPlanes(px, py, rw, rh);
+  const tones = { north: 0.18, west: 0.06, south: -0.16, east: -0.30 };
+  for (const side of ['north', 'west', 'south', 'east']) {
+    fillPolygon(planes[side], shade(roofColor, tones[side]));
+    ctx.save(); ctx.beginPath(); tracePolygon(planes[side]); ctx.clip();
+    ctx.fillStyle = 'rgba(0,0,0,.10)';
+    if (side === 'north' || side === 'south') for (let sy = py + 3; sy < py + rh; sy += 3) ctx.fillRect(px, sy, rw, 1);
+    else for (let sx = px + 3; sx < px + rw; sx += 3) ctx.fillRect(sx, py, 1, rh);
+    ctx.restore();
+  }
+  const inset = Math.min(rw, rh) / 2;
+  ctx.strokeStyle = shade(roofColor, 0.36); ctx.lineWidth = 1.5; ctx.beginPath();
+  ctx.moveTo(px, py); ctx.lineTo(px + inset, py + inset); ctx.lineTo(px + rw - inset, py + rh - inset); ctx.lineTo(px + rw, py + rh);
+  ctx.moveTo(px + rw, py); ctx.lineTo(px + rw - inset, py + inset);
+  ctx.moveTo(px, py + rh); ctx.lineTo(px + inset, py + rh - inset);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 1; ctx.strokeRect(px + 0.5, py + 0.5, rw - 1, rh - 1);
+  const chimneyX = px + rw * 0.25 + b.h % Math.max(1, Math.floor(rw * 0.5) - 6), chimneyY = py + rh * 0.25;
+  drawRoofBox(chimneyX, chimneyY, 6, 6, '#6a625a', 4);
+  ctx.fillStyle = '#221f1c'; ctx.fillRect(chimneyX + 2, chimneyY + 2, 2, 2);
+}
+
 // ---------- Buildings: per-building drawing, pseudo-3D lit from the north-west ----------
 // The roof is inset by `lift` px from the footprint: on the south and east sides the
 // facade with its windows stays visible — the height effect of the old top-down driving
@@ -248,87 +379,73 @@ function drawBuildings() {
     const W = (b.x1 - b.x0 + 1) * T, H = (b.y1 - b.y0 + 1) * T;
     if (px + W < 0 || py + H < 0 || px > vw || py > vh) continue;
     const L = b.lift, rw = W - L, rh = H - L;
-    // Facade (the building's body) and windows on the visible sides.
-    ctx.fillStyle = shade(b.col, -0.42); ctx.fillRect(px, py, W, H);
-    for (let wx = px + 3; wx <= px + W - 7; wx += 9) {
-      ctx.fillStyle = hash2(b.h + wx - px, 7) % 5 === 0 ? 'rgba(255,238,170,.55)' : 'rgba(205,225,245,.30)';
-      ctx.fillRect(wx, py + H - L + 2, 4, L - 4);
-    }
-    for (let wy = py + 3; wy <= py + H - L - 7; wy += 9) {
-      ctx.fillStyle = hash2(b.h + wy - py, 13) % 5 === 0 ? 'rgba(255,238,170,.55)' : 'rgba(205,225,245,.30)';
-      ctx.fillRect(px + W - L + 2, wy, L - 4, 4);
-    }
+    drawBuildingWalls(b, px, py, W, H, L);
     // Roof according to the building's style.
-    if (b.style === 'house') {                          // pitched roof with ridge and chimney
-      const rc = ROOF_COLS[b.h % ROOF_COLS.length];
-      ctx.fillStyle = shade(rc, -0.35); ctx.fillRect(px, py, rw, rh);          // eaves
-      const horiz = rw >= rh;
-      if (horiz) {
-        const half = Math.floor((rh - 4) / 2);
-        ctx.fillStyle = shade(rc, 0.16); ctx.fillRect(px + 2, py + 2, rw - 4, half);
-        ctx.fillStyle = shade(rc, -0.10); ctx.fillRect(px + 2, py + 2 + half, rw - 4, rh - 4 - half);
-        ctx.fillStyle = shade(rc, 0.34); ctx.fillRect(px + 2, py + 1 + half, rw - 4, 2);   // ridge
-        ctx.fillStyle = 'rgba(0,0,0,.08)';
-        for (let sx = px + 7; sx < px + rw - 4; sx += 7) ctx.fillRect(sx, py + 2, 1, rh - 4);  // tiles
-        ctx.fillStyle = '#4a4642'; ctx.fillRect(px + 6 + b.h % Math.max(1, rw - 20), py + half - 8, 7, 7);
-        ctx.fillStyle = '#221f1c'; ctx.fillRect(px + 8 + b.h % Math.max(1, rw - 20), py + half - 6, 3, 3);
-      } else {
-        const half = Math.floor((rw - 4) / 2);
-        ctx.fillStyle = shade(rc, 0.16); ctx.fillRect(px + 2, py + 2, half, rh - 4);
-        ctx.fillStyle = shade(rc, -0.10); ctx.fillRect(px + 2 + half, py + 2, rw - 4 - half, rh - 4);
-        ctx.fillStyle = shade(rc, 0.34); ctx.fillRect(px + 1 + half, py + 2, 2, rh - 4);   // ridge
-        ctx.fillStyle = 'rgba(0,0,0,.08)';
-        for (let sy = py + 7; sy < py + rh - 4; sy += 7) ctx.fillRect(px + 2, sy, rw - 4, 1);
-        ctx.fillStyle = '#4a4642'; ctx.fillRect(px + half - 8, py + 6 + b.h % Math.max(1, rh - 20), 7, 7);
-        ctx.fillStyle = '#221f1c'; ctx.fillRect(px + half - 6, py + 8 + b.h % Math.max(1, rh - 20), 3, 3);
-      }
+    if (b.style === 'house') {
+      drawHipRoof(b, px, py, rw, rh);
     } else if (b.style === 'apartment') {                // block of flats: gravel, stair head, terrace
       ctx.fillStyle = b.col; ctx.fillRect(px, py, rw, rh);
-      ctx.fillStyle = 'rgba(255,255,255,.14)'; ctx.fillRect(px, py, rw, 3); ctx.fillRect(px, py, 3, rh);
-      ctx.fillStyle = 'rgba(0,0,0,.30)'; ctx.fillRect(px, py + rh - 3, rw, 3); ctx.fillRect(px + rw - 3, py, 3, rh);
       ctx.fillStyle = 'rgba(0,0,0,.07)';
       for (let k = 0; k < 12; k++) {
         const hh = hash2(b.h + k * 17, k * 29 + 1);
         ctx.fillRect(px + 5 + hh % Math.max(1, rw - 12), py + 5 + (hh >> 7) % Math.max(1, rh - 12), 3, 3);
       }
-      ctx.fillStyle = shade(b.col, -0.30); ctx.fillRect(px + 6, py + 6, 12, 14);           // stair head
-      ctx.fillStyle = shade(b.col, 0.10); ctx.fillRect(px + 6, py + 6, 12, 3);
-      ctx.fillStyle = '#2c2824'; ctx.fillRect(px + 10, py + 15, 5, 5);
-      ctx.fillStyle = 'rgba(120,170,210,.45)';                                             // skylights
-      for (let sx = px + 26; sx <= px + rw - 16; sx += 15) ctx.fillRect(sx, py + 8, 8, 6);
-      ctx.fillStyle = '#9aa0a6'; ctx.fillRect(px + rw - 17, py + rh - 16, 10, 8);          // air-conditioning unit
-      ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(px + rw - 17, py + rh - 16, 10, 2);
-      ctx.fillStyle = '#4c8a44'; ctx.fillRect(px + 6, py + rh - 14, 9, 8);                 // roof garden
-    } else if (b.style === 'tower') {                  // high-rise offices: glazed roof, core, aerial
-      ctx.fillStyle = shade(b.col, -0.10); ctx.fillRect(px, py, rw, rh);
-      ctx.fillStyle = 'rgba(130,185,225,.30)'; ctx.fillRect(px + 3, py + 3, rw - 6, rh - 6);
-      ctx.strokeStyle = 'rgba(20,30,45,.35)'; ctx.lineWidth = 1; ctx.beginPath();
-      for (let sx = px + 11; sx < px + rw - 5; sx += 8) { ctx.moveTo(sx + 0.5, py + 3); ctx.lineTo(sx + 0.5, py + rh - 3); }
-      for (let sy = py + 11; sy < py + rh - 5; sy += 8) { ctx.moveTo(px + 3, sy + 0.5); ctx.lineTo(px + rw - 3, sy + 0.5); }
-      ctx.stroke();
-      ctx.fillStyle = shade(b.col, -0.32); ctx.fillRect(px + rw / 2 - 12, py + rh / 2 - 9, 24, 18);
-      ctx.fillStyle = shade(b.col, 0.12); ctx.fillRect(px + rw / 2 - 10, py + rh / 2 - 7, 20, 4);
-      ctx.fillRect(px + rw / 2 - 10, py + rh / 2, 20, 4);
+      drawRoofWeathering(b, px, py, rw, rh);
+      drawParapet(b, px, py, rw, rh);
+      drawRoofBox(px + 8, py + 8, 12, 14, shade(b.col, -0.22), 5);
+      ctx.fillStyle = '#2c2824'; ctx.fillRect(px + 12, py + 17, 5, 5);
+      ctx.fillStyle = 'rgba(120,170,210,.55)';                                             // skylights
+      for (let sx = px + 28; sx <= px + rw - 16; sx += 15) { ctx.fillRect(sx, py + 10, 8, 6); }
+      drawRoofBox(px + rw - 19, py + rh - 18, 10, 8, '#9aa0a6', 3);
+      ctx.fillStyle = '#4c8a44'; ctx.fillRect(px + 8, py + rh - 16, 9, 8);                 // roof garden
+      ctx.fillStyle = '#5fa452'; ctx.fillRect(px + 9, py + rh - 15, 4, 3);
+    } else if (b.style === 'tower') {
+      ctx.fillStyle = shade(b.col, 0.04); ctx.fillRect(px, py, rw, rh);
+      drawRoofWeathering(b, px, py, rw, rh);
+      drawParapet(b, px, py, rw, rh);
+      drawRoofBox(px + rw / 2 - 14, py + rh / 2 - 10, 28, 20, shade(b.col, -0.26), 7);
+      ctx.fillStyle = shade(b.col, 0.14); ctx.fillRect(px + rw / 2 - 11, py + rh / 2 - 7, 22, 4);
+      ctx.fillRect(px + rw / 2 - 11, py + rh / 2, 22, 4);
+      for (let k = 0; k < 3; k++) drawRoofBox(px + rw - 26 - k * 14, py + rh - 18, 10, 8, '#9aa0a6', 3);
+      if (rw >= 120 && rh >= 120 && b.h % 3 === 0) {
+        const padX = px + 26, padY = py + rh - 26;
+        ctx.fillStyle = 'rgba(10,14,24,.25)'; ctx.beginPath(); ctx.arc(padX + 3, padY + 3, 15, 0, TAU); ctx.fill();
+        ctx.fillStyle = '#4a4f57'; ctx.beginPath(); ctx.arc(padX, padY, 15, 0, TAU); ctx.fill();
+        ctx.strokeStyle = '#e8c547'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(padX, padY, 12, 0, TAU); ctx.stroke();
+        ctx.fillStyle = '#eef0f2'; ctx.fillRect(padX - 5, padY - 6, 2, 12); ctx.fillRect(padX + 3, padY - 6, 2, 12); ctx.fillRect(padX - 3, padY - 1, 6, 2);
+      }
+      ctx.strokeStyle = 'rgba(10,14,24,.30)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(px + rw - 12, py + 13); ctx.lineTo(px + rw - 5, py + 20); ctx.stroke();
       ctx.strokeStyle = '#c8ccd2'; ctx.beginPath(); ctx.moveTo(px + rw - 12, py + 13); ctx.lineTo(px + rw - 12, py + 5); ctx.stroke();
       ctx.fillStyle = frame % 60 < 30 ? '#ff4a3a' : '#8a2a22'; ctx.fillRect(px + rw - 14, py + 3, 4, 4);
     } else if (b.style === 'warehouse') {              // large industrial: sawtooth roof, silos
       ctx.fillStyle = shade(b.col, -0.20); ctx.fillRect(px, py, rw, rh);
       if (rw >= rh) for (let sx = px + 2; sx < px + rw - 2; sx += 9) {
         ctx.fillStyle = shade(b.col, 0.10); ctx.fillRect(sx, py + 2, 6, rh - 4);
+        ctx.fillStyle = 'rgba(160,200,225,.30)'; ctx.fillRect(sx + 5, py + 2, 1, rh - 4);
         ctx.fillStyle = shade(b.col, -0.30); ctx.fillRect(sx + 6, py + 2, 2, rh - 4);
       } else for (let sy = py + 2; sy < py + rh - 2; sy += 9) {
         ctx.fillStyle = shade(b.col, 0.10); ctx.fillRect(px + 2, sy, rw - 4, 6);
+        ctx.fillStyle = 'rgba(160,200,225,.30)'; ctx.fillRect(px + 2, sy + 5, rw - 4, 1);
         ctx.fillStyle = shade(b.col, -0.30); ctx.fillRect(px + 2, sy + 6, rw - 4, 2);
       }
-      ctx.fillStyle = '#9aa2a8';                                                          // silos
-      ctx.beginPath(); ctx.arc(px + rw - 12, py + 12, 7, 0, TAU); ctx.arc(px + rw - 12, py + 28, 7, 0, TAU); ctx.fill();
+      drawRoofWeathering(b, px, py, rw, rh);
+      ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 1; ctx.strokeRect(px + 0.5, py + 0.5, rw - 1, rh - 1);
+      ctx.fillStyle = 'rgba(10,14,24,.30)';
+      ctx.beginPath(); ctx.arc(px + rw - 7, py + 17, 7, 0, TAU); ctx.arc(px + rw - 7, py + 33, 7, 0, TAU); ctx.fill();
+      for (const siloY of [py + 12, py + 28]) {                                           // silos
+        const silo = ctx.createRadialGradient(px + rw - 15, siloY - 3, 1, px + rw - 12, siloY, 7);
+        silo.addColorStop(0, '#d4dadf'); silo.addColorStop(1, '#7c858c');
+        ctx.fillStyle = silo; ctx.beginPath(); ctx.arc(px + rw - 12, siloY, 7, 0, TAU); ctx.fill();
+      }
       ctx.strokeStyle = 'rgba(0,0,0,.30)'; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(px + rw - 12, py + 12, 7, 0, TAU); ctx.arc(px + rw - 12, py + 28, 7, 0, TAU); ctx.stroke();
     } else {                                           // workshop: ribbon skylight and fan
       ctx.fillStyle = shade(b.col, 0.06); ctx.fillRect(px, py, rw, rh);
-      ctx.fillStyle = 'rgba(255,255,255,.10)'; ctx.fillRect(px, py, rw, 3); ctx.fillRect(px, py, 3, rh);
-      ctx.fillStyle = 'rgba(0,0,0,.26)'; ctx.fillRect(px, py + rh - 3, rw, 3); ctx.fillRect(px + rw - 3, py, 3, rh);
-      ctx.fillStyle = 'rgba(140,200,220,.35)'; ctx.fillRect(px + 6, py + rh / 2 - 4, rw - 12, 8);
+      drawRoofWeathering(b, px, py, rw, rh);
+      drawParapet(b, px, py, rw, rh);
+      ctx.fillStyle = 'rgba(10,14,24,.22)'; ctx.fillRect(px + 8, py + rh / 2 - 2, rw - 12, 8);
+      ctx.fillStyle = 'rgba(140,200,220,.45)'; ctx.fillRect(px + 6, py + rh / 2 - 4, rw - 12, 8);
+      ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.fillRect(px + 6, py + rh / 2 - 4, rw - 12, 1);
       ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.arc(px + 13, py + 12, 6, 0, TAU); ctx.fill();
       ctx.strokeStyle = shade(b.col, 0.25); ctx.lineWidth = 1.5; ctx.beginPath();
       for (let k = 0; k < 3; k++) {

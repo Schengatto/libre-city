@@ -382,7 +382,8 @@ function bakeBuildings() {
     if (b.kind === RES_KIND) b.style = area <= 18 ? 'house' : 'apartment';
     else if (b.kind === OFF_KIND) b.style = area >= 20 ? 'tower' : 'shop';
     else b.style = area >= 20 ? 'warehouse' : 'workshop';
-    b.lift = { house: 6, apartment: 8, shop: 7, tower: 11, warehouse: 7, workshop: 6 }[b.style];
+    const storeyVariation = b.style === 'apartment' || b.style === 'tower' ? (b.h >> 4) % 3 * 4 : 0;
+    b.lift = { house: 7, apartment: 11, shop: 9, tower: 16, warehouse: 9, workshop: 8 }[b.style] + storeyVariation;
     const pal = [RES_COLORS, OFF_COLORS, IND_COLORS][b.kind];
     b.col = pal[b.h % pal.length];
   }
