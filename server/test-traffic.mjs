@@ -35,10 +35,12 @@ function overlap(a, b) {
   return pen;
 }
 const MIN_LATERAL_OVERLAP = 2;
+const MIN_APPROACH_SPEED = 0.05;
 // Free space between c's nose and the tail of whoever is ahead IN ITS OWN LANE (only
 // vehicles travelling the same way: this is the traffic queue, not someone cutting across
 // the junction).
 function queueGap(c, cars) {
+  if (c.speed < MIN_APPROACH_SPEED) return Infinity;
   const ax = c.dir.x, ay = c.dir.y;
   let gap = Infinity;
   for (const o of cars) {
@@ -75,6 +77,7 @@ for (let f = 0; f < TICKS; f++) {
     const a = cars[i], b = cars[j];
     if (a.exploded || b.exploded) continue;
     if (a.isTank || b.isTank) continue;                       // tracks drive straight over
+    if (a.pushT > 0 || b.pushT > 0) continue;
     const d2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
     if (d2 > 64 * 64) continue;
     const pen = overlap(a, b);
@@ -83,7 +86,7 @@ for (let f = 0; f < TICKS; f++) {
   // 2) Safe distances between queuing AI cars + 3) flow.
   for (const c of cars) {
     if (c.role !== 'traffic' || c.driver) continue;
-    const g = queueGap(c, cars);
+    const g = c.pushT > 0 ? Infinity : queueGap(c, cars);
     if (g < worstGap && g !== Infinity) { worstGap = g; worstGapAt = f; }
     const p = lastPos.get(c.id);
     if (p) moved.set(c.id, (moved.get(c.id) || 0) + Math.hypot(c.x - p[0], c.y - p[1]));
