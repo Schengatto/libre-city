@@ -35,8 +35,8 @@ const { WebSocketServer } = require('ws');
 const leaderboard = require('./leaderboard');
 // Phase 2: authoritative world simulation (one city per room). If the module is missing
 // (or fails), the server falls back to Phase 1 relaying alone.
-let createRoomSim = null;
-try { ({ createRoomSim } = require('./sim-runtime')); }
+let createRoomSim = null, accumulateSimTime = null;
+try { ({ createRoomSim, accumulateSimTime } = require('./sim-runtime')); }
 catch (e) { console.error('sim-runtime non caricato, resto in modalità relay (Fase 1):', e.message); }
 // Warms the JIT: the VERY FIRST city generation is ~2-3× slower (cold). We do a throwaway
 // one now, so the first real room already starts fast (~90ms).
@@ -361,7 +361,7 @@ function startSim(room) {
   room.simTimer = setInterval(() => {
     const t0 = PROFILE ? performance.now() : 0;
     const t = performance.now();
-    room.simAcc += Math.min(t - room.simLast, STEP * 5);   // clamp: after a stall, do not catch up indefinitely
+    room.simAcc = accumulateSimTime(room.simAcc, t - room.simLast);
     room.simLast = t;
     let doSnap = false;
     try {

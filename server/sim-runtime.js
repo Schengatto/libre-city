@@ -87,4 +87,10 @@ function createRoomSim(code, opts = {}) {
   return ctx.__sim;
 }
 
-module.exports = { createRoomSim, BUNDLE, SIM_FILES, JS_DIR };
+const MAX_CATCHUP_MS = 250;
+
+function accumulateSimTime(accumulatorMs, elapsedMs) {
+  return accumulatorMs + Math.min(elapsedMs, MAX_CATCHUP_MS);
+}
+
+module.exports = { createRoomSim, accumulateSimTime, MAX_CATCHUP_MS, BUNDLE, SIM_FILES, JS_DIR };
