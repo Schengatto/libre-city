@@ -253,6 +253,7 @@ function startMatch(resume) {
   if (started) return;
   initAudio();
   $('#start').style.display = 'none';
+  stopMenuMusic();
   started = true;
   if (!resume) {
     timeLeft = gameMinutes * 60 * 60;            // minutes → frames (~60 fps)

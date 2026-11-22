@@ -131,7 +131,7 @@ function triggerArmyAlert(lm) {
       // Reinforcements come out of the barrack rooms, into the middle of the yard
       // (not at the gate).
       for (let k = 0; k < 3; k++) {
-        const sp = armyInteriorSpot(lm, 40);
+        const sp = armySpotIn(lm.layout.musterYard, 40);
         if (sp) { const s = makeSoldier(sp.x, sp.y); s.shootCd = rndi(45, 100); peds.push(s); }
       }
       const rp = randomRoadNear(lm.door.x, lm.door.y, 80, 520);
@@ -173,35 +173,28 @@ function updateSoldier(p) {
     soldierShoot(p, tp); p.shootCd = rndi(30, 50);
   }
 }
-// Idle patrol: the guard walks the yard; if a chase took them outside, they head back
-// to the base at a brisk pace.
+// Idle duty: the sentry holds the gate post, the patrol walks the perimeter road and
+// pauses at each corner. A guard a chase took outside comes back in through the gate.
 function updateGuardIdle(p) {
   if (!p.guard) return;                               // idle reinforcements are stood down by managePopulation
   const lm = landmarks[p.baseLm];
   if (!lm) return;
-  const inside = p.x > (lm.x0 + 1) * T && p.x < lm.x1 * T && p.y > (lm.y0 + 1) * T && p.y < lm.y1 * T;
-  if (!inside) {                                      // heading back to barracks
-    const a = Math.atan2(lm.cy - p.y, lm.cx - p.x);
-    p.dir = { x: Math.cos(a), y: Math.sin(a) }; p.speed = 1.6;
+  const onDuty = p.duty.post || p.duty.route[p.routeIndex];
+  const target = playerInBase(lm, p) ? onDuty : lm.gate;
+  const dx = target.x - p.x, dy = target.y - p.y, d = Math.hypot(dx, dy);
+  if (d > 4) {
+    const a = Math.atan2(dy, dx);
+    p.speed = d > 4 * T ? 1.6 : 0.9;
+    p.dir = { x: Math.cos(a), y: Math.sin(a) };
     moveBox(p, p.dir.x * p.speed, p.dir.y * p.speed, p.r, p.r);
-    p.facing = a; p.walk += 0.25;
+    p.facing = a; p.walk += 0.2;
     return;
   }
-  p.thinkCd--;
-  if (p.thinkCd <= 0) {                               // now and then move somewhere else, or stop
-    if (Math.random() < 0.5) { p.dir = { x: 0, y: 0 }; p.speed = 0; }
-    else { p.dir = pick(DIRS); p.speed = 1.0; }
-    p.thinkCd = rndi(60, 200);
-  }
-  if (p.speed > 0) {
-    moveBox(p, p.dir.x * p.speed, p.dir.y * p.speed, p.r, p.r);
-    if (p.hitX) p.dir.x *= -1;
-    if (p.hitY) p.dir.y *= -1;
-    // Do not stray past the gate while on patrol.
-    if (p.x < (lm.x0 + 1) * T || p.x > lm.x1 * T) p.dir.x *= -1;
-    if (p.y < (lm.y0 + 1) * T || p.y > lm.y1 * T) p.dir.y *= -1;
-    p.walk += 0.2; p.facing = Math.atan2(p.dir.y, p.dir.x);
-  } else p.walk = 0;
+  p.speed = 0; p.walk = 0;
+  if (p.duty.post) { p.facing = p.duty.post.facing; return; }
+  if (p.pauseT > 0) { p.pauseT--; return; }
+  p.routeIndex = (p.routeIndex + 1) % p.duty.route.length;
+  p.pauseT = rndi(60, 140);
 }
 function soldierShoot(p, tp) {
   if (peaceMode()) return;                          // violence filter: guards do not shoot

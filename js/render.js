@@ -1286,19 +1286,7 @@ function drawLandmarks() {
       ctx.fillStyle = '#d23434'; ctx.beginPath(); ctx.arc(cx, cy + 5, 1.8, 0, TAU); ctx.fill();
       lmLabel(cx, py + 12, t('lm.gunshop'), '#ffd9a0');
     } else if (lm.type === 'army') {                  // barracks: fenced compound
-      // Beaten-earth yard with camouflage patches.
-      for (let i = 0; i < 9; i++) {
-        const hs = hash2(lm.x0 * 3 + i * 11, lm.y0 * 5 + i * 7);
-        ctx.fillStyle = i & 1 ? 'rgba(30,40,18,.22)' : 'rgba(96,116,54,.26)';
-        ctx.beginPath();
-        ctx.ellipse(px + 22 + hs % Math.max(1, w - 44), py + 26 + (hs >> 6) % Math.max(1, h - 44),
-                    13, 8, (hs % 7) * 0.5, 0, TAU);
-        ctx.fill();
-      }
-      // Large star at the centre of the yard.
-      ctx.fillStyle = 'rgba(232,228,200,.75)'; ctx.beginPath(); ctx.arc(cx, cy + 4, 13, 0, TAU); ctx.fill();
-      ctx.fillStyle = '#4c5a3a'; ctx.font = 'bold 15px Trebuchet MS'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('★', cx, cy + 5); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+      drawArmyCompound(lm);
       // Fence along the perimeter (the walkable tiles are the gate: left open).
       ctx.strokeStyle = '#9aa0a8'; ctx.lineWidth = 2;
       for (let tx = lm.x0; tx <= lm.x1; tx++) for (const ty of [lm.y0, lm.y1]) {
@@ -1322,6 +1310,89 @@ function drawLandmarks() {
       lmLabel(cx, py + 12, t('lm.market'), '#dff5ef');
     }
   }
+}
+function armyScreenRect(r) {
+  return { x: r.x0 * T - camX, y: r.y0 * T - camY, w: (r.x1 - r.x0 + 1) * T, h: (r.y1 - r.y0 + 1) * T };
+}
+function drawArmyRoof(r, color) {
+  const s = armyScreenRect(r);
+  ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(s.x + 5, s.y + 6, s.w, s.h);
+  ctx.fillStyle = color; ctx.fillRect(s.x, s.y, s.w, s.h);
+  ctx.fillStyle = 'rgba(255,255,255,.13)'; ctx.fillRect(s.x, s.y, s.w, 3); ctx.fillRect(s.x, s.y, 3, s.h);
+  ctx.fillStyle = 'rgba(0,0,0,.24)'; ctx.fillRect(s.x, s.y + s.h - 3, s.w, 3); ctx.fillRect(s.x + s.w - 3, s.y, 3, s.h);
+  return s;
+}
+function drawArmyCompound(lm) {
+  const layout = lm.layout;
+  const fill = (r, color) => { const s = armyScreenRect(r); ctx.fillStyle = color; ctx.fillRect(s.x, s.y, s.w, s.h); return s; };
+  fill(layout.interior, '#55584f');
+  for (const lawn of layout.lawns) fill(lawn, '#56663c');
+
+  const muster = fill(layout.musterYard, '#7b7d72');
+  ctx.strokeStyle = 'rgba(240,236,210,.35)'; ctx.lineWidth = 1;
+  for (let x = muster.x + T; x < muster.x + muster.w; x += T) {
+    ctx.beginPath(); ctx.moveTo(x, muster.y + 8); ctx.lineTo(x, muster.y + muster.h - 8); ctx.stroke();
+  }
+
+  const lot = fill(layout.motorPool, '#45483f');
+  ctx.strokeStyle = 'rgba(240,236,210,.55)'; ctx.lineWidth = 2;
+  for (let x = lot.x; x <= lot.x + lot.w; x += T) {
+    ctx.beginPath(); ctx.moveTo(x, lot.y + T); ctx.lineTo(x, lot.y + lot.h - T); ctx.stroke();
+  }
+
+  const pad = fill(layout.helipad, '#6c6e66');
+  const padX = pad.x + pad.w / 2, padY = pad.y + pad.h / 2, padR = Math.min(pad.w, pad.h) * 0.4;
+  ctx.fillStyle = '#7f8178'; ctx.beginPath(); ctx.arc(padX, padY, padR, 0, TAU); ctx.fill();
+  ctx.strokeStyle = '#e8d24a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(padX, padY, padR - 4, 0, TAU); ctx.stroke();
+  ctx.fillStyle = '#f2f0e4'; ctx.font = 'bold 44px Trebuchet MS'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('H', padX, padY + 2);
+
+  for (const block of layout.barracks) {
+    const s = drawArmyRoof(block, '#6c7357');
+    ctx.fillStyle = 'rgba(0,0,0,.16)'; ctx.fillRect(s.x, s.y + s.h / 2, s.w, s.h / 2);
+    ctx.fillStyle = 'rgba(0,0,0,.30)'; ctx.fillRect(s.x, s.y + s.h / 2 - 1, s.w, 2);
+    ctx.fillStyle = '#8d9188';
+    for (let x = s.x + T; x < s.x + s.w - T / 2; x += 2 * T) ctx.fillRect(x - 5, s.y + 8, 10, 8);
+  }
+
+  const hq = drawArmyRoof(layout.headquarters, '#8a8873');
+  ctx.strokeStyle = 'rgba(0,0,0,.18)'; ctx.lineWidth = 1; ctx.strokeRect(hq.x + 10.5, hq.y + 10.5, hq.w - 21, hq.h - 21);
+  ctx.fillStyle = 'rgba(232,228,200,.85)'; ctx.beginPath(); ctx.arc(hq.x + hq.w / 2, hq.y + hq.h / 2, 16, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#4c5a3a'; ctx.font = 'bold 19px Trebuchet MS';
+  ctx.fillText('★', hq.x + hq.w / 2, hq.y + hq.h / 2 + 1);
+  ctx.strokeStyle = '#3a3d40'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(hq.x + hq.w - 22, hq.y + 14); ctx.lineTo(hq.x + hq.w - 10, hq.y + 14);
+  ctx.moveTo(hq.x + hq.w - 16, hq.y + 8); ctx.lineTo(hq.x + hq.w - 16, hq.y + 20); ctx.stroke();
+
+  const garage = drawArmyRoof(layout.garage, '#666c70');
+  ctx.strokeStyle = 'rgba(0,0,0,.20)'; ctx.lineWidth = 1;
+  for (let x = garage.x + 6; x < garage.x + garage.w; x += 6) {
+    ctx.beginPath(); ctx.moveTo(x, garage.y + 3); ctx.lineTo(x, garage.y + garage.h - 3); ctx.stroke();
+  }
+  ctx.fillStyle = '#2f3234';
+  for (let x = garage.x + T / 2; x < garage.x + garage.w - T; x += 2 * T) ctx.fillRect(x, garage.y - 2, T + 8, 5);
+
+  const depot = drawArmyRoof(layout.depot, '#7a6a49');
+  ctx.strokeStyle = 'rgba(0,0,0,.22)'; ctx.lineWidth = 1;
+  for (let y = depot.y + 7; y < depot.y + depot.h; y += 7) {
+    ctx.beginPath(); ctx.moveTo(depot.x + 3, y); ctx.lineTo(depot.x + depot.w - 3, y); ctx.stroke();
+  }
+
+  const flagX = layout.flagpole.x - camX, flagY = layout.flagpole.y - camY;
+  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(flagX + 2, flagY - 1, 30, 4);
+  ctx.fillStyle = '#c9ccd2'; ctx.beginPath(); ctx.arc(flagX, flagY, 4, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#4a5d33';
+  ctx.beginPath(); ctx.moveTo(flagX, flagY - 3); ctx.lineTo(flagX + 28, flagY - 11);
+  ctx.lineTo(flagX + 28, flagY + 5); ctx.lineTo(flagX, flagY + 3); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#e8d24a'; ctx.font = 'bold 11px Trebuchet MS'; ctx.fillText('★', flagX + 15, flagY - 2);
+
+  const booth = lm.guardDuties.find(duty => duty.post).post.booth;
+  const boothX = booth.x - camX, boothY = booth.y - camY;
+  ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(boothX - 7, boothY - 6, 18, 18);
+  ctx.fillStyle = '#d8d4bf'; ctx.fillRect(boothX - 9, boothY - 9, 18, 18);
+  ctx.fillStyle = '#4c5a3a'; ctx.fillRect(boothX - 9, boothY - 9, 18, 4);
+  ctx.fillStyle = 'rgba(150,210,235,.55)'; ctx.fillRect(boothX - 6, boothY - 2, 12, 5);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
 }
 // Turrets at the barracks corners: a sandbag nest plus a soldier with a machine gun that
 // swings towards the intruder (the angle is cosmetic; authoritative fire comes from the

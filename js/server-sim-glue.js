@@ -293,6 +293,10 @@ var __sim = {
   _player(id) { return playerById(id); },   // tests only: direct reference to the player object
   _spawnPed(x, y, role) { const p = makePed(x, y, role); peds.push(p); return p; },   // tests only
   _cars() { return cars; },                 // tests only: traffic/collisions
+  _peds() { return peds; },
+  _landmarks() { return landmarks; },
+  _tileAt(tx, ty) { return tileAt(tx, ty); },
+  _randomWalkNear(x, y, rmin, rmax) { return randomWalkNear(x, y, rmin, rmax); },
   // --- Diagnostics for the tests ---
   worldInfo() {
     let sig = 0;
