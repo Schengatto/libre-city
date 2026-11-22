@@ -293,6 +293,9 @@ var __sim = {
   _player(id) { return playerById(id); },   // tests only: direct reference to the player object
   _spawnPed(x, y, role) { const p = makePed(x, y, role); peds.push(p); return p; },   // tests only
   _cars() { return cars; },                 // tests only: traffic/collisions
+  _nearestThreatCar(x, y, range) { return nearestThreatCar(x, y, range); },
+  _gapAhead(c, maxLook, push) { return gapAhead(c, maxLook, push); },
+  _tileSize() { return T; },
   _peds() { return peds; },
   _landmarks() { return landmarks; },
   _tileAt(tx, ty) { return tileAt(tx, ty); },
