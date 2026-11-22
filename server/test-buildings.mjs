@@ -1,20 +1,6 @@
-import fs from 'node:fs';
-import path from 'node:path';
+import { readSource, extractTopLevel, createRecordingContext } from './render-test-kit.mjs';
 
-const JS_DIR = path.join(import.meta.dirname, '..', 'js');
-const readSource = file => fs.readFileSync(path.join(JS_DIR, file), 'utf8').replace(/\r\n/g, '\n');
 const SOURCES = { core: readSource('core.js'), city: readSource('city.js'), render: readSource('render.js') };
-
-function extractTopLevel(source, name) {
-  const start = source.search(new RegExp(`^(function ${name}\\(|const ${name}\\b)`, 'm'));
-  if (start < 0) throw new Error(`declaration not found: ${name}`);
-  const firstLineEnd = source.indexOf('\n', start);
-  if (/;\s*(\/\/.*)?$/.test(source.slice(start, firstLineEnd)) && !source.slice(start, firstLineEnd).startsWith('function')) {
-    return source.slice(start, firstLineEnd);
-  }
-  const close = source.slice(start).search(/^};?\s*$/m);
-  return source.slice(start, start + close + 2);
-}
 
 const DECLARATIONS = [
   ['core', 'TAU'], ['city', 'T'], ['city', 'hash2'], ['city', 'ROOF_COLS'], ['city', 'AWNING_COLS'],
@@ -25,18 +11,6 @@ const DECLARATIONS = [
   ['render', 'drawFacade'],
 ];
 const moduleSource = DECLARATIONS.map(([file, name]) => extractTopLevel(SOURCES[file], name)).join('\n');
-
-function createRecordingContext() {
-  const calls = [];
-  const state = {};
-  const gradient = { addColorStop: (...args) => calls.push(['addColorStop', args]) };
-  const context = new Proxy(state, {
-    get: (target, property) => property in target ? target[property]
-      : (...args) => { calls.push([property, args]); return gradient; },
-    set: (target, property, value) => { target[property] = value; calls.push(['set:' + String(property), [value]]); return true; },
-  });
-  return { context, calls };
-}
 
 const loadRenderer = new Function('ctx', 'bldgs', 'camX', 'camY', 'vw', 'vh', 'frame',
   `${moduleSource}\nreturn { buildingShadowPolygon, hipRoofPlanes, drawBuildings, drawBuildingShadows };`);

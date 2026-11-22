@@ -45,9 +45,7 @@ const LOTX = new Uint8Array(MAP_W), LOTY = new Uint8Array(MAP_H);     // lot ind
   };
   bake(LOTX, MAP_W, 1); bake(LOTY, MAP_H, 3);
 })();
-// Palettes for grass and foliage (variety), pitched house roofs, shop awnings.
-const GRASS_COLS = ['#4f9e46', '#489347', '#57a74b'];
-const TREE_COLS = [['#2c6e30', '#38853c', '#4d9c4a'], ['#2f7d34', '#3c9142', '#55a852'], ['#33703a', '#428a48', '#5aa15e']];
+// Palettes for pitched house roofs and shop awnings.
 const ROOF_COLS = ['#8a4a3a', '#96604a', '#7a5a48', '#6d5242', '#5f6066', '#585c64'];
 const AWNING_COLS = ['#c0392b', '#2e86c0', '#27ae60', '#d68910'];
 // Block category: park, plaza or buildings (for a more varied city).

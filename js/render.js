@@ -66,6 +66,7 @@ function drawWorldStatic() {
     const px = Math.floor(x * T - camX), py = Math.floor(y * T - camY);
     drawTile(t, px, py, x, y);
   }
+  drawTrees(x0, y0, x1, y1);
   drawBuildings();
   // 2) Pavements + asphalt as continuous curves along the road graph.
   drawRoads();
@@ -76,6 +77,7 @@ function drawWorldStatic() {
     if (t !== ROAD && !(t === SIDEWALK && roadAdjacent(x, y))) continue;
     const px = Math.floor(x * T - camX), py = Math.floor(y * T - camY);
     if (t === SIDEWALK) { ctx.fillStyle = 'rgba(0,0,0,.06)'; ctx.fillRect(px, py, T, 1); ctx.fillRect(px, py, 1, T); }
+    else drawAsphaltGrain(px, py, x, y);
     if (tileAt(x, y - 1) === BUILDING) { ctx.fillStyle = 'rgba(0,0,0,.20)'; ctx.fillRect(px, py, T, 5); }
     if (tileAt(x - 1, y) === BUILDING) { ctx.fillStyle = 'rgba(0,0,0,.14)'; ctx.fillRect(px, py, 5, T); }
   }
@@ -139,8 +141,7 @@ function drawTile(t, px, py, x, y) {
     if ((hash2(x, y) & 7) === 0) { ctx.fillStyle = 'rgba(255,255,255,.03)'; ctx.fillRect(px + 6, py + 8, 6, 4); }
   } else if (t === SIDEWALK) {
     ctx.fillStyle = '#9aa0a8'; ctx.fillRect(px, py, T, T);
-    ctx.strokeStyle = 'rgba(0,0,0,.12)'; ctx.lineWidth = 1;
-    ctx.strokeRect(px + 0.5, py + 0.5, T - 1, T - 1);
+    drawPavingSlabs(px, py, x, y);
   } else if (t === ALLEY) {                                  // alley: dark cobbles
     ctx.fillStyle = '#2b2d33'; ctx.fillRect(px, py, T, T);
     const h = hash2(x, y);
@@ -153,58 +154,18 @@ function drawTile(t, px, py, x, y) {
       ctx.fillStyle = 'rgba(255,255,255,.10)'; ctx.fillRect(px + 7, py + wy - 3, 3, 2);
     }
   } else if (t === GRASS) {
-    ctx.fillStyle = GRASS_COLS[hash2(x >> 2, y >> 2) % GRASS_COLS.length]; ctx.fillRect(px, py, T, T);
-    const h = hash2(x, y);
-    ctx.fillStyle = 'rgba(0,0,0,.06)';
-    ctx.fillRect(px + (h & 15), py + ((h >> 4) & 15), 3, 3);
-    if (h % 31 === 0) {                                      // little flowers dotted about the lawns
-      ctx.fillStyle = '#e8dff0'; ctx.fillRect(px + ((h >> 6) & 15) + 4, py + ((h >> 10) & 15) + 3, 2, 2);
-      ctx.fillStyle = '#ffd23a'; ctx.fillRect(px + ((h >> 8) & 15) + 6, py + ((h >> 12) & 15) + 8, 2, 2);
-    }
+    drawGrass(px, py, x, y);
   } else if (t === TREE) {
-    // In plazas and office forecourts the trees sit in stone planters, neatly arranged;
-    // in green spaces they vary in size, position and shade.
-    const bx = Math.floor(x / PERIOD), by = Math.floor(y / PERIOD), cat = blockCat(bx, by);
-    const vasca = cat === PLAZA_CAT || (cat === BUILD_CAT && blockKind(bx, by) === OFF_KIND);
-    ctx.fillStyle = vasca ? (cat === PLAZA_CAT ? '#9aa0a8' : '#7e838c') : GRASS_COLS[hash2(x >> 2, y >> 2) % GRASS_COLS.length];
-    ctx.fillRect(px, py, T, T);
-    const h = hash2(x * 7 + 1, y * 13 + 4);
-    const r = vasca ? 11 : 9 + h % 5;
-    const cx = px + T / 2 + (vasca ? 0 : (h >> 3) % 5 - 2), cy = py + T / 2 + (vasca ? 0 : (h >> 6) % 5 - 2);
-    if (vasca) {
-      ctx.fillStyle = '#7b8189'; ctx.fillRect(px + 4, py + 4, T - 8, T - 8);
-      ctx.fillStyle = '#5b7d43'; ctx.fillRect(px + 6, py + 6, T - 12, T - 12);
-    }
-    const canopy = TREE_COLS[h % TREE_COLS.length];
-    ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.beginPath(); ctx.arc(cx + 4, cy + 5, r, 0, TAU); ctx.fill();
-    ctx.fillStyle = canopy[0]; ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fill();
-    ctx.fillStyle = canopy[1]; ctx.beginPath(); ctx.arc(cx - r * 0.25, cy - r * 0.25, r * 0.62, 0, TAU); ctx.fill();
-    ctx.fillStyle = canopy[2]; ctx.beginPath(); ctx.arc(cx - r * 0.35, cy - r * 0.35, r * 0.28, 0, TAU); ctx.fill();
+    if (treeInPlanter(x, y)) drawPlanter(px, py, x, y);
+    else drawGrass(px, py, x, y);
   } else if (t === WATER) {
-    ctx.fillStyle = '#2f6b9e'; ctx.fillRect(px, py, T, T);
-    const h = hash2(x, y);
-    // Lighter shore where the water meets the land.
-    ctx.fillStyle = 'rgba(190,225,245,.35)';
-    if (tileAt(x, y - 1) !== WATER) ctx.fillRect(px, py, T, 3);
-    if (tileAt(x, y + 1) !== WATER) ctx.fillRect(px, py + T - 3, T, 3);
-    if (tileAt(x - 1, y) !== WATER) ctx.fillRect(px, py, 3, T);
-    if (tileAt(x + 1, y) !== WATER) ctx.fillRect(px + T - 3, py, 3, T);
-    // Reflections rippling slowly.
-    const tw = 0.55 + 0.45 * Math.sin(frame * 0.05 + (h & 15));
-    ctx.fillStyle = `rgba(255,255,255,${0.05 + 0.08 * tw})`;
-    ctx.fillRect(px + (h & 15), py + 5 + ((h >> 4) & 7), 6, 2);
-    ctx.fillRect(px + ((h >> 8) & 15), py + 19 + ((h >> 12) & 5), 5, 2);
+    drawWaterTile(px, py, x, y);
   } else if (t === COURT) {                                  // the lot's inner courtyard
     const k = blockKind(Math.floor(x / PERIOD), Math.floor(y / PERIOD));
     const h = hash2(x + 9, y + 27);
     if (k === RES_KIND) {                                    // small private garden
-      ctx.fillStyle = GRASS_COLS[hash2(x >> 2, y >> 2) % GRASS_COLS.length]; ctx.fillRect(px, py, T, T);
-      ctx.fillStyle = 'rgba(0,0,0,.07)'; ctx.fillRect(px + (h & 15), py + ((h >> 4) & 15), 3, 3);
-      if (h % 6 === 0) {                                     // hedges
-        ctx.fillStyle = '#3d7a38'; ctx.beginPath();
-        ctx.arc(px + 8 + (h & 7), py + 9 + ((h >> 3) & 7), 5, 0, TAU);
-        ctx.arc(px + 15 + (h & 7), py + 11 + ((h >> 5) & 7), 4, 0, TAU); ctx.fill();
-      }
+      drawGrass(px, py, x, y);
+      if (h % 6 === 0) drawBroadleaf(px + 10 + (h & 7), py + 12 + ((h >> 3) & 7), 6, BROADLEAF_PALETTES[2], tileRandom(h));
     } else if (k === OFF_KIND) {                             // paved forecourt
       ctx.fillStyle = '#7e838c'; ctx.fillRect(px, py, T, T);
       ctx.strokeStyle = 'rgba(0,0,0,.10)'; ctx.lineWidth = 1; ctx.strokeRect(px + 0.5, py + 0.5, T - 1, T - 1);
@@ -228,6 +189,192 @@ function drawTile(t, px, py, x, y) {
     if (tileAt(x, y - 1) === BUILDING) { ctx.fillStyle = 'rgba(0,0,0,.20)'; ctx.fillRect(px, py, T, 5); }
     if (tileAt(x - 1, y) === BUILDING) { ctx.fillStyle = 'rgba(0,0,0,.14)'; ctx.fillRect(px, py, 5, T); }
   }
+}
+
+const GRASS_DARK = [58, 116, 52], GRASS_LIGHT = [102, 160, 72];
+const FLOWER_COLS = ['#f2ecf6', '#ffd23a', '#e86a8a', '#b48cf0'];
+const BROADLEAF_PALETTES = [['#24562a', '#367a36', '#5c9e48'], ['#2a6130', '#3f893c', '#6dab52'], ['#33592a', '#4f7f34', '#86a84c']];
+const BLOSSOM_PALETTES = [['#9c4a68', '#cf7898', '#f2bcd0'], ['#8f8a9c', '#d6d0e0', '#f7f3fb']];
+const CONIFER_PALETTE = ['#173f27', '#245e36', '#3f8250'];
+const WATER_SIDES = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+const SOFT_SHORES = [GRASS, TREE, COURT];
+
+function tileRandom(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let mixed = Math.imul(state ^ (state >>> 15), 1 | state);
+    mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed);
+    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function smoothNoise(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y);
+  const fx = x - ix, fy = y - iy;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const corner = (cornerX, cornerY) => ((hash2(cornerX + 7, cornerY + 3) >>> 16) & 255) / 255;
+  const top = corner(ix, iy) + (corner(ix + 1, iy) - corner(ix, iy)) * sx;
+  const bottom = corner(ix, iy + 1) + (corner(ix + 1, iy + 1) - corner(ix, iy + 1)) * sx;
+  return top + (bottom - top) * sy;
+}
+function grassColor(tileX, tileY) {
+  const lushness = 0.7 * smoothNoise(tileX / 7, tileY / 7) + 0.3 * smoothNoise(tileX / 2.3 + 50, tileY / 2.3 + 50);
+  const channel = i => Math.round(GRASS_DARK[i] + (GRASS_LIGHT[i] - GRASS_DARK[i]) * lushness);
+  return `rgb(${channel(0)},${channel(1)},${channel(2)})`;
+}
+function drawGrass(px, py, x, y) {
+  const half = T / 2;
+  for (let quarter = 0; quarter < 4; quarter++) {
+    const qx = quarter & 1, qy = quarter >> 1;
+    ctx.fillStyle = grassColor(x + qx / 2, y + qy / 2);
+    ctx.fillRect(px + qx * half, py + qy * half, half, half);
+  }
+  const rand = tileRandom(hash2(x * 3 + 1, y * 5 + 2));
+  for (let blade = 0; blade < 7; blade++) {
+    ctx.fillStyle = blade % 3 ? 'rgba(20,60,20,.16)' : 'rgba(215,240,160,.12)';
+    ctx.fillRect(px + rand() * (T - 2), py + rand() * (T - 2), 1 + rand(), 1 + rand());
+  }
+  if (rand() < 0.06) {
+    ctx.fillStyle = FLOWER_COLS[Math.floor(rand() * FLOWER_COLS.length)];
+    const fx = px + 6 + rand() * (T - 12), fy = py + 6 + rand() * (T - 12);
+    for (let petal = 0; petal < 5; petal++) ctx.fillRect(fx + rand() * 8 - 4, fy + rand() * 8 - 4, 2, 2);
+  }
+}
+function drawPavingSlabs(px, py, x, y) {
+  const rand = tileRandom(hash2(x * 11 + 5, y * 17 + 3));
+  const half = T / 2;
+  for (let slab = 0; slab < 4; slab++) {
+    const tint = rand() - 0.5;
+    ctx.fillStyle = tint > 0 ? `rgba(255,255,255,${(tint * 0.10).toFixed(3)})` : `rgba(0,0,0,${(-tint * 0.10).toFixed(3)})`;
+    ctx.fillRect(px + (slab & 1) * half, py + (slab >> 1) * half, half, half);
+  }
+  ctx.fillStyle = 'rgba(0,0,0,.12)';
+  ctx.fillRect(px, py, T, 1); ctx.fillRect(px, py + half, T, 1); ctx.fillRect(px, py, 1, T); ctx.fillRect(px + half, py, 1, T);
+  ctx.fillStyle = 'rgba(255,255,255,.07)';
+  ctx.fillRect(px, py + 1, T, 1); ctx.fillRect(px, py + half + 1, T, 1); ctx.fillRect(px + 1, py, 1, T); ctx.fillRect(px + half + 1, py, 1, T);
+  if (rand() < 0.08) {
+    ctx.fillStyle = 'rgba(30,30,30,.10)'; ctx.beginPath();
+    ctx.ellipse(px + 4 + rand() * (T - 8), py + 4 + rand() * (T - 8), 3 + rand() * 3, 2 + rand() * 2, rand() * TAU, 0, TAU);
+    ctx.fill();
+  }
+}
+function drawAsphaltGrain(px, py, x, y) {
+  const rand = tileRandom(hash2(x * 5 + 3, y * 9 + 1));
+  for (let speck = 0; speck < 10; speck++) {
+    ctx.fillStyle = speck & 1 ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.16)';
+    ctx.fillRect(px + rand() * T, py + rand() * T, 1 + rand() * 1.5, 1);
+  }
+  if (rand() < 0.04) {
+    let cx = px + rand() * T, cy = py + rand() * T;
+    ctx.strokeStyle = 'rgba(10,10,12,.35)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(cx, cy);
+    for (let segment = 0; segment < 4; segment++) { cx += rand() * 10 - 5; cy += rand() * 10 - 5; ctx.lineTo(cx, cy); }
+    ctx.stroke();
+  }
+}
+function edgeBand(px, py, dx, dy, thickness) {
+  ctx.fillRect(dx > 0 ? px + T - thickness : px, dy > 0 ? py + T - thickness : py, dx ? thickness : T, dy ? thickness : T);
+}
+function fadeFromEdge(px, py, dx, dy, depth, color, alpha) {
+  const sx = dx > 0 ? px + T : px, sy = dy > 0 ? py + T : py;
+  const fade = ctx.createLinearGradient(sx, sy, sx - dx * depth, sy - dy * depth);
+  fade.addColorStop(0, `rgba(${color},${alpha})`); fade.addColorStop(1, `rgba(${color},0)`);
+  ctx.fillStyle = fade; ctx.fillRect(px, py, T, T);
+}
+function drawWaterTile(px, py, x, y) {
+  ctx.fillStyle = '#245a86'; ctx.fillRect(px, py, T, T);
+  const h = hash2(x, y);
+  const tw = 0.55 + 0.45 * Math.sin(frame * 0.05 + (h & 15));
+  ctx.fillStyle = `rgba(255,255,255,${0.05 + 0.08 * tw})`;
+  ctx.fillRect(px + (h & 15), py + 5 + ((h >> 4) & 7), 6, 2);
+  ctx.fillRect(px + ((h >> 8) & 15), py + 19 + ((h >> 12) & 5), 5, 2);
+  for (const [dx, dy] of WATER_SIDES) {
+    const neighbour = tileAt(x + dx, y + dy);
+    if (neighbour === WATER) continue;
+    fadeFromEdge(px, py, dx, dy, 14, '120,190,200', 0.5);
+    if (dx < 0 || dy < 0) fadeFromEdge(px, py, dx, dy, 7, '0,0,0', 0.3);
+    if (SOFT_SHORES.includes(neighbour)) {
+      ctx.fillStyle = 'rgba(230,245,250,.45)'; edgeBand(px, py, dx, dy, 1.5);
+    } else {
+      ctx.fillStyle = '#b4b9c0'; edgeBand(px, py, dx, dy, 3);
+      ctx.fillStyle = 'rgba(255,255,255,.35)'; edgeBand(px, py, dx, dy, 1);
+    }
+  }
+}
+function treeInPlanter(x, y) {
+  const bx = Math.floor(x / PERIOD), by = Math.floor(y / PERIOD), cat = blockCat(bx, by);
+  return cat === PLAZA_CAT || (cat === BUILD_CAT && blockKind(bx, by) === OFF_KIND);
+}
+function drawPlanter(px, py, x, y) {
+  const inPlaza = blockCat(Math.floor(x / PERIOD), Math.floor(y / PERIOD)) === PLAZA_CAT;
+  ctx.fillStyle = inPlaza ? '#9aa0a8' : '#7e838c'; ctx.fillRect(px, py, T, T);
+  drawPavingSlabs(px, py, x, y);
+  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(px + 6, py + 6, T - 8, T - 8);
+  ctx.fillStyle = '#868b93'; ctx.fillRect(px + 4, py + 4, T - 8, T - 8);
+  ctx.fillStyle = '#aeb3ba'; ctx.fillRect(px + 4, py + 4, T - 8, 2); ctx.fillRect(px + 4, py + 4, 2, T - 8);
+  ctx.fillStyle = '#4b3a2a'; ctx.fillRect(px + 7, py + 7, T - 14, T - 14);
+}
+function drawTreeShadow(cx, cy, radius) {
+  ctx.fillStyle = 'rgba(12,28,14,.16)';
+  ctx.beginPath(); ctx.arc(cx + radius * 0.45, cy + radius * 0.55, radius * 1.08, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx + radius * 0.55, cy + radius * 0.65, radius * 0.85, 0, TAU); ctx.fill();
+}
+function canopyLobes(rand) {
+  const count = 6 + Math.floor(rand() * 3), turn = rand() * TAU;
+  return Array.from({ length: count }, (_, i) => {
+    const angle = turn + i / count * TAU, reach = 0.36 + rand() * 0.12;
+    return { dx: Math.cos(angle) * reach, dy: Math.sin(angle) * reach, r: 0.46 + rand() * 0.14 };
+  });
+}
+function fillLobes(cx, cy, radius, lobes, color) {
+  ctx.fillStyle = color; ctx.beginPath();
+  ctx.moveTo(cx + radius * 0.62, cy); ctx.arc(cx, cy, radius * 0.62, 0, TAU);
+  for (const lobe of lobes) {
+    const lx = cx + lobe.dx * radius, ly = cy + lobe.dy * radius, lr = lobe.r * radius;
+    ctx.moveTo(lx + lr, ly); ctx.arc(lx, ly, lr, 0, TAU);
+  }
+  ctx.fill();
+}
+function drawBroadleaf(cx, cy, radius, palette, rand) {
+  const lobes = canopyLobes(rand);
+  drawTreeShadow(cx, cy, radius);
+  fillLobes(cx, cy, radius, lobes, palette[0]);
+  fillLobes(cx - radius * 0.12, cy - radius * 0.14, radius * 0.8, lobes, palette[1]);
+  ctx.fillStyle = palette[2];
+  for (let k = 0; k < 3; k++) {
+    const angle = Math.PI * 1.25 + (rand() - 0.5) * 1.6, reach = radius * (0.2 + rand() * 0.3);
+    ctx.beginPath(); ctx.arc(cx - radius * 0.1 + Math.cos(angle) * reach, cy - radius * 0.1 + Math.sin(angle) * reach, radius * (0.16 + rand() * 0.1), 0, TAU); ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(0,0,0,.14)';
+  for (let k = 0; k < 4; k++) {
+    const angle = rand() * TAU, reach = radius * rand() * 0.6;
+    ctx.beginPath(); ctx.arc(cx + Math.cos(angle) * reach + radius * 0.1, cy + Math.sin(angle) * reach + radius * 0.1, 1 + rand() * 0.8, 0, TAU); ctx.fill();
+  }
+}
+function drawConifer(cx, cy, radius, rand) {
+  const points = 12, turn = rand() * TAU;
+  const star = (scale, shift) => Array.from({ length: points * 2 }, (_, i) => {
+    const angle = turn + i / (points * 2) * TAU, reach = radius * scale * (i % 2 ? 0.78 : 1);
+    return [cx - shift + Math.cos(angle) * reach, cy - shift + Math.sin(angle) * reach];
+  });
+  drawTreeShadow(cx, cy, radius * 0.9);
+  fillPolygon(star(1, 0), CONIFER_PALETTE[0]);
+  fillPolygon(star(0.72, radius * 0.1), CONIFER_PALETTE[1]);
+  fillPolygon(star(0.4, radius * 0.16), CONIFER_PALETTE[2]);
+}
+function drawTreeOnTile(x, y) {
+  const rand = tileRandom(hash2(x * 7 + 1, y * 13 + 4));
+  const px = Math.floor(x * T - camX), py = Math.floor(y * T - camY);
+  if (treeInPlanter(x, y)) { drawBroadleaf(px + T / 2, py + T / 2, 12, BROADLEAF_PALETTES[1], rand); return; }
+  const cx = px + T / 2 + (rand() - 0.5) * 6, cy = py + T / 2 + (rand() - 0.5) * 6;
+  const species = rand();
+  if (species < 0.2) drawConifer(cx, cy, 10 + rand() * 3, rand);
+  else if (species < 0.28) drawBroadleaf(cx, cy, 9 + rand() * 3, BLOSSOM_PALETTES[Math.floor(rand() * BLOSSOM_PALETTES.length)], rand);
+  else drawBroadleaf(cx, cy, 11 + rand() * 5, BROADLEAF_PALETTES[Math.floor(rand() * BROADLEAF_PALETTES.length)], rand);
+}
+function drawTrees(x0, y0, x1, y1) {
+  for (let y = Math.max(0, y0 - 1); y <= Math.min(MAP_H - 1, y1 + 1); y++)
+    for (let x = Math.max(0, x0 - 1); x <= Math.min(MAP_W - 1, x1 + 1); x++)
+      if (grid[gi(x, y)] === TREE) drawTreeOnTile(x, y);
 }
 
 // Lightens (f>0) or darkens (f<0) a hex colour.
@@ -338,6 +485,9 @@ function drawRoofWeathering(b, px, py, rw, rh) {
     stain.addColorStop(0, 'rgba(0,0,0,.09)'); stain.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = stain; ctx.fillRect(sx - radius, sy - radius, radius * 2, radius * 2);
   }
+  const sunlight = ctx.createLinearGradient(px, py, px + rw, py + rh);
+  sunlight.addColorStop(0, 'rgba(255,255,255,.10)'); sunlight.addColorStop(0.5, 'rgba(255,255,255,0)'); sunlight.addColorStop(1, 'rgba(0,0,0,.10)');
+  ctx.fillStyle = sunlight; ctx.fillRect(px, py, rw, rh);
 }
 function drawRoofBox(x, y, w, h, color, height) {
   ctx.fillStyle = 'rgba(10,14,24,.30)'; ctx.fillRect(x + height, y + height, w, h);
@@ -889,7 +1039,7 @@ function signalHead(x, y, state, col, horiz) {
 // the pizza top box behind the seat.
 function drawBike(c) {
   const x = c.x - camX, y = c.y - camY;
-  drawShadow(x + 2, y + 3, c.w / 2 - 3, 5);
+  drawVehicleShadow(x - 1, y - 1, c.angle, c.w / 2 - 3, 4, 4);
   ctx.save();
   ctx.translate(x, y); ctx.rotate(c.angle);
   const hw = c.w / 2;
@@ -938,7 +1088,7 @@ function drawCarFlames(c) {
 // of the hull) towards the crosshair.
 function drawTank(c) {
   const x = c.x - camX, y = c.y - camY;
-  drawShadow(x + 3, y + 4, c.w / 2, c.h / 2 - 1);
+  drawVehicleShadow(x, y, c.angle, c.w / 2, c.h / 2 - 1, 4);
   ctx.save();
   ctx.translate(x, y); ctx.rotate(c.angle);
   const hw = c.w / 2, hh = c.h / 2;
@@ -968,27 +1118,77 @@ function drawTank(c) {
   ctx.restore();
   if (c.burning) drawCarFlames(c);
 }
+const GLASS_COLOR = '#18202c';
+const BRAKE_DECELERATION = 0.03;
+
+function drawVehicleShadow(x, y, angle, halfLength, halfWidth, radius) {
+  ctx.save();
+  ctx.translate(x + 3, y + 4); ctx.rotate(angle);
+  ctx.fillStyle = 'rgba(0,0,0,.16)'; roundRect(-halfLength - 1, -halfWidth - 1, halfLength * 2 + 2, halfWidth * 2 + 2, radius + 1); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,.14)'; roundRect(-halfLength + 1, -halfWidth + 1, halfLength * 2 - 2, halfWidth * 2 - 2, radius); ctx.fill();
+  ctx.restore();
+}
+function bodyPaint(color, angle, hw, hh) {
+  const lightX = -Math.cos(angle) - Math.sin(angle), lightY = Math.sin(angle) - Math.cos(angle);
+  const paint = ctx.createLinearGradient(lightX * hw * 0.5, lightY * hh, -lightX * hw * 0.5, -lightY * hh);
+  paint.addColorStop(0, shade(color, 0.22)); paint.addColorStop(0.45, color); paint.addColorStop(1, shade(color, -0.28));
+  return paint;
+}
+function drawTyres(hw, hh) {
+  ctx.fillStyle = '#111215';
+  for (const axleX of [hw - 11, -hw + 9]) { ctx.fillRect(axleX - 4, -hh - 1, 8, 3); ctx.fillRect(axleX - 4, hh - 2, 8, 3); }
+}
+function drawGlassGlint(frontX, backX, hh) {
+  fillPolygon([[backX + 1, -hh + 4], [backX + 3, -hh + 4], [frontX - 1, hh - 6], [frontX - 3, hh - 6]], 'rgba(190,220,255,.30)');
+}
+function drawSaloonCabin(c, hw, hh, roofPaint) {
+  ctx.fillStyle = GLASS_COLOR; roundRect(-hw + 9, -hh + 2.5, c.w - 20, c.h - 5, 4); ctx.fill();
+  drawGlassGlint(hw - 11, hw - 17, hh);
+  ctx.fillStyle = roofPaint; roundRect(-hw + 13, -hh + 4.5, c.w - 30, c.h - 9, 3); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 1; roundRect(-hw + 13, -hh + 4.5, c.w - 30, c.h - 9, 3); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(-hw + 4, -hh + 2, c.w - 8, 1.2);
+  ctx.fillStyle = 'rgba(0,0,0,.14)'; ctx.fillRect(hw - 10, -0.5, 7, 1);
+  ctx.fillStyle = c.color; ctx.fillRect(hw - 15, -hh - 1.5, 2.5, 2); ctx.fillRect(hw - 15, hh - 0.5, 2.5, 2);
+}
+function drawVanCabin(c, hw, hh) {
+  ctx.fillStyle = GLASS_COLOR; roundRect(hw - 12, -hh + 2.5, 5, c.h - 5, 2); ctx.fill();
+  drawGlassGlint(hw - 7, hw - 12, hh);
+  ctx.fillStyle = shade(c.color, 0.08); ctx.fillRect(-hw + 2, -hh + 2, c.w - 18, c.h - 4);
+  ctx.fillStyle = 'rgba(0,0,0,.07)';
+  for (let ribX = -hw + 6; ribX < hw - 17; ribX += 6) ctx.fillRect(ribX, -hh + 2, 1, c.h - 4);
+  ctx.fillStyle = 'rgba(0,0,0,.30)'; ctx.fillRect(hw - 16, -hh + 2, 1.5, c.h - 4);
+  ctx.fillStyle = c.color; ctx.fillRect(hw - 10, -hh - 1.5, 2.5, 2); ctx.fillRect(hw - 10, hh - 0.5, 2.5, 2);
+}
+function drawCarLights(c, hw, hh) {
+  ctx.fillStyle = '#fff4cc';
+  roundRect(hw - 3, -hh + 2.5, 3, 5, 1.2); ctx.fill(); roundRect(hw - 3, hh - 7.5, 3, 5, 1.2); ctx.fill();
+  const speed = Math.abs(c.speed || 0);
+  const occupied = c.driver || c.role !== 'parked';
+  const braking = occupied && (speed < 0.05 || speed < (c.lastDrawnSpeed ?? speed) - BRAKE_DECELERATION);
+  c.lastDrawnSpeed = speed;
+  if (braking) {
+    ctx.fillStyle = 'rgba(255,40,30,.28)';
+    ctx.beginPath(); ctx.arc(-hw - 1, -hh + 5, 4.5, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(-hw - 1, hh - 5, 4.5, 0, TAU); ctx.fill();
+  }
+  ctx.fillStyle = braking ? '#ff4a3a' : '#9a1a1e';
+  ctx.fillRect(-hw + 0.5, -hh + 2.5, 2.5, 5); ctx.fillRect(-hw + 0.5, hh - 7.5, 2.5, 5);
+}
 function drawCar(c) {
   if (c.isBike) { drawBike(c); return; }
   if (c.isTank) { drawTank(c); return; }
   const x = c.x - camX, y = c.y - camY;
-  drawShadow(x + 3, y + 4, c.w / 2, c.h / 2 - 1);
+  drawVehicleShadow(x, y, c.angle, c.w / 2, c.h / 2, 6);
   ctx.save();
   ctx.translate(x, y); ctx.rotate(c.angle);
   const hw = c.w / 2, hh = c.h / 2;
-  // Body.
-  ctx.fillStyle = c.color; roundRect(-hw, -hh, c.w, c.h, 6); ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 1.5; roundRect(-hw, -hh, c.w, c.h, 6); ctx.stroke();
-  // Roof.
-  ctx.fillStyle = (c.role === 'police' || c.wasPolice) ? '#20407a' : 'rgba(0,0,0,.22)';
-  roundRect(-hw + 12, -hh + 3, c.w - 22, c.h - 6, 4); ctx.fill();
-  // Windscreen.
-  ctx.fillStyle = 'rgba(150,210,255,.85)';
-  ctx.fillRect(hw - 13, -hh + 4, 4, c.h - 8);
-  ctx.fillStyle = 'rgba(120,180,230,.6)';
-  ctx.fillRect(-hw + 9, -hh + 4, 4, c.h - 8);
-  // Headlights.
-  ctx.fillStyle = '#ffe9a0'; ctx.fillRect(hw - 3, -hh + 2, 3, 4); ctx.fillRect(hw - 3, hh - 6, 3, 4);
+  drawTyres(hw, hh);
+  const paint = bodyPaint(c.color, c.angle, hw, hh);
+  ctx.fillStyle = paint; roundRect(-hw, -hh, c.w, c.h, 6); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 1.2; roundRect(-hw, -hh, c.w, c.h, 6); ctx.stroke();
+  if (c.livery && c.livery !== 'army') drawVanCabin(c, hw, hh);
+  else drawSaloonCabin(c, hw, hh, (c.role === 'police' || c.wasPolice) ? '#20407a' : paint);
+  drawCarLights(c, hw, hh);
   if (c.isTaxi) {                                    // taxi livery: chequers + roof sign
     for (let i = 0; i < 5; i++) {
       const sx = -hw + 7 + i * 7;
