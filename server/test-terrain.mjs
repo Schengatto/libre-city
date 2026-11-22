@@ -13,16 +13,17 @@ const DECLARATIONS = [
   ['render', 'drawTreeOnTile'], ['render', 'drawTrees'],
   ['render', 'GLASS_COLOR'], ['render', 'BRAKE_DECELERATION'], ['render', 'drawVehicleShadow'], ['render', 'bodyPaint'],
   ['render', 'drawTyres'], ['render', 'drawGlassGlint'], ['render', 'drawSaloonCabin'], ['render', 'drawVanCabin'],
-  ['render', 'drawCarLights'],
+  ['render', 'drawCarLights'], ['city', 'solidTile'], ['render', 'clipOutSolidTiles'],
 ];
 const moduleSource = DECLARATIONS.map(([file, name]) => extractTopLevel(SOURCES[file], name)).join('\n');
 const EXPORTS = ['T', 'GRASS', 'TREE', 'WATER', 'SIDEWALK', 'GRASS_DARK', 'GRASS_LIGHT', 'PARK_CAT', 'PLAZA_CAT',
   'tileRandom', 'smoothNoise', 'grassColor', 'drawGrass', 'drawWaterTile', 'drawTrees', 'drawPavingSlabs', 'drawAsphaltGrain',
-  'drawVehicleShadow', 'bodyPaint', 'drawSaloonCabin', 'drawVanCabin', 'drawCarLights'];
+  'drawVehicleShadow', 'bodyPaint', 'drawSaloonCabin', 'drawVanCabin', 'drawCarLights', 'BUILDING', 'clipOutSolidTiles'];
 const loadRenderer = new Function('ctx', 'camX', 'camY', 'frame', 'MAP_W', 'MAP_H', 'grid', 'PERIOD', 'blockCat', 'blockKind',
   `const gi = (x, y) => y * MAP_W + x;
    const tileAt = (x, y) => x < 0 || y < 0 || x >= MAP_W || y >= MAP_H ? GRASS : grid[gi(x, y)];
    ${moduleSource}
+   const vw = MAP_W * T, vh = MAP_H * T;
    return { ${EXPORTS.join(', ')} };`);
 
 let pass = 0, fail = 0;
@@ -123,6 +124,19 @@ console.log('6) auto: ombra ruotata, luce da nord-ovest, luci di stop');
   renderer.drawSaloonCabin({ w: 46, h: 24, color: '#d23a3a' }, 23, 12, '#20407a');
   renderer.drawVanCabin({ w: 54, h: 26, color: '#c22822' }, 27, 13);
   ok(!hasBadNumber(recorder.calls), 'abitacoli senza NaN');
+}
+
+console.log('7) marciapiede e asfalto non coprono i tile solidi');
+{
+  const solidAt = { '2,3': 'BUILDING', '5,5': 'TREE', '6,1': 'WATER' };
+  const { recorder, renderer } = createRenderer((x, y, probe) => probe[solidAt[x + ',' + y] || 'SIDEWALK']);
+  renderer.clipOutSolidTiles();
+  const rects = recorder.calls.filter(([name]) => name === 'rect').map(([, args]) => args.join(','));
+  const T = renderer.T;
+  ok(rects[0] === `0,0,${MAP_SIZE * T},${MAP_SIZE * T}`, 'prima la viewport intera');
+  ok(rects.length === 4 && [[2, 3], [6, 1], [5, 5]].every(([x, y]) => rects.includes(`${x * T},${y * T},${T},${T}`)),
+    'un rettangolo per ogni tile edificio, albero, acqua e nessun altro');
+  ok(recorder.calls.some(([name, args]) => name === 'clip' && args[0] === 'evenodd'), 'ritaglio evenodd');
 }
 
 console.log(`\n${pass} ok, ${fail} falliti`);

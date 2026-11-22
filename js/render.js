@@ -110,9 +110,20 @@ function edgeVisible(e, pad) {
   return !(maxx < camX || minx > camX + vw || maxy < camY || miny > camY + vh);
 }
 const SW_BAND = 1.65 * T;                        // pavement width beyond the asphalt
+function clipOutSolidTiles() {
+  const x0 = Math.max(0, Math.floor(camX / T)), y0 = Math.max(0, Math.floor(camY / T));
+  const x1 = Math.min(MAP_W - 1, Math.floor((camX + vw) / T)), y1 = Math.min(MAP_H - 1, Math.floor((camY + vh) / T));
+  ctx.beginPath();
+  ctx.rect(0, 0, vw, vh);
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    if (solidTile(x, y)) ctx.rect(x * T - camX, y * T - camY, T, T);
+  }
+  ctx.clip('evenodd');
+}
 function drawRoads() {
   const SWHALF = HALF_ROAD + SW_BAND, pad = SWHALF + 6;
   ctx.save();
+  clipOutSolidTiles();
   ctx.lineJoin = 'round'; ctx.lineCap = 'round';
   const nodeVisible = (n, r) => !(n.x + r < camX || n.x - r > camX + vw || n.y + r < camY || n.y - r > camY + vh);
   // --- Pavement band ---
@@ -396,6 +407,317 @@ const WALL_LAYOUT = {
   warehouse: null,
   workshop:  { floorHeight: 99, bay: 12, windowWidth: 8 },
 };
+function buildingRandom(seed) {
+  return tileRandom(seed);
+}
+function rectsOverlap(a, b) {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
+const MATERIAL_TILE = 64;
+const materialPatterns = new Map();
+function transposedPainter(name) {
+  return (tile, random) => {
+    tile.setTransform(0, 1, 1, 0, 0, 0);
+    MATERIAL_PAINTERS[name](tile, random);
+  };
+}
+const MATERIAL_PAINTERS = {
+  gravel(tile, random) {
+    const tones = ['rgba(34,28,20,.16)', 'rgba(255,250,236,.12)', 'rgba(150,118,78,.13)'];
+    const wrap = value => (value + MATERIAL_TILE) % MATERIAL_TILE;
+    for (let k = 0; k < 700; k++) {
+      tile.fillStyle = tones[Math.floor(random() * tones.length)];
+      tile.fillRect(Math.floor(random() * MATERIAL_TILE), Math.floor(random() * MATERIAL_TILE), 1, 1);
+    }
+    for (let k = 0; k < 170; k++) {
+      const centerX = Math.floor(random() * MATERIAL_TILE), centerY = Math.floor(random() * MATERIAL_TILE);
+      tile.fillStyle = tones[Math.floor(random() * tones.length)];
+      for (let pebble = 3 + Math.floor(random() * 4); pebble > 0; pebble--) {
+        tile.fillRect(wrap(centerX + Math.floor(random() * 3) - 1), wrap(centerY + Math.floor(random() * 3) - 1), 1, 1);
+      }
+    }
+    for (let k = 0; k < 36; k++) {
+      const x = Math.floor(random() * (MATERIAL_TILE - 2)), y = Math.floor(random() * (MATERIAL_TILE - 2));
+      tile.fillStyle = random() < 0.5 ? 'rgba(255,248,232,.14)' : 'rgba(60,48,32,.14)'; tile.fillRect(x, y, 2, 2);
+      tile.fillStyle = 'rgba(255,255,255,.16)'; tile.fillRect(x, y, 1, 1);
+      tile.fillStyle = 'rgba(0,0,0,.22)'; tile.fillRect(x + 1, y + 1, 1, 1);
+    }
+  },
+  tar(tile, random) {
+    tile.fillStyle = 'rgba(0,0,0,.10)';
+    for (let k = 0; k < 600; k++) tile.fillRect(Math.floor(random() * MATERIAL_TILE), Math.floor(random() * MATERIAL_TILE), 1, 1);
+    for (let k = 0; k < 3; k++) {
+      const w = 6 + Math.floor(random() * 12), h = 4 + Math.floor(random() * 8);
+      const x = Math.floor(random() * (MATERIAL_TILE - w)), y = Math.floor(random() * (MATERIAL_TILE - h));
+      tile.fillStyle = 'rgba(0,0,0,.08)'; tile.fillRect(x, y, w, h);
+      tile.fillStyle = 'rgba(255,255,255,.08)'; tile.fillRect(x, y, w, 1); tile.fillRect(x, y, 1, h);
+    }
+    for (let row = 0; row < MATERIAL_TILE; row += 16) {
+      tile.fillStyle = 'rgba(255,255,255,.14)'; tile.fillRect(0, row, MATERIAL_TILE, 1);
+      tile.fillStyle = 'rgba(0,0,0,.34)'; tile.fillRect(0, row + 15, MATERIAL_TILE, 1);
+      tile.fillStyle = 'rgba(0,0,0,.24)'; tile.fillRect(Math.floor(random() * MATERIAL_TILE), row + 1, 1, 14);
+    }
+  },
+  metal(tile, random) {
+    for (let x = 0; x < MATERIAL_TILE; x += 4) {
+      tile.fillStyle = 'rgba(255,255,255,.22)'; tile.fillRect(x, 0, 1, MATERIAL_TILE);
+      tile.fillStyle = 'rgba(0,0,0,.30)'; tile.fillRect(x + 2, 0, 1, MATERIAL_TILE);
+    }
+    tile.fillStyle = 'rgba(0,0,0,.26)'; tile.fillRect(0, MATERIAL_TILE - 1, MATERIAL_TILE, 1);
+    tile.fillStyle = 'rgba(0,0,0,.08)';
+    for (let k = 0; k < 200; k++) tile.fillRect(Math.floor(random() * MATERIAL_TILE), Math.floor(random() * MATERIAL_TILE), 1, 2);
+  },
+  tilesH(tile) {
+    for (let y = 0; y < MATERIAL_TILE; y += 4) {
+      const offset = (y / 4) % 2 * 4;
+      for (let x = offset - 8; x < MATERIAL_TILE; x += 8) {
+        tile.fillStyle = 'rgba(0,0,0,.34)'; tile.fillRect(x, y, 1, 3);
+        tile.fillStyle = 'rgba(255,255,255,.22)'; tile.fillRect(x + 1, y, 2, 3);
+        tile.fillStyle = 'rgba(0,0,0,.16)'; tile.fillRect(x + 5, y, 2, 3);
+      }
+      tile.fillStyle = 'rgba(0,0,0,.36)'; tile.fillRect(0, y + 3, MATERIAL_TILE, 1);
+    }
+  },
+  tilesV: transposedPainter('tilesH'),
+  metalH: transposedPainter('metal'),
+  brickV: transposedPainter('brick'),
+  panelV: transposedPainter('panel'),
+  brick(tile, random) {
+    for (let y = 0; y < MATERIAL_TILE; y += 4) {
+      const offset = (y / 4) % 2 * 4;
+      for (let x = offset - 8; x < MATERIAL_TILE; x += 8) {
+        tile.fillStyle = `rgba(0,0,0,${(random() * 0.18).toFixed(3)})`; tile.fillRect(x + 1, y, 7, 3);
+        tile.fillStyle = 'rgba(255,255,255,.24)'; tile.fillRect(x, y, 1, 3);
+      }
+      tile.fillStyle = 'rgba(255,255,255,.24)'; tile.fillRect(0, y + 3, MATERIAL_TILE, 1);
+    }
+  },
+  panel(tile, random) {
+    for (let y = 0; y < MATERIAL_TILE; y += 8) for (let x = 0; x < MATERIAL_TILE; x += 16) {
+      tile.fillStyle = random() < 0.5 ? `rgba(0,0,0,${(random() * 0.09).toFixed(3)})` : `rgba(255,255,255,${(random() * 0.08).toFixed(3)})`;
+      tile.fillRect(x, y, 16, 8);
+      tile.fillStyle = 'rgba(255,255,255,.16)'; tile.fillRect(x, y, 15, 1); tile.fillRect(x, y, 1, 7);
+      tile.fillStyle = 'rgba(0,0,0,.30)'; tile.fillRect(x + 15, y, 1, 8); tile.fillRect(x, y + 7, 16, 1);
+    }
+    tile.fillStyle = 'rgba(0,0,0,.10)';
+    for (let k = 0; k < 300; k++) tile.fillRect(Math.floor(random() * MATERIAL_TILE), Math.floor(random() * MATERIAL_TILE), 1, 1);
+  },
+};
+function materialPattern(name) {
+  if (!materialPatterns.has(name)) {
+    const tile = document.createElement('canvas');
+    tile.width = MATERIAL_TILE; tile.height = MATERIAL_TILE;
+    const tileContext = tile.getContext('2d');
+    MATERIAL_PAINTERS[name](tileContext, buildingRandom(hash2(name.length * 977, name.charCodeAt(0) * 131 + name.charCodeAt(name.length - 1))));
+    materialPatterns.set(name, tileContext.createPattern(tile, 'repeat'));
+  }
+  return materialPatterns.get(name);
+}
+function drawRoofSurface(x, y, w, h, color, material) {
+  if (w <= 0 || h <= 0) return;
+  ctx.fillStyle = color; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = materialPattern(material); ctx.fillRect(x, y, w, h);
+  const random = buildingRandom(hash2(x + camX, y + camY));
+  const stains = 3 + Math.floor(random() * 3);
+  for (let k = 0; k < stains; k++) {
+    const radius = 4 + random() * Math.min(w, h) * 0.2;
+    const sx = x + random() * w, sy = y + random() * h;
+    const left = Math.max(x, sx - radius), top = Math.max(y, sy - radius);
+    const stain = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius);
+    stain.addColorStop(0, 'rgba(24,20,14,.12)'); stain.addColorStop(1, 'rgba(24,20,14,0)');
+    ctx.fillStyle = stain; ctx.fillRect(left, top, Math.min(x + w, sx + radius) - left, Math.min(y + h, sy + radius) - top);
+  }
+  const light = ctx.createLinearGradient(x, y, x + w, y + h);
+  light.addColorStop(0, 'rgba(255,255,255,.12)'); light.addColorStop(0.5, 'rgba(255,255,255,0)'); light.addColorStop(1, 'rgba(0,0,0,.12)');
+  ctx.fillStyle = light; ctx.fillRect(x, y, w, h);
+}
+function planRoofProps(random, roof, pool, count, reserved) {
+  const placed = [];
+  for (let attempt = 0; attempt < count * 8 && placed.length < count; attempt++) {
+    const kind = pool[Math.floor(random() * pool.length)];
+    const w = kind.w[0] + Math.floor(random() * (kind.w[1] - kind.w[0] + 1));
+    const h = kind.h[0] + Math.floor(random() * (kind.h[1] - kind.h[0] + 1));
+    const slackX = roof.w - 8 - w, slackY = roof.h - 8 - h;
+    if (slackX < 0 || slackY < 0) continue;
+    if (kind.max && placed.filter(prop => prop.type === kind.type).length >= kind.max) continue;
+    const prop = { type: kind.type, x: roof.x + 4 + Math.floor(random() * (slackX + 1)), y: roof.y + 4 + Math.floor(random() * (slackY + 1)), w, h, height: kind.height };
+    const spaced = { x: prop.x - 2, y: prop.y - 2, w: w + 4, h: h + 4 };
+    if (reserved.some(rect => rectsOverlap(rect, spaced)) || placed.some(other => rectsOverlap(other, spaced))) continue;
+    placed.push(prop);
+  }
+  return placed;
+}
+function drawPropBox(x, y, w, h, height, color) {
+  fillPolygon(buildingShadowPolygon(x, y, w, h, height * SHADOW_LENGTH_PER_LIFT), 'rgba(10,14,24,.30)');
+  const depth = Math.max(1, Math.min(Math.round(height * 0.5), Math.floor(Math.min(w, h) / 3)));
+  const topW = w - depth, topH = h - depth;
+  fillPolygon([[x, y + topH], [x + topW, y + topH], [x + w, y + h], [x, y + h]], shade(color, -0.34));
+  fillPolygon([[x + topW, y], [x + w, y], [x + w, y + h], [x + topW, y + topH]], shade(color, -0.52));
+  ctx.fillStyle = color; ctx.fillRect(x, y, topW, topH);
+  ctx.fillStyle = shade(color, 0.30); ctx.fillRect(x, y, topW, 1); ctx.fillRect(x, y, 1, topH);
+  return { topW, topH, depth };
+}
+function drawRoundPropShadow(cx, cy, radius, length) {
+  const offset = radius * Math.SQRT1_2;
+  ctx.fillStyle = 'rgba(10,14,24,.30)'; ctx.beginPath();
+  ctx.moveTo(cx - offset, cy + offset); ctx.lineTo(cx + offset, cy - offset);
+  ctx.lineTo(cx + offset + length, cy - offset + length); ctx.lineTo(cx - offset + length, cy + offset + length); ctx.closePath();
+  ctx.moveTo(cx + length + radius, cy + length); ctx.arc(cx + length, cy + length, radius, 0, TAU);
+  ctx.fill();
+}
+function drawRoofProp(prop, ox, oy, roofColor = '#9a5a44') {
+  const x = ox + prop.x, y = oy + prop.y, w = prop.w, h = prop.h, shadowLength = prop.height * SHADOW_LENGTH_PER_LIFT;
+  const cx = x + w / 2, cy = y + h / 2, radius = Math.min(w, h) / 2;
+  switch (prop.type) {
+    case 'hvac': {
+      const { topW, topH } = drawPropBox(x, y, w, h, prop.height, '#a9adb1');
+      const fan = Math.max(2, Math.min(topW, topH) - 2), fanX = x + topW - fan / 2 - 1, fanY = y + topH / 2;
+      ctx.fillStyle = 'rgba(0,0,0,.38)';
+      for (let gy = y + 2; gy < y + topH - 1; gy += 2) ctx.fillRect(x + 2, gy, Math.max(0, topW - fan - 4), 1);
+      ctx.fillStyle = '#3b4046'; ctx.beginPath(); ctx.arc(fanX, fanY, fan / 2, 0, TAU); ctx.fill();
+      ctx.strokeStyle = '#8b9096'; ctx.lineWidth = 1; ctx.beginPath();
+      ctx.moveTo(fanX - fan / 2 + 1, fanY); ctx.lineTo(fanX + fan / 2 - 1, fanY); ctx.moveTo(fanX, fanY - fan / 2 + 1); ctx.lineTo(fanX, fanY + fan / 2 - 1); ctx.stroke();
+      ctx.fillStyle = '#d4d7da'; ctx.fillRect(Math.round(fanX) - 1, Math.round(fanY) - 1, 2, 2);
+      break;
+    }
+    case 'hvacBank': {
+      const horizontal = w >= h, unit = horizontal ? h + 2 : w + 2, length = horizontal ? w : h;
+      for (let offset = 0; offset + unit - 2 <= length; offset += unit) {
+        drawRoofProp({ type: 'hvac', x: prop.x + (horizontal ? offset : 0), y: prop.y + (horizontal ? 0 : offset), w: horizontal ? unit - 2 : w, h: horizontal ? h : unit - 2, height: prop.height }, ox, oy);
+      }
+      break;
+    }
+    case 'stairHut': {
+      const { topW, topH, depth } = drawPropBox(x, y, w, h, prop.height, '#948d82');
+      ctx.fillStyle = '#5a554f'; ctx.fillRect(x + 2, y + 2, topW - 4, topH - 4);
+      ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(x + 2, y + 2, topW - 4, 1);
+      ctx.fillStyle = '#231f1b'; ctx.fillRect(x + Math.round(topW / 2) - 2, y + topH + 1, 4, depth - 1);
+      ctx.fillStyle = '#c9c3b6'; ctx.fillRect(x + Math.round(topW / 2) - 3, y + topH, 6, 1);
+      break;
+    }
+    case 'tank': {
+      drawRoundPropShadow(cx, cy, radius, shadowLength);
+      const body = ctx.createRadialGradient(cx - radius * 0.4, cy - radius * 0.4, 0, cx, cy, radius);
+      body.addColorStop(0, '#b48a5e'); body.addColorStop(1, '#5c3f28');
+      ctx.fillStyle = body; ctx.beginPath(); ctx.arc(cx, cy, radius, 0, TAU); ctx.fill();
+      ctx.save(); ctx.clip();
+      ctx.fillStyle = 'rgba(0,0,0,.28)';
+      for (let sx = Math.floor(cx - radius) + 1; sx < cx + radius; sx += 2) ctx.fillRect(sx, cy - radius, 1, radius * 2);
+      ctx.restore();
+      ctx.strokeStyle = '#3a271a'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(cx, cy, radius - 0.5, 0, TAU); ctx.stroke();
+      const cap = ctx.createRadialGradient(cx - radius * 0.3, cy - radius * 0.3, 0, cx, cy, radius * 0.62);
+      cap.addColorStop(0, '#e6dccb'); cap.addColorStop(1, '#8c8478');
+      ctx.fillStyle = cap; ctx.beginPath(); ctx.arc(cx - 0.5, cy - 0.5, radius * 0.62, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#4a443c'; ctx.fillRect(Math.round(cx) - 1, Math.round(cy) - 1, 1, 1);
+      break;
+    }
+    case 'skylight': {
+      fillPolygon(buildingShadowPolygon(x, y, w, h, Math.max(1, shadowLength)), 'rgba(10,14,24,.30)');
+      ctx.fillStyle = '#c4c8cc'; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = '#6f8ea3'; ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+      ctx.fillStyle = 'rgba(28,44,60,.45)';
+      for (let sx = x + 4; sx < x + w - 2; sx += 4) ctx.fillRect(sx, y + 1, 1, h - 2);
+      ctx.save(); ctx.beginPath(); ctx.rect(x + 1, y + 1, w - 2, h - 2); ctx.clip();
+      ctx.strokeStyle = 'rgba(235,245,255,.55)'; ctx.lineWidth = 2; ctx.beginPath();
+      ctx.moveTo(x + w * 0.2, y + h); ctx.lineTo(x + w * 0.2 + h, y); ctx.stroke();
+      ctx.restore();
+      ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(x, y + h - 1, w, 1); ctx.fillRect(x + w - 1, y, 1, h);
+      break;
+    }
+    case 'vent': {
+      drawRoundPropShadow(cx, cy, radius, shadowLength);
+      ctx.fillStyle = '#6e7379'; ctx.beginPath(); ctx.arc(cx, cy, radius, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#b9bdc1'; ctx.beginPath(); ctx.arc(cx - 0.5, cy - 0.5, radius - 1, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#2e3135'; ctx.fillRect(Math.round(cx) - 1, Math.round(cy) - 1, 2, 2);
+      break;
+    }
+    case 'antenna': {
+      const baseX = Math.round(x + w - 2) + 0.5, baseY = Math.round(y + h - 2) + 0.5, topX = x + 1.5, topY = y + 1.5;
+      const shadowReach = Math.min(shadowLength, Math.hypot(w, h)) * Math.SQRT1_2;
+      ctx.fillStyle = 'rgba(10,14,24,.22)'; ctx.fillRect(baseX - 1.5, baseY - 1.5, 4, 4);
+      ctx.lineWidth = 2; ctx.lineCap = 'round';
+      ctx.strokeStyle = 'rgba(10,14,24,.20)'; ctx.beginPath(); ctx.moveTo(baseX, baseY); ctx.lineTo(baseX + shadowReach, baseY + shadowReach); ctx.stroke();
+      ctx.lineWidth = 1; ctx.lineCap = 'butt';
+      ctx.strokeStyle = '#d2d6da'; ctx.beginPath(); ctx.moveTo(baseX, baseY); ctx.lineTo(topX, topY);
+      for (const t of [0.35, 0.7]) {
+        const mx = baseX + (topX - baseX) * t, my = baseY + (topY - baseY) * t;
+        ctx.moveTo(mx - 2, my + 2); ctx.lineTo(mx + 2, my - 2);
+      }
+      ctx.stroke();
+      ctx.fillStyle = '#2e3135'; ctx.fillRect(baseX - 1.5, baseY - 1.5, 3, 3);
+      ctx.fillStyle = '#ff4a3a'; ctx.fillRect(Math.round(topX) - 1, Math.round(topY) - 1, 2, 2);
+      break;
+    }
+    case 'dish': {
+      const dishShadow = Math.min(shadowLength * 0.5, 3);
+      ctx.fillStyle = 'rgba(10,14,24,.30)'; ctx.beginPath(); ctx.ellipse(cx + dishShadow, cy + dishShadow, w / 2, h / 2, -Math.PI / 4, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#4a4f56'; ctx.beginPath(); ctx.ellipse(cx, cy, w / 2, h / 2 - 0.5, -Math.PI / 4, 0, TAU); ctx.fill();
+      const bowl = ctx.createRadialGradient(cx + radius * 0.35, cy + radius * 0.35, 0, cx, cy, radius);
+      bowl.addColorStop(0, '#eef0f2'); bowl.addColorStop(0.6, '#b9bec4'); bowl.addColorStop(1, '#7d838b');
+      ctx.fillStyle = bowl; ctx.beginPath(); ctx.ellipse(cx, cy, w / 2 - 1, h / 2 - 1.5, -Math.PI / 4, 0, TAU); ctx.fill();
+      ctx.strokeStyle = '#2b2f34'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x + w - 2.5, y + h - 2.5); ctx.lineTo(cx - 1, cy - 1); ctx.stroke();
+      ctx.fillStyle = '#23272c'; ctx.fillRect(Math.round(cx) - 2, Math.round(cy) - 2, 2, 2);
+      break;
+    }
+    case 'solar': {
+      fillPolygon(buildingShadowPolygon(x, y, w, h, Math.max(1, shadowLength)), 'rgba(10,14,24,.30)');
+      ctx.fillStyle = '#1f2d44'; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = '#3c5a82';
+      for (let sx = x + 3; sx < x + w - 1; sx += 3) ctx.fillRect(sx, y + 1, 1, h - 2);
+      for (let sy = y + 3; sy < y + h - 1; sy += 3) ctx.fillRect(x + 1, sy, w - 2, 1);
+      ctx.fillStyle = '#9fb4d0'; ctx.fillRect(x, y, w, 1);
+      ctx.fillStyle = '#0e141e'; ctx.fillRect(x, y + h - 1, w, 1); ctx.fillRect(x + w - 1, y, 1, h);
+      break;
+    }
+    case 'duct': {
+      const { topW, topH } = drawPropBox(x, y, w, h, prop.height, '#b0b4b8');
+      ctx.fillStyle = 'rgba(0,0,0,.30)';
+      if (w >= h) for (let sx = x + 4; sx < x + topW - 1; sx += 5) ctx.fillRect(sx, y, 1, topH);
+      else for (let sy = y + 4; sy < y + topH - 1; sy += 5) ctx.fillRect(x, sy, topW, 1);
+      break;
+    }
+    case 'chimney': {
+      const { topW, topH } = drawPropBox(x, y, w, h, prop.height, '#8c5240');
+      ctx.fillStyle = 'rgba(255,255,255,.18)';
+      for (let sy = y + 2; sy < y + topH; sy += 2) ctx.fillRect(x, sy, topW, 1);
+      ctx.fillStyle = '#1e1a17'; ctx.fillRect(x + 1, y + 1, Math.max(1, topW - 2), Math.max(1, topH - 2));
+      break;
+    }
+    case 'stack': {
+      drawRoundPropShadow(cx, cy, radius, shadowLength);
+      const body = ctx.createRadialGradient(cx - radius * 0.4, cy - radius * 0.4, 0, cx, cy, radius);
+      body.addColorStop(0, '#c9c2b6'); body.addColorStop(1, '#5e5850');
+      ctx.fillStyle = body; ctx.beginPath(); ctx.arc(cx, cy, radius, 0, TAU); ctx.fill();
+      ctx.strokeStyle = '#3a3632'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(cx, cy, radius - 0.5, 0, TAU); ctx.stroke();
+      ctx.strokeStyle = 'rgba(0,0,0,.30)'; ctx.beginPath(); ctx.arc(cx, cy, radius * 0.78, 0, TAU); ctx.stroke();
+      ctx.fillStyle = '#9c3a2c'; ctx.beginPath(); ctx.arc(cx, cy, radius * 0.62, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#141210'; ctx.beginPath(); ctx.arc(cx + 0.5, cy + 0.5, radius * 0.45, 0, TAU); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.30)'; ctx.fillRect(Math.round(cx - radius * 0.5), Math.round(cy - radius * 0.62), Math.max(1, Math.round(radius * 0.5)), 1);
+      break;
+    }
+    case 'dormer': {
+      const front = Math.max(2, Math.round(h * 0.3)), capH = h - front;
+      fillPolygon(buildingShadowPolygon(x, y, w, h, shadowLength), 'rgba(10,14,24,.32)');
+      ctx.fillStyle = '#cfc4ae'; ctx.fillRect(x, y + capH, w, front);
+      ctx.fillStyle = '#7fb2cc'; ctx.fillRect(x + Math.round(w * 0.3), y + capH, Math.max(2, Math.round(w * 0.4)), front - 1);
+      ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(x, y + h - 1, w, 1);
+      ctx.fillStyle = shade(roofColor, ROOF_PLANE_TONES.west); ctx.fillRect(x, y, w / 2, capH);
+      ctx.fillStyle = shade(roofColor, ROOF_PLANE_TONES.east); ctx.fillRect(x + w / 2, y, w / 2, capH);
+      ctx.strokeStyle = shade(roofColor, 0.42); ctx.lineWidth = 1; ctx.beginPath();
+      ctx.moveTo(x + w / 2, y + 0.5); ctx.lineTo(x + w / 2, y + capH); ctx.stroke();
+      break;
+    }
+    case 'helipad': {
+      ctx.fillStyle = 'rgba(10,14,24,.25)'; ctx.fillRect(x + 1, y + 1, w, h);
+      ctx.fillStyle = '#4a4f57'; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = 'rgba(255,255,255,.14)'; ctx.fillRect(x, y, w, 1); ctx.fillRect(x, y, 1, h);
+      ctx.strokeStyle = '#e8c547'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(cx, cy, radius - 3, 0, TAU); ctx.stroke();
+      ctx.fillStyle = '#eef0f2';
+      ctx.fillRect(Math.round(cx) - 5, Math.round(cy) - 6, 2, 12); ctx.fillRect(Math.round(cx) + 3, Math.round(cy) - 6, 2, 12); ctx.fillRect(Math.round(cx) - 3, Math.round(cy) - 1, 6, 2);
+      break;
+    }
+  }
+}
 
 function tracePolygon(points) {
   ctx.moveTo(points[0][0], points[0][1]);
@@ -417,6 +739,23 @@ function hipRoofPlanes(x, y, w, h) {
     west:  [[x, y + h], [x, y], [ax, ay], [ax, by]],
     south: [[x + w, y + h], [x, y + h], [ax, by], [bx, by]],
     east:  [[x + w, y], [x + w, y + h], [bx, by], [bx, ay]],
+  };
+}
+const ROOF_PLANE_TONES = { north: 0.22, west: 0.08, south: -0.18, east: -0.34 };
+function gableRoofPlanes(x, y, w, h) {
+  if (w >= h) {
+    const ridgeY = y + h / 2;
+    return {
+      a: [[x, y], [x + w, y], [x + w, ridgeY], [x, ridgeY]],
+      b: [[x, ridgeY], [x + w, ridgeY], [x + w, y + h], [x, y + h]],
+      ridge: [[x, ridgeY], [x + w, ridgeY]],
+    };
+  }
+  const ridgeX = x + w / 2;
+  return {
+    a: [[x, y], [ridgeX, y], [ridgeX, y + h], [x, y + h]],
+    b: [[ridgeX, y], [x + w, y], [x + w, y + h], [ridgeX, y + h]],
+    ridge: [[ridgeX, y], [ridgeX, y + h]],
   };
 }
 function drawBuildingShadows() {
@@ -445,26 +784,40 @@ function windowTone(b, column, floor) {
   const roll = hash2(b.h + column * 31, floor * 17 + 5) % 10;
   return WINDOW_TONES[roll === 0 ? 0 : roll < 3 ? 1 : roll < 5 ? 2 : 3];
 }
+const FACADE_MATERIALS = {
+  house: ['brick', 'brickV'], apartment: ['brick', 'brickV'], shop: ['brick', 'brickV'],
+  tower: ['panel', 'panelV'], warehouse: ['metal', 'metalH'], workshop: ['metal', 'metalH'],
+};
 function drawBuildingWalls(b, px, py, W, H, L) {
   const rw = W - L, rh = H - L;
-  fillPolygon([[px, py + rh], [px + rw, py + rh], [px + W, py + H], [px, py + H]], shade(b.col, -0.30));
-  fillPolygon([[px + rw, py], [px + W, py], [px + W, py + H], [px + rw, py + rh]], shade(b.col, -0.50));
+  const tint = (buildingRandom(b.h ^ 0x51ed2701)() * 2 - 1) * 0.06;
+  const [southMaterial, eastMaterial] = FACADE_MATERIALS[b.style];
+  const faces = [
+    { polygon: [[px, py + rh], [px + rw, py + rh], [px + W, py + H], [px, py + H]], tone: -0.38, material: southMaterial,
+      fill: axisFiller(true, px, py + rh), length: rw, ground: [px, py + rh, px, py + H], columnSeed: 0 },
+    { polygon: [[px + rw, py], [px + W, py], [px + W, py + H], [px + rw, py + rh]], tone: -0.58, material: eastMaterial,
+      fill: axisFiller(false, px + rw, py), length: rh, ground: [px + rw, py, px + W, py], columnSeed: 97 },
+  ];
   const layout = WALL_LAYOUT[b.style];
-  if (!layout) {
-    ctx.fillStyle = 'rgba(0,0,0,.14)';
-    for (let sx = px + 2; sx < px + rw; sx += 3) ctx.fillRect(sx, py + rh, 1, L);
-    for (let sy = py + 2; sy < py + rh; sy += 3) ctx.fillRect(px + rw, sy, L, 1);
-  } else {
-    const floors = Math.max(1, Math.floor((L - 2) / layout.floorHeight));
-    const windowDepth = Math.min(layout.floorHeight, L - 2) - 2;
+  const floors = layout ? Math.max(1, Math.floor((L - 3) / layout.floorHeight)) : 0;
+  const windowDepth = layout ? Math.max(1, Math.min(layout.floorHeight - 2, L - 5)) : 0;
+  for (const face of faces) {
+    fillPolygon(face.polygon, shade(b.col, face.tone + tint));
+    ctx.fillStyle = materialPattern(face.material); ctx.beginPath(); tracePolygon(face.polygon); ctx.fill();
+    const groundShade = ctx.createLinearGradient(...face.ground);
+    groundShade.addColorStop(0, 'rgba(0,0,0,0)'); groundShade.addColorStop(1, 'rgba(0,0,0,.18)');
+    ctx.fillStyle = groundShade; ctx.beginPath(); tracePolygon(face.polygon); ctx.fill();
+    if (!layout) continue;
+    const columns = [];
+    for (let along = 4; along <= face.length - layout.windowWidth - 3; along += layout.bay) columns.push(along);
     for (let floor = 0; floor < floors; floor++) {
       const offset = 2 + floor * layout.floorHeight;
-      for (let sx = px + 4, column = 0; sx <= px + rw - layout.windowWidth - 3; sx += layout.bay, column++) {
-        ctx.fillStyle = windowTone(b, column, floor); ctx.fillRect(sx, py + rh + offset, layout.windowWidth, windowDepth);
-      }
-      for (let sy = py + 4, column = 0; sy <= py + rh - layout.windowWidth - 3; sy += layout.bay, column++) {
-        ctx.fillStyle = windowTone(b, column + 97, floor); ctx.fillRect(px + rw + offset, sy, windowDepth, layout.windowWidth);
-      }
+      if (floor > 0) { ctx.fillStyle = 'rgba(255,255,255,.16)'; face.fill(0, offset - 2, face.length + offset - 2, 1); }
+      ctx.fillStyle = 'rgba(0,0,0,.34)';
+      for (const along of columns) face.fill(along, offset - 1, layout.windowWidth, 1);
+      columns.forEach((along, column) => { ctx.fillStyle = windowTone(b, column + face.columnSeed, floor); face.fill(along, offset, layout.windowWidth, windowDepth); });
+      ctx.fillStyle = 'rgba(255,255,255,.32)';
+      for (const along of columns) face.fill(along, offset + windowDepth, layout.windowWidth, 1);
     }
   }
   ctx.fillStyle = 'rgba(0,0,0,.28)';
@@ -472,51 +825,317 @@ function drawBuildingWalls(b, px, py, W, H, L) {
   ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(px + rw + 0.5, py + rh + 0.5); ctx.lineTo(px + W - 0.5, py + H - 0.5); ctx.stroke();
 }
-function drawParapet(b, px, py, rw, rh) {
-  ctx.strokeStyle = shade(b.col, 0.24); ctx.lineWidth = 2; ctx.strokeRect(px + 1, py + 1, rw - 2, rh - 2);
-  ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(px + 2, py + 2, rw - 4, 3); ctx.fillRect(px + 2, py + 5, 3, rh - 7);
-}
-function drawRoofWeathering(b, px, py, rw, rh) {
-  for (let k = 0; k < 4; k++) {
-    const roll = hash2(b.h + k * 41, k * 23 + 9);
-    const radius = 8 + roll % 14;
-    const sx = px + 6 + (roll >> 5) % Math.max(1, rw - 12), sy = py + 6 + (roll >> 11) % Math.max(1, rh - 12);
-    const stain = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius);
-    stain.addColorStop(0, 'rgba(0,0,0,.09)'); stain.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = stain; ctx.fillRect(sx - radius, sy - radius, radius * 2, radius * 2);
+function pitchedRoofPlanes(shape, x, y, w, h) {
+  if (shape === 'hip') {
+    const planes = hipRoofPlanes(x, y, w, h), inset = Math.min(w, h) / 2;
+    const ax = x + inset, ay = y + inset, bx = x + w - inset, by = y + h - inset;
+    return {
+      sides: ['north', 'west', 'south', 'east'].map(side => [side, planes[side]]),
+      lines: [[[x, y], [ax, ay]], [[x + w, y], [bx, ay]], [[x, y + h], [ax, by]], [[x + w, y + h], [bx, by]], [[ax, ay], [bx, by]]],
+    };
   }
-  const sunlight = ctx.createLinearGradient(px, py, px + rw, py + rh);
-  sunlight.addColorStop(0, 'rgba(255,255,255,.10)'); sunlight.addColorStop(0.5, 'rgba(255,255,255,0)'); sunlight.addColorStop(1, 'rgba(0,0,0,.10)');
-  ctx.fillStyle = sunlight; ctx.fillRect(px, py, rw, rh);
+  const planes = gableRoofPlanes(x, y, w, h);
+  return { sides: w >= h ? [['north', planes.a], ['south', planes.b]] : [['west', planes.a], ['east', planes.b]], lines: [planes.ridge] };
 }
-function drawRoofBox(x, y, w, h, color, height) {
-  ctx.fillStyle = 'rgba(10,14,24,.30)'; ctx.fillRect(x + height, y + height, w, h);
-  ctx.fillStyle = color; ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = 'rgba(255,255,255,.20)'; ctx.fillRect(x, y, w, 1); ctx.fillRect(x, y, 1, h);
-  ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(x, y + h - 1, w, 1); ctx.fillRect(x + w - 1, y, 1, h);
+function drawHouseRoof(x, y, w, h, color, shape) {
+  const { sides, lines } = pitchedRoofPlanes(shape, x, y, w, h);
+  for (const [side, plane] of sides) {
+    fillPolygon(plane, shade(color, ROOF_PLANE_TONES[side]));
+    ctx.fillStyle = materialPattern(side === 'north' || side === 'south' ? 'tilesH' : 'tilesV'); ctx.beginPath(); tracePolygon(plane); ctx.fill();
+  }
+  ctx.lineCap = 'round';
+  for (const [strokeStyle, lineWidth, offset] of [['rgba(10,14,24,.45)', 1, 1.5], [shade(color, 0.42), 2, 0]]) {
+    ctx.strokeStyle = strokeStyle; ctx.lineWidth = lineWidth; ctx.beginPath();
+    for (const [[x1, y1], [x2, y2]] of lines) { ctx.moveTo(x1 + offset, y1 + offset); ctx.lineTo(x2 + offset, y2 + offset); }
+    ctx.stroke();
+  }
+  ctx.lineCap = 'butt';
+  ctx.strokeStyle = 'rgba(10,8,6,.55)'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
 }
-function drawHipRoof(b, px, py, rw, rh) {
-  const roofColor = ROOF_COLS[b.h % ROOF_COLS.length];
-  const planes = hipRoofPlanes(px, py, rw, rh);
-  const tones = { north: 0.18, west: 0.06, south: -0.16, east: -0.30 };
-  for (const side of ['north', 'west', 'south', 'east']) {
-    fillPolygon(planes[side], shade(roofColor, tones[side]));
-    ctx.save(); ctx.beginPath(); tracePolygon(planes[side]); ctx.clip();
-    ctx.fillStyle = 'rgba(0,0,0,.10)';
-    if (side === 'north' || side === 'south') for (let sy = py + 3; sy < py + rh; sy += 3) ctx.fillRect(px, sy, rw, 1);
-    else for (let sx = px + 3; sx < px + rw; sx += 3) ctx.fillRect(sx, py, 1, rh);
+function southRoofZone(shape, roof) {
+  if (roof.w < roof.h) return null;
+  const ridge = Math.round(roof.h / 2), inset = shape === 'hip' ? Math.max(0, ridge - 3) : 0;
+  const zone = { x: roof.x + inset, y: roof.y + ridge + 2, w: roof.w - 2 * inset, h: roof.h - ridge - 2 };
+  return zone.w > 8 && zone.h > 8 ? zone : null;
+}
+
+const MATERIAL_TONES = { gravel: 0, tar: -0.36, panel: 0.06, metal: 0, tilesH: 0, tilesV: 0, brick: 0 };
+const STYLE_ROOF = {
+  apartment: {
+    material: 'gravel', upperMaterial: 'tar', propDensity: 0.5,
+    colors: ['#97928a', '#a29a8c', '#8c8a86', '#a8987e', '#8f9398', '#9c8d7c'],
+    pool: [
+      { type: 'stairHut', w: [20, 25], h: [17, 21], height: 10, max: 1 },
+      { type: 'hvac', w: [14, 19], h: [10, 12], height: 5 },
+      { type: 'hvac', w: [14, 19], h: [10, 12], height: 5 },
+      { type: 'hvacBank', w: [30, 38], h: [11, 12], height: 5, max: 1 },
+      { type: 'tank', w: [15, 19], h: [15, 19], height: 11, max: 1 },
+      { type: 'vent', w: [5, 6], h: [5, 6], height: 3 },
+      { type: 'vent', w: [5, 6], h: [5, 6], height: 3 },
+      { type: 'antenna', w: [8, 10], h: [8, 10], height: 12, max: 2 },
+      { type: 'dish', w: [8, 10], h: [8, 10], height: 4, max: 2 },
+      { type: 'skylight', w: [8, 14], h: [6, 8], height: 1, max: 2 },
+    ],
+  },
+  tower: {
+    material: 'panel', upperMaterial: 'gravel', propDensity: 0.34,
+    colors: ['#8a8f96', '#949089', '#7f868d', '#9a9a94', '#868c84'],
+    pool: [
+      { type: 'hvacBank', w: [32, 46], h: [11, 12], height: 5, max: 2 },
+      { type: 'hvacBank', w: [11, 12], h: [32, 46], height: 5, max: 1 },
+      { type: 'hvac', w: [14, 19], h: [10, 12], height: 5 },
+      { type: 'stairHut', w: [18, 22], h: [16, 19], height: 10, max: 1 },
+      { type: 'antenna', w: [9, 11], h: [9, 11], height: 16, max: 2 },
+      { type: 'vent', w: [5, 7], h: [5, 7], height: 3 },
+      { type: 'duct', w: [20, 34], h: [5, 5], height: 4, max: 2 },
+      { type: 'duct', w: [5, 5], h: [20, 34], height: 4, max: 1 },
+      { type: 'tank', w: [15, 19], h: [15, 19], height: 11, max: 1 },
+    ],
+  },
+  shop: {
+    material: 'tar', upperMaterial: 'tar', propDensity: 0.5, colors: ['#7a7a7c', '#857f76', '#76797f', '#8a8478'],
+    pool: [
+      { type: 'hvac', w: [11, 14], h: [8, 10], height: 4 },
+      { type: 'hvac', w: [11, 14], h: [8, 10], height: 4 },
+      { type: 'duct', w: [16, 28], h: [5, 5], height: 3, max: 2 },
+      { type: 'duct', w: [5, 5], h: [16, 28], height: 3, max: 1 },
+      { type: 'skylight', w: [10, 16], h: [7, 9], height: 1, max: 2 },
+      { type: 'vent', w: [5, 6], h: [5, 6], height: 3 },
+    ],
+  },
+  workshop: {
+    material: 'metal', upperMaterial: 'metal', propDensity: 0.3, colors: ['#7d8288', '#86807a', '#8b9086', '#7a808c'],
+    pool: [
+      { type: 'vent', w: [6, 8], h: [6, 8], height: 4 },
+      { type: 'stack', w: [10, 12], h: [10, 12], height: 14, max: 1 },
+      { type: 'duct', w: [18, 30], h: [6, 6], height: 4, max: 2 },
+      { type: 'duct', w: [6, 6], h: [18, 30], height: 4, max: 1 },
+    ],
+  },
+  warehouse: {
+    material: 'metal', upperMaterial: 'metal', propDensity: 0.14, colors: ['#6c757e', '#647a70', '#80725f', '#5d6f82', '#8a6a55', '#77797a'],
+    pool: [{ type: 'vent', w: [7, 9], h: [7, 9], height: 4 }],
+  },
+  house: {
+    material: 'tilesH', upperMaterial: 'tilesH', propDensity: 0, colors: ROOF_COLS,
+    pool: [{ type: 'chimney', w: [5, 7], h: [5, 7], height: 6 }],
+  },
+};
+function volumeRoof(volumes, index) {
+  const volume = volumes[index], wall = volume.lift - (volume.parent < 0 ? 0 : volumes[volume.parent].lift);
+  return { x: volume.x, y: volume.y, w: volume.w - wall, h: volume.h - wall };
+}
+function planVolumes(b, W, H, random) {
+  const single = [{ x: 0, y: 0, w: W, h: H, lift: b.lift, parent: -1 }];
+  let volumes = single;
+  if (b.style === 'apartment' && random() < 0.6) {
+    const step = 3 + Math.floor(random() * 3), baseLift = b.lift - step;
+    const roofW = W - baseLift, roofH = H - baseLift;
+    const coverage = 0.55 + random() * 0.25, side = Math.floor(random() * 4);
+    const wingW = Math.round(roofW * coverage), wingH = Math.round(roofH * coverage);
+    const wing = [
+      { x: 0, y: 0, w: roofW, h: wingH },
+      { x: 0, y: roofH - wingH, w: roofW, h: wingH },
+      { x: 0, y: 0, w: wingW, h: roofH },
+      { x: roofW - wingW, y: 0, w: wingW, h: roofH },
+    ][side];
+    volumes = [{ ...single[0], lift: baseLift }, { ...wing, lift: b.lift, parent: 0 }];
+  } else if (b.style === 'shop' && random() < 0.3) {
+    const baseLift = b.lift - 3, roofW = W - baseLift, roofH = H - baseLift;
+    const back = ['north', 'west', 'east', 'south'][b.face] || 'north', alongX = back === 'north' || back === 'south';
+    const roomW = Math.round(roofW * (alongX ? 0.35 + random() * 0.2 : 0.3 + random() * 0.15));
+    const roomH = Math.round(roofH * (alongX ? 0.3 + random() * 0.15 : 0.35 + random() * 0.2));
+    const slide = random();
+    const room = {
+      x: back === 'west' ? 3 : back === 'east' ? roofW - roomW - 3 : 3 + Math.round((roofW - roomW - 6) * slide),
+      y: back === 'north' ? 3 : back === 'south' ? roofH - roomH - 3 : 3 + Math.round((roofH - roomH - 6) * slide),
+      w: roomW, h: roomH, lift: b.lift, parent: 0,
+    };
+    volumes = [{ ...single[0], lift: baseLift }, room];
+  } else if (b.style === 'tower') {
+    const tiers = Math.min(W, H) - (b.lift - 8) >= 64 ? 3 : 2;
+    const baseLift = b.lift - (tiers - 1) * 4, roofW = W - baseLift, roofH = H - baseLift;
+    const inset = size => Math.round(size * (0.12 + random() * 0.13));
+    const left = inset(roofW), right = inset(roofW), top = inset(roofH), bottom = inset(roofH);
+    const terrace = { x: left, y: top, w: roofW - left - right, h: roofH - top - bottom, lift: baseLift + 4, parent: 0 };
+    volumes = [{ ...single[0], lift: baseLift }, terrace];
+    if (tiers === 3) {
+      const terraceRoofW = terrace.w - 4, terraceRoofH = terrace.h - 4;
+      const coreW = Math.round(terraceRoofW * (0.30 + random() * 0.15)), coreH = Math.round(terraceRoofH * (0.30 + random() * 0.15));
+      const anchorX = Math.floor(random() * 3) / 2, anchorY = Math.floor(random() * 3) / 2;
+      volumes.push({
+        x: terrace.x + 4 + Math.round((terraceRoofW - coreW - 8) * anchorX), y: terrace.y + 4 + Math.round((terraceRoofH - coreH - 8) * anchorY),
+        w: coreW, h: coreH, lift: b.lift, parent: 1,
+      });
+    }
+  }
+  const fits = volumes.every((volume, index) => {
+    const roof = volumeRoof(volumes, index);
+    if (roof.w < 6 || roof.h < 6) return false;
+    if (volume.parent < 0) return true;
+    const parentRoof = volumeRoof(volumes, volume.parent);
+    return volume.x >= parentRoof.x && volume.y >= parentRoof.y
+      && volume.x + volume.w <= parentRoof.x + parentRoof.w && volume.y + volume.h <= parentRoof.y + parentRoof.h;
+  });
+  return fits ? volumes : single;
+}
+function planRoofShape(b, random) {
+  if (b.style === 'workshop') return random() < 0.5 ? 'sawtooth' : 'flat';
+  if (b.style === 'warehouse') return 'metalGable';
+  if (b.style === 'house') return random() < 0.55 ? 'hip' : 'gable';
+  return 'flat';
+}
+function planBuilding(b, W, H) {
+  const random = buildingRandom(b.h);
+  const volumes = planVolumes(b, W, H, random);
+  const roofShape = planRoofShape(b, random);
+  const style = STYLE_ROOF[b.style];
+  const roofs = volumes.map((volume, index) => volumeRoof(volumes, index));
+  const reserved = volumes.map((volume, index) => volumes.filter(child => child.parent === index));
+  if (roofShape === 'metalGable') {
+    const roof = roofs[0];
+    reserved[0].push(roof.w >= roof.h ? { x: roof.x, y: roof.y + Math.round(roof.h / 2) - 4, w: roof.w, h: 8 } : { x: roof.x + Math.round(roof.w / 2) - 4, y: roof.y, w: 8, h: roof.h });
+  }
+  const props = [];
+  const placeOn = (index, pool, count, area = roofs[index]) => {
+    for (const prop of planRoofProps(random, area, pool, count, reserved[index])) {
+      props.push({ ...prop, volume: index });
+      reserved[index].push(prop);
+    }
+  };
+  if (b.style === 'house') {
+    const zone = southRoofZone(roofShape, roofs[0]);
+    if (zone && random() < 0.2) placeOn(0, [{ type: 'dormer', w: [9, 12], h: [8, 10], height: 3 }], 1, zone);
+    if (zone && random() < 0.25) placeOn(0, [{ type: 'solar', w: [12, 18], h: [8, 11], height: 1 }], 1, zone);
+    placeOn(0, style.pool, 1 + Math.floor(random() * 2));
+    return { volumes, props, roofShape };
+  }
+  const freeArea = index => roofs[index].w * roofs[index].h - reserved[index].reduce((sum, rect) => sum + rect.w * rect.h, 0);
+  const byFreeArea = volumes.map((volume, index) => index).sort((a, c) => freeArea(c) - freeArea(a));
+  if (b.style === 'tower' && roofs[0].w >= 120 && roofs[0].h >= 120 && b.h % 3 === 0) {
+    for (const index of byFreeArea) {
+      placeOn(index, [{ type: 'helipad', w: [30, 30], h: [30, 30], height: 0 }], 1);
+      if (props.length) break;
+    }
+  }
+  const minimum = roofs[0].w >= 64 && roofs[0].h >= 64 ? 3 : 0;
+  const busyRoofFactor = Math.min(roofs[0].w, roofs[0].h) >= 96 ? 1.7 : 1;
+  const count = Math.max(minimum, Math.round(style.propDensity * busyRoofFactor * roofs[0].w * roofs[0].h / 1000));
+  const totalFree = volumes.reduce((sum, volume, index) => sum + freeArea(index), 0);
+  const shares = volumes.map((volume, index) => Math.round(count * freeArea(index) / totalFree));
+  volumes.forEach((volume, index) => placeOn(index, style.pool, shares[index]));
+  for (const index of byFreeArea) if (props.length < minimum) placeOn(index, style.pool, minimum - props.length);
+  return { volumes, props, roofShape };
+}
+function drawCornice(x, y, w, h, color) {
+  if (w < 8 || h < 8) return;
+  ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.fillRect(x + 3, y + 3, w - 5, 3); ctx.fillRect(x + 3, y + 6, 3, h - 8);
+  ctx.strokeStyle = 'rgba(0,0,0,.42)'; ctx.lineWidth = 1; ctx.strokeRect(x + 2.5, y + 2.5, w - 5, h - 5);
+  ctx.fillStyle = shade(color, 0.30); ctx.fillRect(x, y, w, 2); ctx.fillRect(x, y, 2, h);
+  ctx.fillStyle = shade(color, -0.35); ctx.fillRect(x, y + h - 2, w, 2); ctx.fillRect(x + w - 2, y + 2, 2, h - 2);
+  ctx.fillStyle = 'rgba(0,0,0,.30)';
+  for (let k = 6; k < w - 3; k += 6) { ctx.fillRect(x + k, y, 1, 2); ctx.fillRect(x + k, y + h - 2, 1, 2); }
+  for (let k = 6; k < h - 3; k += 6) { ctx.fillRect(x, y + k, 2, 1); ctx.fillRect(x + w - 2, y + k, 2, 1); }
+}
+function sawtoothTeeth(w, h) {
+  const alongX = w >= h, across = alongX ? h : w, count = Math.max(1, Math.ceil(across / 16));
+  return Array.from({ length: count }, (unused, index) => {
+    const start = Math.round(index * across / count), end = Math.round((index + 1) * across / count);
+    return alongX ? { x: 0, y: start, w, h: end - start } : { x: start, y: 0, w: end - start, h };
+  });
+}
+function axisFiller(alongX, x, y) {
+  return (along, across, length, depth) => alongX ? ctx.fillRect(x + along, y + across, length, depth) : ctx.fillRect(x + across, y + along, depth, length);
+}
+function drawRoofEdge(x, y, w, h, color) {
+  ctx.fillStyle = shade(color, 0.30); ctx.fillRect(x, y, w, 1); ctx.fillRect(x, y, 1, h);
+  ctx.fillStyle = shade(color, -0.50); ctx.fillRect(x, y + h - 1, w, 1); ctx.fillRect(x + w - 1, y, 1, h);
+}
+function drawMetalRoof(b, x, y, w, h, color) {
+  const alongX = w >= h, span = alongX ? w : h, depth = alongX ? h : w, band = axisFiller(alongX, x, y);
+  const planes = gableRoofPlanes(x, y, w, h), random = buildingRandom(b.h ^ 0x2c1b3c6d);
+  const ribs = materialPattern(alongX ? 'metal' : 'metalH');
+  for (const [plane, side] of [[planes.a, alongX ? 'north' : 'west'], [planes.b, alongX ? 'south' : 'east']]) {
+    fillPolygon(plane, shade(color, ROOF_PLANE_TONES[side]));
+    ctx.fillStyle = ribs; ctx.beginPath(); tracePolygon(plane); ctx.fill();
+  }
+  const ridge = Math.round(depth / 2), period = 4 * (3 + Math.floor(random() * 3));
+  for (let along = Math.round(period / 2); along < span - 6; along += period) {
+    ctx.fillStyle = 'rgba(176,218,236,.55)'; band(along, 2, 3, ridge - 5); band(along, ridge + 3, 3, depth - ridge - 5);
+    ctx.fillStyle = 'rgba(255,255,255,.40)'; band(along, 2, 1, ridge - 5); band(along, ridge + 3, 1, depth - ridge - 5);
+    ctx.fillStyle = 'rgba(10,14,24,.30)'; band(along + 3, 2, 1, ridge - 5); band(along + 3, ridge + 3, 1, depth - ridge - 5);
+  }
+  for (let patch = 2 + Math.floor(random() * 5); patch > 0; patch--) {
+    const radius = 3 + random() * Math.min(w, h) * 0.14, spotX = x + random() * w, spotY = y + random() * h;
+    const rust = ctx.createRadialGradient(spotX, spotY, 0, spotX, spotY, radius);
+    rust.addColorStop(0, 'rgba(150,76,28,.25)'); rust.addColorStop(1, 'rgba(150,76,28,0)');
+    const left = Math.max(x, spotX - radius), top = Math.max(y, spotY - radius);
+    ctx.fillStyle = rust; ctx.fillRect(left, top, Math.min(x + w, spotX + radius) - left, Math.min(y + h, spotY + radius) - top);
+  }
+  ctx.fillStyle = 'rgba(10,14,24,.30)'; band(0, ridge + 2, span, 2);
+  ctx.fillStyle = shade(color, 0.10); band(0, ridge - 2, span, 4);
+  ctx.fillStyle = shade(color, 0.40); band(0, ridge - 2, span, 1);
+  ctx.fillStyle = shade(color, -0.45); band(0, ridge + 1, span, 1);
+  ctx.fillStyle = 'rgba(0,0,0,.45)';
+  for (let slot = 2; slot < span - 2; slot += 3) band(slot, ridge - 1, 2, 2);
+  drawRoofEdge(x, y, w, h, color);
+}
+function drawSawtoothRoof(b, x, y, w, h, color) {
+  const alongX = w >= h, span = alongX ? w : h, ribs = materialPattern(alongX ? 'metal' : 'metalH'), band = axisFiller(alongX, x, y);
+  sawtoothTeeth(w, h).forEach((tooth, index) => {
+    const start = alongX ? tooth.y : tooth.x, depth = alongX ? tooth.h : tooth.w;
+    const glass = Math.max(2, Math.round(depth * 0.32)), slope = depth - glass;
+    ctx.fillStyle = shade(color, -0.12); band(0, start + glass, span, slope);
+    ctx.fillStyle = ribs; band(0, start + glass, span, slope);
+    const fade = alongX ? ctx.createLinearGradient(0, y + start + glass, 0, y + start + depth) : ctx.createLinearGradient(x + start + glass, 0, x + start + depth, 0);
+    fade.addColorStop(0, 'rgba(255,255,255,.10)'); fade.addColorStop(1, 'rgba(8,12,20,.38)');
+    ctx.fillStyle = fade; band(0, start + glass, span, slope);
+    ctx.fillStyle = '#8cc2da'; band(0, start, span, glass);
+    ctx.fillStyle = '#4a7a92';
+    for (let mullion = 3; mullion < span - 1; mullion += 5) band(mullion, start, 1, glass);
+    ctx.fillStyle = '#dff3fb'; band(0, start + glass - 1, span, 1);
+    if (index > 0) { ctx.fillStyle = 'rgba(8,12,20,.42)'; band(0, start, span, Math.min(2, glass - 1)); }
+    ctx.fillStyle = shade(color, 0.38); band(0, start + glass, span, 1);
+    ctx.fillStyle = 'rgba(0,0,0,.55)'; band(0, start + depth - 1, span, 1);
+  });
+  drawRoofEdge(x, y, w, h, color);
+}
+function buildingRoofColor(b) {
+  const palette = STYLE_ROOF[b.style].colors;
+  return palette[(b.h >>> 7) % palette.length];
+}
+function drawVolume(b, volume, wall, ox, oy, roofMaterial, roofShape) {
+  const x = ox + volume.x, y = oy + volume.y, roofW = volume.w - wall, roofH = volume.h - wall;
+  const roofColor = buildingRoofColor(b);
+  drawBuildingWalls(b, x, y, volume.w, volume.h, wall);
+  if (roofShape === 'sawtooth') return drawSawtoothRoof(b, x, y, roofW, roofH, roofColor);
+  if (roofShape === 'metalGable') return drawMetalRoof(b, x, y, roofW, roofH, roofColor);
+  if (roofShape === 'hip' || roofShape === 'gable') return drawHouseRoof(x, y, roofW, roofH, roofColor, roofShape);
+  const tone = (volume.lift - b.lift) * 0.015 + (MATERIAL_TONES[roofMaterial] || 0);
+  drawRoofSurface(x, y, roofW, roofH, shade(roofColor, tone), roofMaterial);
+  drawCornice(x, y, roofW, roofH, b.col);
+}
+function drawVolumeShadow(child, wall, parentRoof, ox, oy) {
+  ctx.save();
+  ctx.beginPath(); ctx.rect(ox + parentRoof.x, oy + parentRoof.y, parentRoof.w, parentRoof.h); ctx.clip();
+  fillPolygon(buildingShadowPolygon(ox + child.x, oy + child.y, child.w, child.h, wall * SHADOW_LENGTH_PER_LIFT), 'rgba(10,14,24,.28)');
+  ctx.restore();
+}
+function drawPlannedBuilding(b, px, py, W, H) {
+  const { volumes, props, roofShape } = planBuilding(b, W, H);
+  const style = STYLE_ROOF[b.style];
+  const wallOf = volume => volume.lift - (volume.parent < 0 ? 0 : volumes[volume.parent].lift);
+  const swapped = (b.h >>> 11) % 2 === 1;
+  volumes.forEach((volume, index) => {
+    const roof = volumeRoof(volumes, index);
+    drawVolume(b, volume, wallOf(volume), px, py, (index === 0) !== swapped ? style.material : style.upperMaterial, index === 0 ? roofShape : 'flat');
+    for (const child of volumes) if (child.parent === index) drawVolumeShadow(child, wallOf(child), roof, px, py);
+    ctx.save();
+    ctx.beginPath(); ctx.rect(px + roof.x, py + roof.y, roof.w, roof.h); ctx.clip();
+    for (const prop of props) if (prop.volume === index) drawRoofProp(prop, px, py, buildingRoofColor(b));
     ctx.restore();
-  }
-  const inset = Math.min(rw, rh) / 2;
-  ctx.strokeStyle = shade(roofColor, 0.36); ctx.lineWidth = 1.5; ctx.beginPath();
-  ctx.moveTo(px, py); ctx.lineTo(px + inset, py + inset); ctx.lineTo(px + rw - inset, py + rh - inset); ctx.lineTo(px + rw, py + rh);
-  ctx.moveTo(px + rw, py); ctx.lineTo(px + rw - inset, py + inset);
-  ctx.moveTo(px, py + rh); ctx.lineTo(px + inset, py + rh - inset);
-  ctx.stroke();
-  ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 1; ctx.strokeRect(px + 0.5, py + 0.5, rw - 1, rh - 1);
-  const chimneyX = px + rw * 0.25 + b.h % Math.max(1, Math.floor(rw * 0.5) - 6), chimneyY = py + rh * 0.25;
-  drawRoofBox(chimneyX, chimneyY, 6, 6, '#6a625a', 4);
-  ctx.fillStyle = '#221f1c'; ctx.fillRect(chimneyX + 2, chimneyY + 2, 2, 2);
+  });
+  drawFacade(b, px, py, W, H, volumes[0].lift);
 }
 
 // ---------- Buildings: per-building drawing, pseudo-3D lit from the north-west ----------
@@ -528,83 +1147,7 @@ function drawBuildings() {
     const px = b.x0 * T - camX, py = b.y0 * T - camY;
     const W = (b.x1 - b.x0 + 1) * T, H = (b.y1 - b.y0 + 1) * T;
     if (px + W < 0 || py + H < 0 || px > vw || py > vh) continue;
-    const L = b.lift, rw = W - L, rh = H - L;
-    drawBuildingWalls(b, px, py, W, H, L);
-    // Roof according to the building's style.
-    if (b.style === 'house') {
-      drawHipRoof(b, px, py, rw, rh);
-    } else if (b.style === 'apartment') {                // block of flats: gravel, stair head, terrace
-      ctx.fillStyle = b.col; ctx.fillRect(px, py, rw, rh);
-      ctx.fillStyle = 'rgba(0,0,0,.07)';
-      for (let k = 0; k < 12; k++) {
-        const hh = hash2(b.h + k * 17, k * 29 + 1);
-        ctx.fillRect(px + 5 + hh % Math.max(1, rw - 12), py + 5 + (hh >> 7) % Math.max(1, rh - 12), 3, 3);
-      }
-      drawRoofWeathering(b, px, py, rw, rh);
-      drawParapet(b, px, py, rw, rh);
-      drawRoofBox(px + 8, py + 8, 12, 14, shade(b.col, -0.22), 5);
-      ctx.fillStyle = '#2c2824'; ctx.fillRect(px + 12, py + 17, 5, 5);
-      ctx.fillStyle = 'rgba(120,170,210,.55)';                                             // skylights
-      for (let sx = px + 28; sx <= px + rw - 16; sx += 15) { ctx.fillRect(sx, py + 10, 8, 6); }
-      drawRoofBox(px + rw - 19, py + rh - 18, 10, 8, '#9aa0a6', 3);
-      ctx.fillStyle = '#4c8a44'; ctx.fillRect(px + 8, py + rh - 16, 9, 8);                 // roof garden
-      ctx.fillStyle = '#5fa452'; ctx.fillRect(px + 9, py + rh - 15, 4, 3);
-    } else if (b.style === 'tower') {
-      ctx.fillStyle = shade(b.col, 0.04); ctx.fillRect(px, py, rw, rh);
-      drawRoofWeathering(b, px, py, rw, rh);
-      drawParapet(b, px, py, rw, rh);
-      drawRoofBox(px + rw / 2 - 14, py + rh / 2 - 10, 28, 20, shade(b.col, -0.26), 7);
-      ctx.fillStyle = shade(b.col, 0.14); ctx.fillRect(px + rw / 2 - 11, py + rh / 2 - 7, 22, 4);
-      ctx.fillRect(px + rw / 2 - 11, py + rh / 2, 22, 4);
-      for (let k = 0; k < 3; k++) drawRoofBox(px + rw - 26 - k * 14, py + rh - 18, 10, 8, '#9aa0a6', 3);
-      if (rw >= 120 && rh >= 120 && b.h % 3 === 0) {
-        const padX = px + 26, padY = py + rh - 26;
-        ctx.fillStyle = 'rgba(10,14,24,.25)'; ctx.beginPath(); ctx.arc(padX + 3, padY + 3, 15, 0, TAU); ctx.fill();
-        ctx.fillStyle = '#4a4f57'; ctx.beginPath(); ctx.arc(padX, padY, 15, 0, TAU); ctx.fill();
-        ctx.strokeStyle = '#e8c547'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(padX, padY, 12, 0, TAU); ctx.stroke();
-        ctx.fillStyle = '#eef0f2'; ctx.fillRect(padX - 5, padY - 6, 2, 12); ctx.fillRect(padX + 3, padY - 6, 2, 12); ctx.fillRect(padX - 3, padY - 1, 6, 2);
-      }
-      ctx.strokeStyle = 'rgba(10,14,24,.30)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(px + rw - 12, py + 13); ctx.lineTo(px + rw - 5, py + 20); ctx.stroke();
-      ctx.strokeStyle = '#c8ccd2'; ctx.beginPath(); ctx.moveTo(px + rw - 12, py + 13); ctx.lineTo(px + rw - 12, py + 5); ctx.stroke();
-      ctx.fillStyle = frame % 60 < 30 ? '#ff4a3a' : '#8a2a22'; ctx.fillRect(px + rw - 14, py + 3, 4, 4);
-    } else if (b.style === 'warehouse') {              // large industrial: sawtooth roof, silos
-      ctx.fillStyle = shade(b.col, -0.20); ctx.fillRect(px, py, rw, rh);
-      if (rw >= rh) for (let sx = px + 2; sx < px + rw - 2; sx += 9) {
-        ctx.fillStyle = shade(b.col, 0.10); ctx.fillRect(sx, py + 2, 6, rh - 4);
-        ctx.fillStyle = 'rgba(160,200,225,.30)'; ctx.fillRect(sx + 5, py + 2, 1, rh - 4);
-        ctx.fillStyle = shade(b.col, -0.30); ctx.fillRect(sx + 6, py + 2, 2, rh - 4);
-      } else for (let sy = py + 2; sy < py + rh - 2; sy += 9) {
-        ctx.fillStyle = shade(b.col, 0.10); ctx.fillRect(px + 2, sy, rw - 4, 6);
-        ctx.fillStyle = 'rgba(160,200,225,.30)'; ctx.fillRect(px + 2, sy + 5, rw - 4, 1);
-        ctx.fillStyle = shade(b.col, -0.30); ctx.fillRect(px + 2, sy + 6, rw - 4, 2);
-      }
-      drawRoofWeathering(b, px, py, rw, rh);
-      ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 1; ctx.strokeRect(px + 0.5, py + 0.5, rw - 1, rh - 1);
-      ctx.fillStyle = 'rgba(10,14,24,.30)';
-      ctx.beginPath(); ctx.arc(px + rw - 7, py + 17, 7, 0, TAU); ctx.arc(px + rw - 7, py + 33, 7, 0, TAU); ctx.fill();
-      for (const siloY of [py + 12, py + 28]) {                                           // silos
-        const silo = ctx.createRadialGradient(px + rw - 15, siloY - 3, 1, px + rw - 12, siloY, 7);
-        silo.addColorStop(0, '#d4dadf'); silo.addColorStop(1, '#7c858c');
-        ctx.fillStyle = silo; ctx.beginPath(); ctx.arc(px + rw - 12, siloY, 7, 0, TAU); ctx.fill();
-      }
-      ctx.strokeStyle = 'rgba(0,0,0,.30)'; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(px + rw - 12, py + 12, 7, 0, TAU); ctx.arc(px + rw - 12, py + 28, 7, 0, TAU); ctx.stroke();
-    } else {                                           // workshop: ribbon skylight and fan
-      ctx.fillStyle = shade(b.col, 0.06); ctx.fillRect(px, py, rw, rh);
-      drawRoofWeathering(b, px, py, rw, rh);
-      drawParapet(b, px, py, rw, rh);
-      ctx.fillStyle = 'rgba(10,14,24,.22)'; ctx.fillRect(px + 8, py + rh / 2 - 2, rw - 12, 8);
-      ctx.fillStyle = 'rgba(140,200,220,.45)'; ctx.fillRect(px + 6, py + rh / 2 - 4, rw - 12, 8);
-      ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.fillRect(px + 6, py + rh / 2 - 4, rw - 12, 1);
-      ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.arc(px + 13, py + 12, 6, 0, TAU); ctx.fill();
-      ctx.strokeStyle = shade(b.col, 0.25); ctx.lineWidth = 1.5; ctx.beginPath();
-      for (let k = 0; k < 3; k++) {
-        const a = (b.h % 7) * 0.3 + k / 3 * TAU;
-        ctx.moveTo(px + 13, py + 12); ctx.lineTo(px + 13 + Math.cos(a) * 5, py + 12 + Math.sin(a) * 5);
-      }
-      ctx.stroke();
-    }
-    drawFacade(b, px, py, W, H, L);
+    drawPlannedBuilding(b, px, py, W, H);
   }
 }
 // Awning-shaded shopfront for shops/workshops, a main door for the rest — on the side
