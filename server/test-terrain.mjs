@@ -13,12 +13,12 @@ const DECLARATIONS = [
   ['render', 'drawTreeOnTile'], ['render', 'drawTrees'],
   ['render', 'GLASS_COLOR'], ['render', 'BRAKE_DECELERATION'], ['render', 'drawVehicleShadow'], ['render', 'bodyPaint'],
   ['render', 'drawTyres'], ['render', 'drawGlassGlint'], ['render', 'drawSaloonCabin'], ['render', 'drawVanCabin'],
-  ['render', 'drawCarLights'], ['city', 'solidTile'], ['render', 'clipOutSolidTiles'],
+  ['render', 'drawCarLights'], ['city', 'solidTile'], ['render', 'clipOutTiles'],
 ];
 const moduleSource = DECLARATIONS.map(([file, name]) => extractTopLevel(SOURCES[file], name)).join('\n');
 const EXPORTS = ['T', 'GRASS', 'TREE', 'WATER', 'SIDEWALK', 'GRASS_DARK', 'GRASS_LIGHT', 'PARK_CAT', 'PLAZA_CAT',
   'tileRandom', 'smoothNoise', 'grassColor', 'drawGrass', 'drawWaterTile', 'drawTrees', 'drawPavingSlabs', 'drawAsphaltGrain',
-  'drawVehicleShadow', 'bodyPaint', 'drawSaloonCabin', 'drawVanCabin', 'drawCarLights', 'BUILDING', 'clipOutSolidTiles'];
+  'drawVehicleShadow', 'bodyPaint', 'drawSaloonCabin', 'drawVanCabin', 'drawCarLights', 'BUILDING', 'solidTile', 'clipOutTiles'];
 const loadRenderer = new Function('ctx', 'camX', 'camY', 'frame', 'MAP_W', 'MAP_H', 'grid', 'PERIOD', 'blockCat', 'blockKind',
   `const gi = (x, y) => y * MAP_W + x;
    const tileAt = (x, y) => x < 0 || y < 0 || x >= MAP_W || y >= MAP_H ? GRASS : grid[gi(x, y)];
@@ -130,7 +130,7 @@ console.log('7) marciapiede e asfalto non coprono i tile solidi');
 {
   const solidAt = { '2,3': 'BUILDING', '5,5': 'TREE', '6,1': 'WATER' };
   const { recorder, renderer } = createRenderer((x, y, probe) => probe[solidAt[x + ',' + y] || 'SIDEWALK']);
-  renderer.clipOutSolidTiles();
+  renderer.clipOutTiles(renderer.solidTile);
   const rects = recorder.calls.filter(([name]) => name === 'rect').map(([, args]) => args.join(','));
   const T = renderer.T;
   ok(rects[0] === `0,0,${MAP_SIZE * T},${MAP_SIZE * T}`, 'prima la viewport intera');

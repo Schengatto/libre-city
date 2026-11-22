@@ -8,7 +8,7 @@
 
 **Tech Stack:** Canvas 2D, JS vanilla con scope globale condiviso fra `js/*.js`; test Node `server/test-buildings.mjs` con `server/render-test-kit.mjs` (estrazione delle dichiarazioni top-level + ctx registratore).
 
-**Spec:** `docs/superpowers/specs/2026-11-22-edifici-gta1-design.md`
+**Spec:** `docs/superpowers/specs/2026-11-22-gta1-buildings-design.md`
 
 ## Global Constraints
 - File toccabili: `js/render.js`, palette in `js/city.js`, `server/test-buildings.mjs`, `server/render-test-kit.mjs`. Nessun cambio a impronte, collisioni, `lift`, gameplay.

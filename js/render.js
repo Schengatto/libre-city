@@ -66,9 +66,10 @@ function drawWorldStatic() {
     const px = Math.floor(x * T - camX), py = Math.floor(y * T - camY);
     drawTile(t, px, py, x, y);
   }
-  drawTrees(x0, y0, x1, y1);
   drawBuildings();
   // 2) Pavements + asphalt as continuous curves along the road graph.
+  ctx.save();
+  clipOutTiles(solidTile);
   drawRoads();
   drawRoadDecals();
   // 3) Paving joints on the smooth pavement + building shadows on the carriageway.
@@ -83,7 +84,12 @@ function drawWorldStatic() {
   }
   drawMarkings();
   drawCrosswalks();
-  drawRailway();                                  // the train track (a horizontal line)
+  ctx.restore();
+  ctx.save();
+  clipOutTiles((x, y) => tileAt(x, y) === BUILDING);
+  drawTrees(x0, y0, x1, y1);
+  ctx.restore();
+  drawRailway();                                 // the train track (a horizontal line)
   drawBuildingShadows();
   drawLandmarks();
 }
@@ -110,20 +116,19 @@ function edgeVisible(e, pad) {
   return !(maxx < camX || minx > camX + vw || maxy < camY || miny > camY + vh);
 }
 const SW_BAND = 1.65 * T;                        // pavement width beyond the asphalt
-function clipOutSolidTiles() {
+function clipOutTiles(isClippedOut) {
   const x0 = Math.max(0, Math.floor(camX / T)), y0 = Math.max(0, Math.floor(camY / T));
   const x1 = Math.min(MAP_W - 1, Math.floor((camX + vw) / T)), y1 = Math.min(MAP_H - 1, Math.floor((camY + vh) / T));
   ctx.beginPath();
   ctx.rect(0, 0, vw, vh);
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-    if (solidTile(x, y)) ctx.rect(x * T - camX, y * T - camY, T, T);
+    if (isClippedOut(x, y)) ctx.rect(x * T - camX, y * T - camY, T, T);
   }
   ctx.clip('evenodd');
 }
 function drawRoads() {
   const SWHALF = HALF_ROAD + SW_BAND, pad = SWHALF + 6;
   ctx.save();
-  clipOutSolidTiles();
   ctx.lineJoin = 'round'; ctx.lineCap = 'round';
   const nodeVisible = (n, r) => !(n.x + r < camX || n.x - r > camX + vw || n.y + r < camY || n.y - r > camY + vh);
   // --- Pavement band ---
@@ -531,15 +536,16 @@ function drawRoofSurface(x, y, w, h, color, material) {
   light.addColorStop(0, 'rgba(255,255,255,.12)'); light.addColorStop(0.5, 'rgba(255,255,255,0)'); light.addColorStop(1, 'rgba(0,0,0,.12)');
   ctx.fillStyle = light; ctx.fillRect(x, y, w, h);
 }
-function planRoofProps(random, roof, pool, count, reserved) {
+function planRoofProps(random, roof, pool, count, reserved, placedOnBuilding = []) {
   const placed = [];
+  const typeCount = type => [...placedOnBuilding, ...placed].filter(prop => prop.type === type).length;
   for (let attempt = 0; attempt < count * 8 && placed.length < count; attempt++) {
     const kind = pool[Math.floor(random() * pool.length)];
     const w = kind.w[0] + Math.floor(random() * (kind.w[1] - kind.w[0] + 1));
     const h = kind.h[0] + Math.floor(random() * (kind.h[1] - kind.h[0] + 1));
     const slackX = roof.w - 8 - w, slackY = roof.h - 8 - h;
     if (slackX < 0 || slackY < 0) continue;
-    if (kind.max && placed.filter(prop => prop.type === kind.type).length >= kind.max) continue;
+    if (kind.max && typeCount(kind.type) >= kind.max) continue;
     const prop = { type: kind.type, x: roof.x + 4 + Math.floor(random() * (slackX + 1)), y: roof.y + 4 + Math.floor(random() * (slackY + 1)), w, h, height: kind.height };
     const spaced = { x: prop.x - 2, y: prop.y - 2, w: w + 4, h: h + 4 };
     if (reserved.some(rect => rectsOverlap(rect, spaced)) || placed.some(other => rectsOverlap(other, spaced))) continue;
@@ -998,7 +1004,7 @@ function planBuilding(b, W, H) {
   }
   const props = [];
   const placeOn = (index, pool, count, area = roofs[index]) => {
-    for (const prop of planRoofProps(random, area, pool, count, reserved[index])) {
+    for (const prop of planRoofProps(random, area, pool, count, reserved[index], props)) {
       props.push({ ...prop, volume: index });
       reserved[index].push(prop);
     }

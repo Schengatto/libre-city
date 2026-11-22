@@ -165,6 +165,13 @@ for (const b of plannerSamples) {
   if (b.style === 'tower' && roof.w >= 64 && roof.h >= 64 && volumes.length < 2) planProblems.push(`${tag}: torre con un solo volume`);
 }
 ok(planProblems.length === 0, `${plannerSamples.length} piani validi` + (planProblems.length ? ': ' + planProblems.slice(0, 5).join('; ') : ''));
+const capOverruns = plannerSamples.flatMap(b => {
+  const { props } = renderer.planBuilding(b, (b.x1 + 1) * 32, (b.y1 + 1) * 32);
+  const caps = {};
+  for (const kind of renderer.STYLE_ROOF[b.style].pool) if (kind.max) caps[kind.type] = Math.max(caps[kind.type] || 0, kind.max);
+  return Object.entries(caps).filter(([type, max]) => props.filter(prop => prop.type === type).length > max).map(([type]) => `${b.style} h ${b.h}: troppi ${type}`);
+});
+ok(capOverruns.length === 0, "max dei prop rispettato sull'intero edificio" + (capOverruns.length ? ': ' + capOverruns.slice(0, 5).join('; ') : ''));
 const apartmentPlans = plannerSamples.filter(b => b.style === 'apartment').map(b => renderer.planBuilding(b, (b.x1 + 1) * 32, (b.y1 + 1) * 32));
 const twoVolumeShare = apartmentPlans.filter(plan => plan.volumes.length === 2).length / apartmentPlans.length;
 ok(twoVolumeShare >= 0.3, `apartment con due volumi: ${(twoVolumeShare * 100).toFixed(0)}% (>= 30%)`);
