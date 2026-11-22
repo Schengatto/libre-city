@@ -9,6 +9,20 @@ node_modules/
 
 # File temporanei (log, dump, script usa e getta)
 .tmp/
+tmp/
+temp/
+*.tmp
+*.dump
+.superpowers/
+
+# Report e output dei test
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+reports/
+*.lcov
+junit*.xml
 
 # OS / editor
 .DS_Store
