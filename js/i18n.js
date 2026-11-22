@@ -278,6 +278,7 @@ const STR = {
     'set.audioOn': '🔊 Attivo',
     'set.audioOff': '🔇 Disattivato',
     'set.save': '💾 Salva',
+    'music.toggle': 'Musica del menu: accendi o spegni',
 
     // ---- Local high scores ----
     'scores.title': '🏆 Record locali',
@@ -699,6 +700,7 @@ const STR = {
     'set.audioOn': '🔊 On',
     'set.audioOff': '🔇 Off',
     'set.save': '💾 Save',
+    'music.toggle': 'Menu music: turn on or off',
 
     'scores.title': '🏆 Local records',
     'scores.name': 'Name',
