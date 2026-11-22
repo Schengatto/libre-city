@@ -7,6 +7,9 @@ node_modules/
 # Config locale strumenti
 .claude/
 
+# File temporanei (log, dump, script usa e getta)
+.tmp/
+
 # OS / editor
 .DS_Store
 *.log
