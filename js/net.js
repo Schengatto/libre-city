@@ -21,6 +21,7 @@ const net = {
   url: null,             // resolved server URL (see netServerUrl)
   players: new Map(),    // id → remote player's ghost
   myId: null, token: null,           // token: key to reconnect as the same player
+  hostId: null,
   pass: '', maxPlayers: 4,
   hello: null, rejoin: null, _open: null,   // data for (re)opening the connection
   clockLeft: null,       // match frames left, as reported by the server
@@ -128,11 +129,11 @@ function netDial(done) {
       const hello = net.token ? { ...net.rejoin, t: 'join', token: net.token }
                   : net.qtoken ? { ...net.hello, qtoken: net.qtoken }
                   : net.hello;
-      ws.send(JSON.stringify(hello));
+      ws.send(JSON.stringify({ ...hello, ...netClientInfo() }));
     };
     ws.onmessage = ev => {
       let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
-      if (!m || typeof m !== 'object') return;
+      if (!m || typeof m !== 'object' || netForgedSnapshotFrame(ev.data, m)) return;
       if (!settled) {                            // awaiting the outcome of the first entry
         if (m.t === 'ok') { settled = true; clearTimeout(timer); netQueueEnd(); netOnJoined(m); netWakeLock(); done(null); return; }
         if (m.t === 'no') { settled = true; clearTimeout(timer); netQueueEnd(); netShutdown(); done(m.r); return; }
@@ -155,6 +156,13 @@ function netDial(done) {
   };
   net._open = open;
   open();
+}
+function netClientInfo() {
+  return { dev: usingTouch ? 'touch' : 'desktop', build: window.LC_BUILD || null };
+}
+const NET_SNAPSHOT_FRAME_PREFIX = '{"t":"w"';
+function netForgedSnapshotFrame(raw, m) {
+  return typeof raw === 'string' && raw.startsWith(NET_SNAPSHOT_FRAME_PREFIX) && m.t !== 'w';
 }
 // Reconnect with growing backoff (up to ~8s); `immediate` retries straight away.
 function netScheduleReconnect(immediate) {
@@ -198,6 +206,8 @@ function netOnJoined(m) {
   net.myId = m.id;
   if (m.token) net.token = m.token;
   net.authoritative = !!m.sim;                       // Phase 2: the server simulates the world
+  net.hostId = m.host ?? null;
+  netSyncHostRole();
   player.shirt = NET_SHIRTS[m.shirtIdx % NET_SHIRTS.length];
   if (m.minutes != null) gameMinutes = m.minutes;   // the server sets the match's pace
   net.clockLeft = m.left;
@@ -215,6 +225,10 @@ function netOnJoined(m) {
   netRefreshBadge();
   // The server is on a different build from ours → prompt for a client reload.
   if (m.build && window.LC_BUILD && m.build !== window.LC_BUILD) netUpdatePrompt();
+}
+function netSyncHostRole() {
+  if (net.hostId !== null && net.hostId === net.myId) { if (!simHostActive()) simHostStart(); }
+  else simHostStop();
 }
 
 // Shows a persistent notice when the running client is older than the server (typically: a
@@ -248,7 +262,12 @@ function onServerMessage(m) {
       netRefreshBadge();
       break;
     }
-    case 'end': if (started) endGame('time'); break;
+    case 'host':
+      net.hostId = m.id ?? null;
+      netSyncHostRole();
+      if (net.hostId !== null && net.hostId !== net.myId) toast(t('net.newHost', { name: m.name }));
+      break;
+    case 'end': simHostStop(); if (started) endGame('time'); break;
     case 'no':
       if (m.r === 'notfound') { net.wantOpen = false; clearTimeout(net.reconnT); if (started) endGame('time'); }
       break;
@@ -262,6 +281,7 @@ function onServerMessage(m) {
 // Shuts everything down and returns to single-player mode (ghosts included).
 function netShutdown() {
   net.wantOpen = false; net.dropped = false;
+  simHostStop(); net.hostId = null;
   clearTimeout(net.reconnT); net.reconnT = null;
   clearInterval(net.queueT); net.queueT = null; net.queue = null; net.qtoken = null;
   try { if (net.wake) net.wake.release(); } catch (e) {}
@@ -772,7 +792,8 @@ function netSendInput() {
   // (orientation/resize); it is idempotent server-side.
   const vr = Math.round(Math.max(vw, vh) * 0.5 + 250);
   if (vr !== net.lastVR) { cmd.vr = vr; net.lastVR = vr; }
-  netSend(cmd);
+  if (simHostActive()) simHostSendInput(cmd);
+  else netSend(cmd);
 }
 
 // The authoritative client's loop (called by update() in place of the simulation).

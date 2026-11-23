@@ -46,7 +46,7 @@ if (!fs.existsSync(I18N) || !fs.existsSync(HTML)) {
   // Only strings whose GROUP exists in the catalogue count as keys, so that a
   // 'manifest.webmanifest' (a file name) is not mistaken for a translation.
   const groups = new Set([...it].map(k => k.split('.')[0]));
-  const isKey = k => /^[a-z]+\.[A-Za-z0-9_]+$/.test(k) && groups.has(k.split('.')[0]);
+  const isKey = k => /^[a-z]+\.[A-Za-z0-9_]+$/.test(k) && !k.endsWith('.js') && groups.has(k.split('.')[0]);
   const missIt = [...used].filter(k => isKey(k) && !it.has(k));
   const missEn = [...used].filter(k => isKey(k) && !en.has(k));
   const onlyIt = [...it].filter(k => !en.has(k));
