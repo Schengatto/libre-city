@@ -32,55 +32,13 @@ const BUNDLE = SIM_FILES
 // Compiled ONCE and reused for every room (amortises the parse).
 const SCRIPT = new vm.Script(BUNDLE, { filename: 'libre-sim-bundle.js' });
 
-const NOOP = () => {};
-
-// The "fake browser" the sim runs on: an inert DOM/window plus the whole
-// presentation/network layer stubbed to no-ops. `view` is the fixed simulation radius (it
-// replaces the window size: on the server the world does not depend on a screen).
-function makeBrowserStub(code, view) {
-  const fakeEl = {
-    width: 0, height: 0, style: {}, textContent: '', value: '',
-    getContext: () => new Proxy({}, { get: () => NOOP }),
-    addEventListener: NOOP, removeEventListener: NOOP, appendChild: NOOP,
-    classList: { add: NOOP, remove: NOOP, toggle: NOOP, contains: () => false },
-    getBoundingClientRect: () => ({ left: 0, top: 0, width: view, height: view }),
-    focus: NOOP, select: NOOP, setAttribute: NOOP,
-  };
-  const sfx = new Proxy({}, { get: () => NOOP });
-  const stub = {
-    // ---- Inert browser environment ----
-    document: { getElementById: () => fakeEl, querySelector: () => fakeEl, querySelectorAll: () => [],
-                createElement: () => fakeEl, body: fakeEl, addEventListener: NOOP },
-    window: {}, navigator: {}, location: { hash: '#room=' + code, search: '', href: '' },
-    localStorage: { getItem: () => null, setItem: NOOP, removeItem: NOOP },
-    innerWidth: view, innerHeight: view,
-    addEventListener: NOOP, removeEventListener: NOOP, requestAnimationFrame: NOOP,
-    setTimeout, clearTimeout, setInterval, clearInterval,
-    matchMedia: () => ({ matches: false, addEventListener: NOOP }),
-    visualViewport: undefined, AudioContext: undefined, webkitAudioContext: undefined,
-    console,
-    // ---- No presentation layer (render/audio/ui): no-ops ----
-    sfx, sfxCd: {}, hear: () => null, initAudio: NOOP, engineGain: NOOP, updateTrafficEngine: NOOP,
-    playerSirenOn: () => false,           // the siren is client-side audio: no server-side logic
-    toast: NOOP, $: () => fakeEl,
-    updateHealth: NOOP, updateCash: NOOP, updateStars: NOOP, updateWeapon: NOOP,
-    updateTimer: NOOP, updateGear: NOOP, updateWpnBar: NOOP, updateToast: NOOP,
-    endGame: NOOP, renderLadder: NOOP,
-    // ---- No networking (net.js): the server IS the authority, so no-ops ----
-    netActive: () => false, netTick: NOOP, netSolidCars: out => out || [],
-    netAssignCarId: NOOP, netAbandonCar: NOOP, netDestroyCar: NOOP,
-    netShotFired: NOOP, netPunched: NOOP, netRocketFired: NOOP,
-    netReportDown: NOOP, netRegisterHit: NOOP, netCopPayloads: () => null,
-    netParkCar: NOOP, netApplyCops: NOOP, netScoreKill: NOOP,
-  };
-  return stub;
-}
+const { makeSimStubs } = require(path.join(JS_DIR, 'sim-stubs.js'));
 
 // Creates a room's simulation: isolated context, seed = room code. Returns the __sim API
 // exposed by the glue.
 function createRoomSim(code, opts = {}) {
   const view = opts.view || 900;                 // fixed simulation radius
-  const ctx = makeBrowserStub(String(code).toUpperCase(), view);
+  const ctx = makeSimStubs(String(code).toUpperCase(), view, { setTimeout, clearTimeout, setInterval, clearInterval });
   vm.createContext(ctx);
   SCRIPT.runInContext(ctx, { timeout: 5000 });   // city gen + seedWorld() run here
   if (!ctx.__sim) throw new Error('sim-runtime: la glue non ha esposto __sim');
