@@ -106,7 +106,7 @@ const ARMY_ALERT_T = 60 * 18;
 let armyAlertT = 0;
 const SAY_ARMY = 'say.army';               // the phrases live in js/i18n.js
 function nearestArmyBase() {
-  const fp = spawnFocus();
+  const fp = player;
   let best = null, bd = Infinity;
   for (const lm of landmarks) if (lm.type === 'army') {
     const d = dist(lm.cx, lm.cy, fp.x, fp.y);

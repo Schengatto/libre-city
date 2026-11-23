@@ -147,6 +147,16 @@ function nearestPlayer(x, y) {
   for (const q of MP) { if (q.downT > 0) continue; const dx = q.x - x, dy = q.y - y, d = dx * dx + dy * dy; if (d < bd) { bd = d; best = q; } }
   return best || MP[0] || player;
 }
+function nearestWantedPlayer(x, y) {
+  if (!MP) return player;
+  let best = null, bestDistSq = Infinity;
+  for (const q of MP) {
+    if (q.downT > 0 || (q.wanted | 0) === 0) continue;
+    const dx = q.x - x, dy = q.y - y, distSq = dx * dx + dy * dy;
+    if (distSq < bestDistSq) { bestDistSq = distSq; best = q; }
+  }
+  return best || nearestPlayer(x, y);
+}
 function eachActivePlayer(fn) { if (MP) { for (const q of MP) fn(q); } else fn(player); }
 function distToNearestPlayer(x, y) {
   if (!MP) return dist(x, y, player.x, player.y);
@@ -161,7 +171,20 @@ function playerTouching(x, y, r) {
   return null;
 }
 // A player to centre repopulation spawns on (rotates between players).
-function spawnFocus() { return MP ? (MP[frame % MP.length] || player) : player; }
+let spawnFocusSeq = 0;
+function spawnFocus() {
+  if (!MP || !MP.length) return player;
+  spawnFocusSeq = (spawnFocusSeq + 1) % MP.length;
+  return MP[spawnFocusSeq];
+}
+function policeSpawnFocus() {
+  const rotated = spawnFocus();
+  if (MP) for (let k = 0; k < MP.length; k++) {
+    const candidate = MP[(spawnFocusSeq + k) % MP.length];
+    if ((candidate.wanted | 0) > 0) return candidate;
+  }
+  return rotated;
+}
 // Runs fn with the player globals (player, downT, downKind, cash, wanted…) REBOUND to
 // the victim/author v, then restores them: this lets the existing damage/death/credit/
 // crime functions (hurtPlayer, startDown, cash+=…, commitCrime) act on the right player.
