@@ -90,7 +90,7 @@ function drawWorldStatic() {
   clipOutTiles((x, y) => tileAt(x, y) === BUILDING);
   drawTrees(x0, y0, x1, y1);
   ctx.restore();
-  drawRailway();                                 // the train track (a horizontal line)
+  drawRailway();                                 // the train track (a loop around the city)
   drawBuildingShadows();
   drawLandmarks();
 }
@@ -2081,7 +2081,7 @@ function render() {
   for (const c of cars) ents.push(c);
   for (const p of peds) ents.push(p);
   if (!player.car) ents.push(player);          // on foot, draw the player; while driving the car covers them
-  if (train.active) ents.push(train);          // the passing train (Y-sorted like the cars)
+  ents.push(train);                            // the looping train (Y-sorted like the cars)
   if (netActive()) netPushEnts(ents);          // multiplayer: the rivals' ghosts
   ents.sort((a, b) => a.y - b.y);
   for (const e of ents) {
@@ -2127,9 +2127,12 @@ cityMini.width = MAP_W; cityMini.height = MAP_H;
     m.fillStyle = { police: '#4a6fd2', hospital: '#e84a4a', fire: '#e07a2a', bank: '#e0c04a', market: '#3ab0a0', pizzeria: '#ff8a3a', gunshop: '#c04ad2', army: '#6a8a3a' }[lm.type];
     m.fillRect(lm.x0, lm.y0, lm.x1 - lm.x0 + 1, lm.y1 - lm.y0 + 1);
   }
-  // The railway: a clearly visible horizontal line.
+  // The railway: a clearly visible loop.
   m.fillStyle = '#c9a24a';
-  m.fillRect(0, RAIL_TY, MAP_W, 1);
+  for (let along = 0; along < RAIL_LOOP_LEN; along += T / 2) {
+    const p = railPointAt(along);
+    m.fillRect(Math.floor(p.x / T), Math.floor(p.y / T), 1, 1);
+  }
 })();
 const miniEl = document.getElementById('mini');
 const mctx = miniEl ? miniEl.getContext('2d') : null;

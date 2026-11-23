@@ -331,6 +331,11 @@ var __sim = {
   _roadGraph() { return { nodes, edges }; },
   _cityWidth() { return MAP_W; },
   _tileKinds() { return { ROAD, SIDEWALK, BUILDING, GRASS, TREE, WATER, ALLEY, COURT }; },
+  _rail() { return { loopLen: RAIL_LOOP_LEN, crossings: railCrossings, pointAt: railPointAt }; },
+  _train() { return train; },
+  _setFrame(f) { frame = f; updateTrainKinematics(); },
+  _trainBlocking(c) { return trainBlocking(c); },
+  _trainCollide() { trainCollide(); },
   // --- Diagnostics for the tests ---
   worldInfo() {
     let sig = 0;

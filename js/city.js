@@ -224,7 +224,61 @@ function bakeArmyIsland() {
     grid[gi(x, y)] = ring === 1 ? GRASS : ring < ISLAND_BANKS ? WATER : SIDEWALK;
   }
 }
-function genCity() { buildGraph(); bakeRoads(); bakeSidewalksAndBlocks(); bakeArmyIsland(); carveAlleys(); }
+const RAIL_INSET = Math.floor((MARGIN + Math.min(colX[1], rowY[1], MAP_W * T - colX[NX - 2], MAP_H * T - rowY[NY - 2]) / T) / 2);
+const RAIL_CORNER_R = Math.min(6 * T, (RAIL_INSET - MARGIN) * T / 2);
+const railLoop = (() => {
+  const x0 = RAIL_INSET * T, y0 = RAIL_INSET * T, x1 = WORLD_W - RAIL_INSET * T, y1 = WORLD_H - RAIL_INSET * T, r = RAIL_CORNER_R;
+  return {
+    x0, y0, x1, y1,
+    straights: [x1 - x0 - 2 * r, y1 - y0 - 2 * r],
+    arcLen: r * TAU / 4,
+    sideStarts: [[x0 + r, y0], [x1, y0 + r], [x1 - r, y1], [x0, y1 - r]],
+    arcCentres: [[x1 - r, y0 + r], [x1 - r, y1 - r], [x0 + r, y1 - r], [x0 + r, y0 + r]],
+  };
+})();
+const RAIL_LOOP_LEN = 2 * (railLoop.straights[0] + railLoop.straights[1]) + 4 * railLoop.arcLen;
+const railCrossings = [];
+function railPointAt(s) {
+  let along = ((s % RAIL_LOOP_LEN) + RAIL_LOOP_LEN) % RAIL_LOOP_LEN;
+  for (let side = 0; side < 4; side++) {
+    const heading = side * TAU / 4, straight = railLoop.straights[side % 2];
+    if (along < straight) {
+      const [sx, sy] = railLoop.sideStarts[side];
+      return { x: sx + Math.cos(heading) * along, y: sy + Math.sin(heading) * along, angle: heading };
+    }
+    along -= straight;
+    if (along < railLoop.arcLen || side === 3) {
+      const [cx, cy] = railLoop.arcCentres[side], turn = Math.min(along, railLoop.arcLen) / RAIL_CORNER_R;
+      return { x: cx + RAIL_CORNER_R * Math.cos(heading - TAU / 4 + turn), y: cy + RAIL_CORNER_R * Math.sin(heading - TAU / 4 + turn), angle: heading + turn };
+    }
+    along -= railLoop.arcLen;
+  }
+}
+function railCentrelineDistance(x, y) {
+  const { x0, y0, x1, y1 } = railLoop, r = RAIL_CORNER_R;
+  const qx = Math.abs(x - (x0 + x1) / 2) - ((x1 - x0) / 2 - r), qy = Math.abs(y - (y0 + y1) / 2) - ((y1 - y0) / 2 - r);
+  return Math.abs(Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - r);
+}
+function bakeRailCorridor() {
+  for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
+    const t = grid[gi(x, y)];
+    if (t !== ROAD && t !== SIDEWALK && railCentrelineDistance((x + 0.5) * T, (y + 0.5) * T) <= 1.5 * T) grid[gi(x, y)] = GRASS;
+  }
+  const step = T / 4, samples = Math.floor(RAIL_LOOP_LEN / step), runs = [];
+  let runStart = -1;
+  for (let k = 0; k <= samples; k++) {
+    const p = k < samples ? railPointAt(k * step) : null;
+    const onRoad = !!p && grid[gi(Math.floor(p.x / T), Math.floor(p.y / T))] === ROAD;
+    if (onRoad && runStart < 0) runStart = k;
+    else if (!onRoad && runStart >= 0) { runs.push([runStart * step, (k - 1) * step]); runStart = -1; }
+  }
+  if (runs.length > 1 && runs[0][0] === 0 && runs[runs.length - 1][1] === (samples - 1) * step) runs[0][0] = runs.pop()[0] - RAIL_LOOP_LEN;
+  for (const [startS, endS] of runs) {
+    const s = (((startS + endS) / 2) % RAIL_LOOP_LEN + RAIL_LOOP_LEN) % RAIL_LOOP_LEN, p = railPointAt(s);
+    railCrossings.push({ s, x: p.x, y: p.y });
+  }
+}
+function genCity() { buildGraph(); bakeRoads(); bakeSidewalksAndBlocks(); bakeRailCorridor(); bakeArmyIsland(); carveAlleys(); }
 genCity();
 
 const tileAt = (tx, ty) => (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) ? BUILDING : grid[gi(tx, ty)];
