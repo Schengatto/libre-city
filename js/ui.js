@@ -380,11 +380,12 @@ onClick('hostGo', () => {
   const maxP = $('#hostMax') ? +$('#hostMax').value : 4;
   const mins = $('#hostDuration') ? +$('#hostDuration').value : 10;
   const size = $('#hostSize') ? $('#hostSize').value : 'P';
+  const police = $('#hostPolice') ? $('#hostPolice').value !== 'off' : true;
   const code = makeSizedRoomCode(size);
   // The city of the chosen size is generated at LOAD time from the seed = code: as when
   // joining with a code, we reload onto the right room; on the way back, once the hostIntent
   // is recognised, we actually create the room and show the invite.
-  store.set('hostIntent', { code, pass, maxP, mins, name: playerName });
+  store.set('hostIntent', { code, pass, maxP, mins, police, name: playerName });
   if (st) st.textContent = t('host.creating');
   location.hash = 'room=' + code;
   location.reload();
@@ -514,7 +515,7 @@ else if (_hostIntent && ROOM_FROM_URL === _hostIntent.code) {
   showPanel('invitePanel');
   const c = $('#inviteCode'); if (c) c.textContent = ROOM_CODE;
   const l = $('#inviteLink'); if (l) l.value = inviteLink();
-  netStartHost(_hostIntent.pass, _hostIntent.maxP, err => {
+  netStartHost(_hostIntent.pass, _hostIntent.maxP, _hostIntent.police !== false, err => {
     if (err) {
       showPanel('hostPanel');
       const st = $('#hostStatus'); if (st) st.textContent = netErrText(err);

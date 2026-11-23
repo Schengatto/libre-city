@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
+import { runOverPedestrians } from './police-scenarios.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -136,6 +137,33 @@ failing.run('sim-worker.js');
 failing.scope.importScripts = () => { throw new Error('boom'); };
 failing.send({ type: 'start', url: 'ws://fake/host', code: 'TEST', token: 't', hostId: 'p1' });
 ok(failing.posted.some(m => m.type === 'error' && m.message === 'boom'), 'a sim load failure is posted as an error message');
+
+function runOverInWorker(roomCode, hostStartExtra) {
+  const policeHarness = createWorkerHarness();
+  policeHarness.run('sim-worker.js');
+  FakeSocket.instances.length = 0;
+  policeHarness.send({ type: 'start', url: 'ws://fake/host', code: roomCode, token: 't', hostId: 'p1' });
+  const policeSocket = FakeSocket.instances[0];
+  policeSocket.onopen();
+  deliver(policeSocket, { t: 'hoststart', roster: [{ id: 'p1', name: 'Host', shirtIdx: 0 }, { id: 'p2', name: 'Guest', shirtIdx: 1 }], state: [], ...hostStartExtra });
+  const sim = policeHarness.scope.__sim;
+  sim._player('p1').x += 3000;
+  const result = runOverPedestrians(sim, 'p2');
+  policeHarness.send({ type: 'stop' });
+  return result;
+}
+
+console.log('police in the host worker');
+const workerPoliceOn = runOverInWorker('WPOL1', {});
+console.log('  ', JSON.stringify(workerPoliceOn));
+ok(workerPoliceOn.inCar && workerPoliceOn.knocked > 0, 'the guest runs pedestrians over in the worker sim');
+ok(workerPoliceOn.wantedAfterRunOver >= 2, 'the guest gets 2+ wanted stars in the worker sim');
+ok(workerPoliceOn.maxSnapshotCops > 0 && workerPoliceOn.maxSnapshotPoliceCars > 0, 'cops and police cars chase the guest in the worker sim');
+const workerPoliceOff = runOverInWorker('WPOL2', { police: false });
+console.log('  ', JSON.stringify(workerPoliceOff));
+ok(workerPoliceOff.inCar && workerPoliceOff.knocked > 0, 'the guest runs pedestrians over with the police off');
+ok(workerPoliceOff.wantedAfterRunOver === 0, 'hoststart police:false keeps the guest unwanted');
+ok(workerPoliceOff.maxSnapshotCops === 0 && workerPoliceOff.maxSnapshotPoliceCars === 0, 'hoststart police:false spawns no police');
 
 console.log('built load');
 const TEST_DIST_DIR = path.join(ROOT_DIR, '.tmp', 'test-sim-worker-dist');

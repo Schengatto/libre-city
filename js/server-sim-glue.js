@@ -64,9 +64,9 @@ function makeSimPlayer(name, shirtIdx) {
 function playerById(id) { for (const p of players) if (p.id === id) return p; return null; }
 // Marshals the per-player globals (downT/downKind/cash) around that player's phase.
 function loadP(pl) { player = pl; downT = pl.downT | 0; downKind = pl.downKind; cash = pl.cash | 0;
-  wantedHeat = pl.wantedHeat || 0; wanted = pl.wanted | 0; crimeCd = pl.crimeCd | 0; }
+  wantedHeat = pl.wantedHeat || 0; wanted = pl.wanted | 0; crimeCd = pl.crimeCd | 0; playerOwningGlobals = pl; }
 function saveP(pl) { pl.downT = downT; pl.downKind = downKind; pl.cash = cash;
-  pl.wantedHeat = wantedHeat; pl.wanted = wanted; pl.crimeCd = crimeCd; }
+  pl.wantedHeat = wantedHeat; pl.wanted = wanted; pl.crimeCd = crimeCd; playerOwningGlobals = null; }
 
 // ---- Carjacking: throws the driver out (from input.js:tossDriver) ----
 // input.js is NOT in the server bundle, but the glue calls this when a player gets into a
@@ -293,6 +293,7 @@ var __sim = {
     if (cmd.vr != null) pl.aoi = Math.max(650, Math.min(AOI_R, cmd.vr));
   },
   tick() { tickWorld(); },
+  setPolice(enabled) { policeOn = enabled === true; },
   snapshotFor,
   clearFx() { __fx.length = 0; },        // the server clears the fx after each snapshot round
   playerState(id) { const p = playerById(id); return p ? { id: p.id, x: R2(p.x), y: R2(p.y), hp: R2(p.health), cash: p.cash, down: p.downT > 0, inCar: !!p.car, wanted: p.wanted | 0 } : null; },

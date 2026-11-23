@@ -232,6 +232,9 @@ const STR = {
     'host.max': 'Numero massimo di giocatori',
     'host.p2': '2 giocatori', 'host.p3': '3 giocatori', 'host.p4': '4 giocatori',
     'host.p6': '6 giocatori', 'host.p8': '8 giocatori',
+    'host.police': 'Polizia',
+    'host.policeOn': 'Sì — i crimini portano stelle e inseguimenti',
+    'host.policeOff': 'No — niente polizia',
     'host.creating': 'Creazione della stanza…',
     'host.go': '🏙️ Crea la stanza',
 
@@ -656,6 +659,9 @@ const STR = {
     'host.max': 'Maximum number of players',
     'host.p2': '2 players', 'host.p3': '3 players', 'host.p4': '4 players',
     'host.p6': '6 players', 'host.p8': '8 players',
+    'host.police': 'Police',
+    'host.policeOn': 'Yes — crimes bring stars and chases',
+    'host.policeOff': 'No — no police',
     'host.creating': 'Creating the room…',
     'host.go': '🏙️ Create the room',
 

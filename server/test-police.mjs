@@ -1,4 +1,5 @@
 import runtime from './sim-runtime.js';
+import { runOverPedestrians } from './police-scenarios.mjs';
 const { createRoomSim } = runtime;
 
 let pass = 0, fail = 0;
@@ -9,8 +10,9 @@ const SHOOT_EVERY_TICKS = 25;
 const SHOOTING_TICKS = 300;
 const TOTAL_TICKS = 500;
 
-function runPoliceScenario(roomCode, playerCount, criminalIndex) {
+function runPoliceScenario(roomCode, playerCount, criminalIndex, police = true) {
   const sim = createRoomSim(roomCode);
+  sim.setPolice(police);
   const playerIds = [];
   for (let k = 0; k < playerCount; k++) playerIds.push(sim.addPlayer('P' + k, k));
   const criminalId = playerIds[criminalIndex];
@@ -48,6 +50,39 @@ for (const scenario of scenarios) {
   ok(result.maxSnapshotCops > 0, 'cops on foot appear in the criminal snapshot');
   ok(result.maxSnapshotPoliceCars > 0, 'police cars appear in the criminal snapshot');
   if (scenario.playerCount > 1) ok(result.innocentMaxWanted === 0, 'innocent players stay unwanted');
+}
+
+console.log('police option OFF: shooting brings no stars and no police');
+{
+  const result = runPoliceScenario('NOCOPS1', 2, 1, false);
+  console.log('  ', JSON.stringify(result));
+  ok(result.maxWanted === 0, 'no wanted stars with the police off');
+  ok(result.maxSnapshotCops === 0 && result.maxSnapshotPoliceCars === 0, 'no cops and no police cars with the police off');
+}
+
+const runOverScenarios = [
+  { label: 'solo driver runs pedestrians over', roomCode: 'RUNOVER1', playerCount: 1, driverIndex: 0, police: true },
+  { label: 'guest driver runs pedestrians over', roomCode: 'RUNOVER2', playerCount: 2, driverIndex: 1, police: true },
+  { label: 'police option OFF: running pedestrians over', roomCode: 'RUNOVER3', playerCount: 2, driverIndex: 1, police: false },
+];
+for (const scenario of runOverScenarios) {
+  console.log(scenario.label);
+  const sim = createRoomSim(scenario.roomCode);
+  sim.setPolice(scenario.police);
+  const playerIds = [];
+  for (let k = 0; k < scenario.playerCount; k++) playerIds.push(sim.addPlayer('P' + k, k));
+  playerIds.forEach((id, k) => { if (k !== scenario.driverIndex) sim._player(id).x += 3000; });
+  const result = runOverPedestrians(sim, playerIds[scenario.driverIndex]);
+  console.log('  ', JSON.stringify(result));
+  ok(result.inCar && result.knocked > 0, 'the driver runs pedestrians over');
+  if (scenario.police) {
+    ok(result.wantedAfterRunOver >= 2, 'running pedestrians over raises the driver wanted level to 2+ stars');
+    ok(result.maxSnapshotCops > 0, 'cops on foot appear in the driver snapshot');
+    ok(result.maxSnapshotPoliceCars > 0, 'police cars appear in the driver snapshot');
+  } else {
+    ok(result.wantedAfterRunOver === 0, 'no wanted stars with the police off');
+    ok(result.maxSnapshotCops === 0 && result.maxSnapshotPoliceCars === 0, 'no cops and no police cars with the police off');
+  }
 }
 
 console.log('population reaches a far second player');

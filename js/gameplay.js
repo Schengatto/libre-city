@@ -45,6 +45,7 @@ function weaponKey(i) {
 
 // ---------- Crimes & wanted level ----------
 function commitCrime(amount, key) {
+  if (!policeOn) return;
   const before = wanted;
   wantedHeat = clamp(wantedHeat + amount, 0, 5.99);
   crimeCd = 60 * 9;
