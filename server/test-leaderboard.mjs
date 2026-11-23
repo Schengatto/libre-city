@@ -90,7 +90,7 @@ const PORT = Number(process.env.TEST_PORT) || 8793;
 const WSURL = `ws://127.0.0.1:${PORT}`;
 const HTTPURL = `http://127.0.0.1:${PORT}`;
 const SRV_ENV = {
-  ...process.env, PORT: String(PORT), LEADERBOARD_FILE: SRV_FILE,
+  ...process.env, PORT: String(PORT), LEADERBOARD_FILE: SRV_FILE, SIM_MODE: 'server',
   LEADERBOARD_QUALIFY_MS: '200', LEADERBOARD_MIN_SESSION_MS: '50',
 };
 

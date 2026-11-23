@@ -16,7 +16,7 @@ const MATCH_END_TIMEOUT_MS = 15_000;
 function startServer(port, extraEnv, label) {
   const child = spawn('node', ['index.js'], {
     cwd: import.meta.dirname,
-    env: { ...process.env, PORT: String(port), ...extraEnv },
+    env: { ...process.env, PORT: String(port), SIM_MODE: 'server', ...extraEnv },
     stdio: ['ignore', 'ignore', 'pipe'],
   });
   child.stderr.on('data', d => process.stdout.write(`  [${label}:err] ` + d));

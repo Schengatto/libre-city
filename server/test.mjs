@@ -7,7 +7,7 @@ const PORT = Number(process.env.TEST_PORT) || 8791;
 const URL = `ws://127.0.0.1:${PORT}`;
 const srv = spawn('node', ['index.js'], {
   cwd: import.meta.dirname,
-  env: { ...process.env, PORT: String(PORT) },
+  env: { ...process.env, PORT: String(PORT), SIM_MODE: 'server' },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 srv.stderr.on('data', d => process.stdout.write('  [srv:err] ' + d));

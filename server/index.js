@@ -48,7 +48,14 @@ const HOST = process.env.HOST || '0.0.0.0';
 // the site on the same origin, so the client talks wss:// to the same host with no CORS.
 // Empty = WebSocket only (site deployed separately).
 const STATIC_DIR = process.env.STATIC_DIR ? path.resolve(process.env.STATIC_DIR) : '';
-const GRACE_MS = 30_000;          // reconnection window after a network drop
+const GRACE_MS = Number(process.env.GRACE_MS) || 30_000;          // reconnection window after a network drop
+const SIM_MODE = process.env.SIM_MODE === 'server' ? 'server' : 'host';
+const HOST_MODE = SIM_MODE === 'host';
+const HOST_STALL_MS = 2000;
+const HOST_STALL_CHECK_MS = 500;
+const HOST_LINK_MAX_PAYLOAD = 1024 * 1024;
+const SNAPSHOT_FRAME_BYTE = 0x57;
+const FRAME_SEPARATOR_BYTE = 0x7c;
 const HEARTBEAT_MS = 30_000;      // application-level ping to spot dead sockets
 // ABSOLUTE room lifetime cap: any instance is torn down 35 min after creation, regardless
 // of the match length, reconnections or players still connected. It prevents "ghost" rooms
@@ -210,6 +217,7 @@ function finishRoom(room) {
   broadcast(room, { t: 'end' });
   recordAll(room);                           // before stopSim: the scores live in the sim
   stopSim(room);
+  stopHostWatch(room);
   clearTimeout(room.reaperTimer);
   room.reaperTimer = setTimeout(() => destroyRoom(room), END_LINGER_MS);
   log('room ended', room.code, `(posto liberato, ${liveRooms()}/${MAX_ROOMS} vive)`);
@@ -245,6 +253,7 @@ function destroyRoom(room) {
   clearTimeout(room.reaperTimer);
   recordAll(room);                           // teardown (reaper, room emptied): idempotent
   stopSim(room);
+  stopHostWatch(room);
   for (const p of room.players.values()) clearTimeout(p.dropTimer);
   rooms.delete(room.code);
   log('room destroyed', room.code);
@@ -386,24 +395,129 @@ function stopSim(room) {
   clearInterval(room.simTimer); room.simTimer = null; room.sim = null;
 }
 
+function hostModeActive(room) {
+  return HOST_MODE && !room.sim && !room.ended;
+}
+function hostFields(room) {
+  return HOST_MODE ? { host: room.hostId } : {};
+}
+function normalizedBuild(build) {
+  return typeof build === 'string' && build ? build : null;
+}
+function deviceOf(hello) {
+  return hello.dev === 'desktop' ? 'desktop' : 'touch';
+}
+function playerNumber(p) {
+  return Number(p.id.slice(1));
+}
+function isBetterHost(candidate, current) {
+  const candidateIsDesktop = candidate.dev === 'desktop';
+  if (candidateIsDesktop !== (current.dev === 'desktop')) return candidateIsDesktop;
+  return playerNumber(candidate) < playerNumber(current);
+}
+function pickHost(room, excludeId) {
+  const build = normalizedBuild(serverBuild());
+  let best = null;
+  for (const p of room.players.values()) {
+    if (p.gone || p.id === excludeId || room.resigned.has(p.id) || p.build !== build) continue;
+    if (!best || isBetterHost(p, best)) best = p;
+  }
+  return best;
+}
+function closeHostLink(room) {
+  const link = room.hostLink;
+  room.hostLink = null;
+  if (link) { try { link.close(); } catch {} }
+}
+function fallbackToServerSim(room) {}
+function electHost(room, excludeId) {
+  const next = pickHost(room, excludeId);
+  closeHostLink(room);
+  room.hostId = next ? next.id : null;
+  room.hostLastFrameAt = now();
+  if (!next) { fallbackToServerSim(room); return; }
+  broadcast(room, { t: 'host', id: next.id, name: next.name });
+  log('host', room.code, next.id, next.name);
+}
+function migrateHostIfPossible(room) {
+  if (hostModeActive(room) && pickHost(room, room.hostId)) electHost(room, room.hostId);
+}
+function ensureHost(room) {
+  if (!hostModeActive(room)) return;
+  const current = room.players.get(room.hostId);
+  if (current && !current.gone) return;
+  if (room.hostId === null || pickHost(room, null)) electHost(room, null);
+}
+function startHostWatch(room) {
+  room.hostWatchTimer = setInterval(() => {
+    if (room.hostId && now() - room.hostLastFrameAt >= HOST_STALL_MS) migrateHostIfPossible(room);
+  }, HOST_STALL_CHECK_MS);
+}
+function stopHostWatch(room) {
+  clearInterval(room.hostWatchTimer); room.hostWatchTimer = null;
+  closeHostLink(room);
+}
+function handleHostLink(ws, m) {
+  const room = rooms.get(String(m.code || '').toUpperCase());
+  const p = room && typeof m.token === 'string' && [...room.players.values()].find(pp => pp.token === m.token);
+  if (!p || !hostModeActive(room) || room.hostId !== p.id) { try { ws.close(); } catch {} return; }
+  const previousLink = room.hostLink;
+  room.hostLink = ws;
+  ws._hostRoom = room;
+  room.hostLastFrameAt = now();
+  if (previousLink && previousLink !== ws) { try { previousLink.close(); } catch {} }
+  sendRaw(ws, {
+    t: 'hoststart',
+    roster: [...room.players.values()].map(pp => ({ id: pp.id, name: pp.name, shirtIdx: pp.shirtIdx })),
+    state: room.hostState?.players || [],
+  });
+  log('hostlink', room.code, p.id);
+}
+function relaySnapshot(room, data) {
+  const separatorAt = data.indexOf(FRAME_SEPARATOR_BYTE, 2);
+  if (separatorAt < 0) return;
+  const target = room.players.get(data.toString('utf8', 2, separatorAt));
+  if (!target || target.gone || !target.ws || target.ws.readyState !== 1) return;
+  try { target.ws.send(data.subarray(separatorAt + 1), { binary: false }); } catch {}
+}
+function onHostLinkMessage(ws, data, isBinary) {
+  const room = ws._hostRoom;
+  if (isBinary || room.hostLink !== ws) return;
+  room.hostLastFrameAt = now();
+  if (data[0] === SNAPSHOT_FRAME_BYTE && data[1] === FRAME_SEPARATOR_BYTE) { relaySnapshot(room, data); return; }
+  let m;
+  try { m = JSON.parse(data); } catch { return; }
+  if (!m || m.t !== 'hst') return;
+  room.hostState = { players: Array.isArray(m.players) ? m.players : [], scores: Array.isArray(m.scores) ? m.scores : [] };
+}
+function onHostLinkClose(ws) {
+  const room = ws._hostRoom;
+  if (!room || room.hostLink !== ws) return;
+  room.hostLink = null;
+  migrateHostIfPossible(room);
+}
+
 // ---------- Entering a match ------------------------------------------------
-function addPlayer(ws, room, name) {
+function addPlayer(ws, room, hello) {
   const n = ++room.idSeq;                    // 1 for the creator, then 2, 3, …
   const id = 'p' + n;
   const p = {
-    id, name: String(name || 'Ospite').slice(0, 14), shirtIdx: (n - 1) % SHIRTS,  // creator → shirt 0
+    id, name: String(hello.name || 'Ospite').slice(0, 14), shirtIdx: (n - 1) % SHIRTS,  // creator → shirt 0
     token: crypto.randomUUID(), ws: null, gone: false, dropTimer: null,
     playedMs: 0, activeSince: 0, recorded: false,   // shared-leaderboard accounting
+    dev: deviceOf(hello), build: normalizedBuild(hello.build),
   };
   room.players.set(id, p);
+  ensureHost(room);
   bindWs(ws, room, p);
   if (room.sim) room.sim.addPlayer(p.name, p.shirtIdx, p.id);   // Phase 2: join the authoritative city
   sendRaw(ws, {
     t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes,
-    left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, sim: !!room.sim,
+    left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, sim: true, ...hostFields(room),
     build: serverBuild(),
   });
   broadcast(room, { t: 'join', id: p.id, name: p.name, shirtIdx: p.shirtIdx }, p.id);
+  sendRaw(room.hostLink, { t: 'join', id: p.id, name: p.name, shirtIdx: p.shirtIdx });
   log('join', room.code, p.id, p.name, `(${activeCount(room)}/${room.max})`);
 }
 // Attaches a (new) socket to a player: used both on first entry and on reconnect.
@@ -450,14 +564,16 @@ function createRoom(ws, m) {
     code, pass: String(m.pass || ''), max: clamp(+m.max || 4, 2, MAX_PLAYERS_CAP),
     minutes: Math.max(0, +m.minutes || 0), startAt: now(),
     idSeq: 0, players: new Map(), endTimer: null, ended: false,
+    hostId: null, hostLink: null, hostLastFrameAt: 0, hostState: null, resigned: new Set(), hostWatchTimer: null,
   };
   rooms.set(code, room);
   scheduleEnd(room);
   scheduleReaper(room);                      // absolute lifetime cap: 35 min, then gone
-  startSim(room);                            // Phase 2: start the room's authoritative city
+  if (HOST_MODE) startHostWatch(room);
+  else startSim(room);                       // Phase 2: start the room's authoritative city
   log('room created', code, 'by', String(m.name || '?'),
       `(${room.minutes}min, max ${room.max}, sim ${room.sim ? 'on' : 'off'}, ${liveRooms()}/${MAX_ROOMS} vive)`);
-  addPlayer(ws, room, m.name);
+  addPlayer(ws, room, m);
 }
 // Joins an existing room (or reconnects with the token).
 function handleJoin(ws, m) {
@@ -472,10 +588,12 @@ function handleJoin(ws, m) {
     if (p) {
       clearTimeout(p.dropTimer); p.dropTimer = null;
       const wasGone = p.gone; p.gone = false;
+      p.dev = deviceOf(m); p.build = normalizedBuild(m.build);
+      ensureHost(room);
       bindWs(ws, room, p);
       sendRaw(ws, {
         t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes,
-        left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, resumed: true, sim: !!room.sim,
+        left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, resumed: true, sim: true, ...hostFields(room),
         build: serverBuild(),
       });
       // If their departure had already been announced, the others re-add them.
@@ -491,7 +609,7 @@ function handleJoin(ws, m) {
   if (room.ended) { sendRaw(ws, { t: 'no', r: 'notfound' }); return; }
   if ((room.pass || '') !== String(m.pass || '')) { sendRaw(ws, { t: 'no', r: 'pass' }); return; }
   if (activeCount(room) >= room.max) { sendRaw(ws, { t: 'no', r: 'full' }); return; }
-  addPlayer(ws, room, m.name);
+  addPlayer(ws, room, m);
 }
 
 // ---------- Game messages (relay) -------------------------------------------
@@ -504,6 +622,12 @@ function onGameMessage(ws, m) {
     // world and answers with 'w' snapshots).
     case 'i':
       if (room.sim) room.sim.applyInput(p.id, m);
+      else if (HOST_MODE && p.id !== room.hostId) sendRaw(room.hostLink, { ...m, id: p.id });
+      break;
+    case 'resign':
+      if (!hostModeActive(room)) break;
+      room.resigned.add(p.id);
+      if (room.hostId === p.id) electHost(room, p.id);
       break;
     // Phase 1 (compat): state and events relayed to the others, signed with the sender's id.
     case 's': case 'shot': case 'punch': case 'rocket': case 'park': case 'gone':
@@ -532,14 +656,17 @@ function onDisconnect(ws) {
   p.gone = true;
   // The played-time clock stops here: the grace window is not play (see playedMs).
   p.playedMs = playedMs(p); p.activeSince = 0;
+  if (room.hostId === p.id) migrateHostIfPossible(room);
   p.dropTimer = setTimeout(() => {
     recordPlayer(room, p);                       // a real departure: their stint goes on record
     room.players.delete(p.id);
     if (room.sim) room.sim.removePlayer(p.id);   // a real departure: remove them from the authoritative city too
     broadcast(room, { t: 'leave', id: p.id });
+    sendRaw(room.hostLink, { t: 'leave', id: p.id });
     log('leave', room.code, p.id, p.name);
     // Room emptied ahead of time: it disappears and the slot goes to whoever is queued.
     if (room.players.size === 0) { const live = !room.ended; destroyRoom(room); if (live) pumpQueue(); }
+    else if (room.hostId === p.id && hostModeActive(room)) electHost(room, p.id);
   }, GRACE_MS);
 }
 
@@ -616,7 +743,7 @@ const server = http.createServer((req, res) => {
 // threshold to skip small messages (client input); and no client-side context takeover, to
 // keep RAM down on phones.
 const wss = new WebSocketServer({
-  server, maxPayload: MAX_PAYLOAD,
+  server, maxPayload: HOST_MODE ? HOST_LINK_MAX_PAYLOAD : MAX_PAYLOAD,
   perMessageDeflate: {
     threshold: 256,                       // below 256B compression is not worth it
     zlibDeflateOptions: { level: 3, memLevel: 8 },
@@ -628,7 +755,10 @@ const wss = new WebSocketServer({
 wss.on('connection', ws => {
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });   // reply to the heartbeat ping (native WS frame)
-  ws.on('message', data => {
+  ws.on('message', (data, isBinary) => {
+    if (ws._hostRoom) { onHostLinkMessage(ws, data, isBinary); return; }
+    if (HOST_MODE && data.length > MAX_PAYLOAD) { ws.close(1009); return; }
+    if (HOST_MODE && data[0] === SNAPSHOT_FRAME_BYTE) return;
     let m;
     try { m = JSON.parse(data); } catch { return; }
     if (!m || typeof m !== 'object') return;
@@ -637,13 +767,14 @@ wss.on('connection', ws => {
       if (m.t === 'create') handleCreate(ws, m);
       else if (m.t === 'join') handleJoin(ws, m);
       else if (m.t === 'unqueue') { removeFromQueue(ws); try { ws.close(); } catch {} }
+      else if (HOST_MODE && m.t === 'hostlink') handleHostLink(ws, m);
       else ws.close();
       return;
     }
     onGameMessage(ws, m);
   });
-  ws.on('close', () => { onQueueDisconnect(ws); onDisconnect(ws); });
-  ws.on('error', () => { onQueueDisconnect(ws); onDisconnect(ws); });
+  ws.on('close', () => { onQueueDisconnect(ws); onDisconnect(ws); onHostLinkClose(ws); });
+  ws.on('error', () => { onQueueDisconnect(ws); onDisconnect(ws); onHostLinkClose(ws); });
 });
 
 // Heartbeat: anyone not answering the ping within one round is a dead socket.
