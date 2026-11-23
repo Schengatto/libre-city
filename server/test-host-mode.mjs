@@ -11,13 +11,18 @@ const HOST_STATE_INTERVAL_MS = 400;
 const HEALTHY_HOST_MS = 3000;
 const STALL_ELECTION_DEADLINE_MS = 2600;
 const OVERSIZED_PAYLOAD_BYTES = 80_000;
+const HOST_STALL_MS = 2000;
+const HOST_BIND_MS = 5000;
+const HOST_CHECK_SLACK_MS = 1500;
+const FIRST_FRAME_BEFORE_BIND_DEADLINE_MS = 800;
+const HOST_LINK_PATH = '/hostlink';
 
 function startServer(port, simMode, label) {
   const child = spawn('node', ['index.js'], {
     cwd: import.meta.dirname,
     env: {
       ...process.env, PORT: String(port), HOST: '127.0.0.1', STATIC_DIR: '',
-      LC_BUILD: BUILD, SIM_MODE: simMode, GRACE_MS: String(GRACE_MS),
+      LC_BUILD: BUILD, SIM_MODE: simMode, GRACE_MS: String(GRACE_MS), HOST_BIND_MS: String(HOST_BIND_MS),
     },
     stdio: ['ignore', 'ignore', 'pipe'],
   });
@@ -41,9 +46,9 @@ async function waitFor(readValue, timeoutMs = MESSAGE_TIMEOUT_MS) {
   }
 }
 
-function openOnce(port) {
+function openOnce(port, path) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+    const ws = new WebSocket(`ws://127.0.0.1:${port}${path}`);
     ws.inbox = [];
     ws.closed = false;
     ws.addEventListener('message', event => { try { ws.inbox.push(JSON.parse(event.data)); } catch {} });
@@ -53,10 +58,10 @@ function openOnce(port) {
   });
 }
 
-async function open(port = PORT) {
+async function open(port = PORT, path = '') {
   const deadline = performance.now() + CONNECT_TIMEOUT_MS;
   for (;;) {
-    try { return await openOnce(port); }
+    try { return await openOnce(port, path); }
     catch (error) { if (performance.now() > deadline) throw error; }
     await wait(100);
   }
@@ -76,9 +81,17 @@ const createRoom = (code, name, dev = 'desktop') => enter(PORT, { t: 'create', c
 const joinRoom = (code, name, dev = 'desktop', build = BUILD) => enter(PORT, { t: 'join', code, name, dev, build });
 
 async function openHostLink(code, token) {
-  const ws = await open();
+  const ws = await open(PORT, HOST_LINK_PATH);
   send(ws, { t: 'hostlink', code, token });
   return ws;
+}
+
+function connectionOutcome(port, path) {
+  return new Promise(resolve => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}${path}`);
+    ws.addEventListener('open', () => { resolve('open'); ws.close(); });
+    ws.addEventListener('error', () => resolve('refused'));
+  });
 }
 
 const closeAll = sockets => { for (const ws of sockets) { try { ws.close(); } catch {} } };
@@ -118,7 +131,7 @@ try {
   check(!hostLinkA.closed, 'the hostlink survives the large frame');
   const oversizedSender = await open();
   oversizedSender.send(JSON.stringify({ t: 'ping', pad: 'a'.repeat(OVERSIZED_PAYLOAD_BYTES) }));
-  check(await waitFor(() => oversizedSender.closed), 'an oversized frame from a non-hostlink socket closes it');
+  check(await waitFor(() => oversizedSender.closed), 'the game socket rejects a frame over 64 KB in host mode');
   const intruder = await openHostLink('HOSTA1', 'not-a-token');
   check(await waitFor(() => intruder.closed), 'a hostlink with an unknown token is closed');
 
@@ -203,12 +216,66 @@ try {
   check(lateJoiner.ok && lateJoiner.ok.t === 'no' && lateJoiner.ok.r === 'notfound', 'the room is gone after the grace');
   closeAll([lateJoiner.ws]);
 
+  console.log('hostlink hardening');
+  const hardenedHost = await createRoom('HOSTF1', 'Fay');
+  const hardenedLink = await openHostLink('HOSTF1', hardenedHost.token);
+  check(await waitFor(() => findType(hardenedLink, 'hoststart')), `the hostlink binds on ${HOST_LINK_PATH}`);
+  const gameSocketLink = await open();
+  send(gameSocketLink, { t: 'hostlink', code: 'HOSTF1', token: hardenedHost.token });
+  check(await waitFor(() => gameSocketLink.closed), 'a hostlink sent on a game socket closes that socket');
+  check(!findType(gameSocketLink, 'hoststart') && !hardenedLink.closed, 'the game socket does not bind and the real hostlink stays');
+  hardenedLink.send(JSON.stringify({ t: 'hst', players: [{ id: hardenedHost.id, s: 111 }], scores: [] }));
+  hardenedLink.send(JSON.stringify({ t: 'hst', players: [{ id: hardenedHost.id, s: 999 }], scores: [], pad: 'a'.repeat(OVERSIZED_PAYLOAD_BYTES) }));
+  hardenedLink.send('W|' + hardenedHost.id + '|{"t":"end"}');
+  hardenedLink.send('W|' + hardenedHost.id + '|{"x":6,"t":"w"}');
+  hardenedLink.send('W|' + hardenedHost.id + '|{"t":"w","x":7}');
+  check(await waitFor(() => findMessage(hardenedHost.ws, message => message.t === 'w' && message.x === 7)), 'a W frame after the rejected ones is still relayed');
+  await wait(SILENCE_MS);
+  check(!findType(hardenedHost.ws, 'end') && !findMessage(hardenedHost.ws, message => message.x === 6),
+    'W payloads not starting with {"t":"w" are dropped');
+  check(!hardenedLink.closed && !hardenedHost.ws.closed, 'an oversized non-W hostlink frame is dropped without closing the room');
+  const relink = await openHostLink('HOSTF1', hardenedHost.token);
+  const relinkStart = await waitFor(() => findType(relink, 'hoststart'));
+  const keptRow = relinkStart && relinkStart.state.find(row => row.id === hardenedHost.id);
+  check(keptRow && keptRow.s === 111, 'the oversized hst is ignored and the last valid hst is kept');
+  closeAll([hardenedHost.ws, hardenedLink, relink]);
+
+  console.log('bind deadline before the first frame');
+  const slowHost = await createRoom('HOSTB1', 'Hal');
+  const slowHostElectedAt = performance.now();
+  const slowGuest = await joinRoom('HOSTB1', 'Gus');
+  const slowLink = await openHostLink('HOSTB1', slowHost.token);
+  await waitFor(() => findType(slowLink, 'hoststart'));
+  await wait(HOST_STALL_MS + 1000 - (performance.now() - slowHostElectedAt));
+  check(!findType(slowGuest.ws, 'host'), 'a host without its first frame is not replaced after the stall time');
+  const bindElection = await waitFor(() => findType(slowGuest.ws, 'host'), HOST_BIND_MS + HOST_CHECK_SLACK_MS);
+  const guestElectedAt = performance.now();
+  const bindElectionMs = guestElectedAt - slowHostElectedAt;
+  check(bindElection && bindElection.id === slowGuest.id && bindElectionMs >= HOST_BIND_MS - 200,
+    `it is replaced once the bind deadline expires (${Math.round(bindElectionMs)} ms)`);
+  check(await waitFor(() => slowLink.closed), 'the hostlink that never sent a frame is closed');
+
+  console.log('stall clock starts at the first frame');
+  for (const ws of [slowHost.ws, slowGuest.ws]) ws.inbox.length = 0;
+  const guestLink = await openHostLink('HOSTB1', slowGuest.token);
+  await waitFor(() => findType(guestLink, 'hoststart'));
+  await wait(HOST_BIND_MS - FIRST_FRAME_BEFORE_BIND_DEADLINE_MS - (performance.now() - guestElectedAt));
+  check(!findType(slowHost.ws, 'host'), 'no election before the first frame while the bind deadline runs');
+  guestLink.send(JSON.stringify({ t: 'hst', players: [], scores: [] }));
+  const firstFrameAt = performance.now();
+  const firstFrameElection = await waitFor(() => findType(slowHost.ws, 'host'), HOST_STALL_MS + HOST_CHECK_SLACK_MS);
+  const silenceAfterFirstFrameMs = performance.now() - firstFrameAt;
+  check(firstFrameElection && firstFrameElection.id === slowHost.id && silenceAfterFirstFrameMs >= HOST_STALL_MS - 200,
+    `the stall election comes HOST_STALL_MS after the first frame (${Math.round(silenceAfterFirstFrameMs)} ms)`);
+  closeAll([slowHost.ws, slowGuest.ws, guestLink]);
+
   console.log('server mode keeps the old handshake');
   const serverModePlayer = await enter(SERVER_MODE_PORT, { t: 'create', code: 'SRVM01', name: 'Sam', max: 8, minutes: 0 });
   check(serverModePlayer.ok && serverModePlayer.ok.sim === true && !('host' in serverModePlayer.ok), 'ok has sim true and no host field');
+  check(await connectionOutcome(SERVER_MODE_PORT, HOST_LINK_PATH) === 'refused', `a ${HOST_LINK_PATH} connection is refused in server mode`);
   const serverModeLink = await open(SERVER_MODE_PORT);
   send(serverModeLink, { t: 'hostlink', code: 'SRVM01', token: serverModePlayer.token });
-  check(await waitFor(() => serverModeLink.closed), 'hostlink is refused in server mode');
+  check(await waitFor(() => serverModeLink.closed), 'a hostlink sent on a game socket is refused in server mode');
   check(!findType(serverModeLink, 'hoststart'), 'no hoststart in server mode');
   closeAll([serverModePlayer.ws]);
 

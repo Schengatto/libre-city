@@ -52,10 +52,14 @@ const GRACE_MS = Number(process.env.GRACE_MS) || 30_000;          // reconnectio
 const SIM_MODE = process.env.SIM_MODE === 'server' ? 'server' : 'host';
 const HOST_MODE = SIM_MODE === 'host';
 const HOST_STALL_MS = 2000;
+const HOST_BIND_MS = Number(process.env.HOST_BIND_MS) || 10_000;
 const HOST_STALL_CHECK_MS = 500;
+const HOST_LINK_PATH = '/hostlink';
 const HOST_LINK_MAX_PAYLOAD = 1024 * 1024;
+const MAX_RELAY_BUFFERED_BYTES = 1024 * 1024;
 const SNAPSHOT_FRAME_BYTE = 0x57;
 const FRAME_SEPARATOR_BYTE = 0x7c;
+const SNAPSHOT_PAYLOAD_PREFIX = Buffer.from('{"t":"w"');
 const HEARTBEAT_MS = 30_000;      // application-level ping to spot dead sockets
 // ABSOLUTE room lifetime cap: any instance is torn down 35 min after creation, regardless
 // of the match length, reconnections or players still connected. It prevents "ghost" rooms
@@ -398,8 +402,8 @@ function stopSim(room) {
 function hostModeActive(room) {
   return HOST_MODE && !room.sim && !room.ended;
 }
-function hostFields(room) {
-  return HOST_MODE ? { host: room.hostId } : {};
+function handshakeSimFields(room) {
+  return HOST_MODE ? { sim: true, host: room.hostId } : { sim: !!room.sim };
 }
 function normalizedBuild(build) {
   return typeof build === 'string' && build ? build : null;
@@ -416,10 +420,12 @@ function isBetterHost(candidate, current) {
   return playerNumber(candidate) < playerNumber(current);
 }
 function pickHost(room, excludeId) {
-  const build = normalizedBuild(serverBuild());
+  let build;
   let best = null;
   for (const p of room.players.values()) {
-    if (p.gone || p.id === excludeId || room.resigned.has(p.id) || p.build !== build) continue;
+    if (p.gone || p.id === excludeId || room.resigned.has(p.id)) continue;
+    if (build === undefined) build = normalizedBuild(serverBuild());
+    if (p.build !== build) continue;
     if (!best || isBetterHost(p, best)) best = p;
   }
   return best;
@@ -434,7 +440,7 @@ function electHost(room, excludeId) {
   const next = pickHost(room, excludeId);
   closeHostLink(room);
   room.hostId = next ? next.id : null;
-  room.hostLastFrameAt = now();
+  awaitFirstHostFrame(room);
   if (!next) { fallbackToServerSim(room); return; }
   broadcast(room, { t: 'host', id: next.id, name: next.name });
   log('host', room.code, next.id, next.name);
@@ -448,9 +454,18 @@ function ensureHost(room) {
   if (current && !current.gone) return;
   if (room.hostId === null || pickHost(room, null)) electHost(room, null);
 }
+function awaitFirstHostFrame(room) {
+  room.hostBindStartedAt = now();
+  room.hostLastFrameAt = 0;
+}
+function hostStalled(room) {
+  if (!room.hostId) return false;
+  if (room.hostLastFrameAt) return now() - room.hostLastFrameAt >= HOST_STALL_MS;
+  return now() - room.hostBindStartedAt >= HOST_BIND_MS;
+}
 function startHostWatch(room) {
   room.hostWatchTimer = setInterval(() => {
-    if (room.hostId && now() - room.hostLastFrameAt >= HOST_STALL_MS) migrateHostIfPossible(room);
+    if (hostStalled(room)) migrateHostIfPossible(room);
   }, HOST_STALL_CHECK_MS);
 }
 function stopHostWatch(room) {
@@ -464,7 +479,7 @@ function handleHostLink(ws, m) {
   const previousLink = room.hostLink;
   room.hostLink = ws;
   ws._hostRoom = room;
-  room.hostLastFrameAt = now();
+  if (previousLink) awaitFirstHostFrame(room);
   if (previousLink && previousLink !== ws) { try { previousLink.close(); } catch {} }
   sendRaw(ws, {
     t: 'hoststart',
@@ -473,18 +488,32 @@ function handleHostLink(ws, m) {
   });
   log('hostlink', room.code, p.id);
 }
+function startsWithSnapshotPayload(data, payloadStart) {
+  const payloadEnd = payloadStart + SNAPSHOT_PAYLOAD_PREFIX.length;
+  return data.length >= payloadEnd
+    && data.compare(SNAPSHOT_PAYLOAD_PREFIX, 0, SNAPSHOT_PAYLOAD_PREFIX.length, payloadStart, payloadEnd) === 0;
+}
 function relaySnapshot(room, data) {
   const separatorAt = data.indexOf(FRAME_SEPARATOR_BYTE, 2);
-  if (separatorAt < 0) return;
+  if (separatorAt < 0 || !startsWithSnapshotPayload(data, separatorAt + 1)) return;
   const target = room.players.get(data.toString('utf8', 2, separatorAt));
   if (!target || target.gone || !target.ws || target.ws.readyState !== 1) return;
+  if (target.ws.bufferedAmount > MAX_RELAY_BUFFERED_BYTES) return;
   try { target.ws.send(data.subarray(separatorAt + 1), { binary: false }); } catch {}
+}
+function onHostLinkHello(ws, data, isBinary) {
+  let m = null;
+  if (!isBinary && data.length <= MAX_PAYLOAD) { try { m = JSON.parse(data); } catch {} }
+  if (m && m.t === 'hostlink') handleHostLink(ws, m);
+  else { try { ws.close(); } catch {} }
 }
 function onHostLinkMessage(ws, data, isBinary) {
   const room = ws._hostRoom;
   if (isBinary || room.hostLink !== ws) return;
+  const isSnapshot = data[0] === SNAPSHOT_FRAME_BYTE && data[1] === FRAME_SEPARATOR_BYTE;
+  if (!isSnapshot && data.length > MAX_PAYLOAD) return;
   room.hostLastFrameAt = now();
-  if (data[0] === SNAPSHOT_FRAME_BYTE && data[1] === FRAME_SEPARATOR_BYTE) { relaySnapshot(room, data); return; }
+  if (isSnapshot) { relaySnapshot(room, data); return; }
   let m;
   try { m = JSON.parse(data); } catch { return; }
   if (!m || m.t !== 'hst') return;
@@ -494,6 +523,7 @@ function onHostLinkClose(ws) {
   const room = ws._hostRoom;
   if (!room || room.hostLink !== ws) return;
   room.hostLink = null;
+  awaitFirstHostFrame(room);
   migrateHostIfPossible(room);
 }
 
@@ -513,7 +543,7 @@ function addPlayer(ws, room, hello) {
   if (room.sim) room.sim.addPlayer(p.name, p.shirtIdx, p.id);   // Phase 2: join the authoritative city
   sendRaw(ws, {
     t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes,
-    left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, sim: true, ...hostFields(room),
+    left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, ...handshakeSimFields(room),
     build: serverBuild(),
   });
   broadcast(room, { t: 'join', id: p.id, name: p.name, shirtIdx: p.shirtIdx }, p.id);
@@ -564,7 +594,7 @@ function createRoom(ws, m) {
     code, pass: String(m.pass || ''), max: clamp(+m.max || 4, 2, MAX_PLAYERS_CAP),
     minutes: Math.max(0, +m.minutes || 0), startAt: now(),
     idSeq: 0, players: new Map(), endTimer: null, ended: false,
-    hostId: null, hostLink: null, hostLastFrameAt: 0, hostState: null, resigned: new Set(), hostWatchTimer: null,
+    hostId: null, hostLink: null, hostBindStartedAt: 0, hostLastFrameAt: 0, hostState: null, resigned: new Set(), hostWatchTimer: null,
   };
   rooms.set(code, room);
   scheduleEnd(room);
@@ -593,7 +623,7 @@ function handleJoin(ws, m) {
       bindWs(ws, room, p);
       sendRaw(ws, {
         t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes,
-        left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, resumed: true, sim: true, ...hostFields(room),
+        left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, resumed: true, ...handshakeSimFields(room),
         build: serverBuild(),
       });
       // If their departure had already been announced, the others re-add them.
@@ -742,23 +772,43 @@ const server = http.createServer((req, res) => {
 // change that makes multiplayer playable. A low level (near-identical ratio, less CPU); a
 // threshold to skip small messages (client input); and no client-side context takeover, to
 // keep RAM down on phones.
-const wss = new WebSocketServer({
-  server, maxPayload: HOST_MODE ? HOST_LINK_MAX_PAYLOAD : MAX_PAYLOAD,
-  perMessageDeflate: {
-    threshold: 256,                       // below 256B compression is not worth it
-    zlibDeflateOptions: { level: 3, memLevel: 8 },
-    clientNoContextTakeover: true, serverNoContextTakeover: false,
-    concurrencyLimit: 10,
-  },
+const perMessageDeflate = {
+  threshold: 256,                       // below 256B compression is not worth it
+  zlibDeflateOptions: { level: 3, memLevel: 8 },
+  clientNoContextTakeover: true, serverNoContextTakeover: false,
+  concurrencyLimit: 10,
+};
+const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD, perMessageDeflate });
+const hostLinkWss = new WebSocketServer({ noServer: true, maxPayload: HOST_LINK_MAX_PAYLOAD, perMessageDeflate });
+
+function requestPathname(req) {
+  try { return new URL(req.url, 'http://localhost').pathname; } catch { return ''; }
+}
+function rejectUpgrade(socket) {
+  try { socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n'); } catch {}
+  socket.destroy();
+}
+server.on('upgrade', (req, socket, head) => {
+  const target = requestPathname(req) === HOST_LINK_PATH ? (HOST_MODE ? hostLinkWss : null) : wss;
+  if (!target) { rejectUpgrade(socket); return; }
+  target.handleUpgrade(req, socket, head, ws => target.emit('connection', ws, req));
+});
+
+hostLinkWss.on('connection', ws => {
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
+  ws.on('message', (data, isBinary) => {
+    if (ws._hostRoom) onHostLinkMessage(ws, data, isBinary);
+    else onHostLinkHello(ws, data, isBinary);
+  });
+  ws.on('close', () => onHostLinkClose(ws));
+  ws.on('error', () => onHostLinkClose(ws));
 });
 
 wss.on('connection', ws => {
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });   // reply to the heartbeat ping (native WS frame)
-  ws.on('message', (data, isBinary) => {
-    if (ws._hostRoom) { onHostLinkMessage(ws, data, isBinary); return; }
-    if (HOST_MODE && data.length > MAX_PAYLOAD) { ws.close(1009); return; }
-    if (HOST_MODE && data[0] === SNAPSHOT_FRAME_BYTE) return;
+  ws.on('message', data => {
     let m;
     try { m = JSON.parse(data); } catch { return; }
     if (!m || typeof m !== 'object') return;
@@ -767,19 +817,18 @@ wss.on('connection', ws => {
       if (m.t === 'create') handleCreate(ws, m);
       else if (m.t === 'join') handleJoin(ws, m);
       else if (m.t === 'unqueue') { removeFromQueue(ws); try { ws.close(); } catch {} }
-      else if (HOST_MODE && m.t === 'hostlink') handleHostLink(ws, m);
       else ws.close();
       return;
     }
     onGameMessage(ws, m);
   });
-  ws.on('close', () => { onQueueDisconnect(ws); onDisconnect(ws); onHostLinkClose(ws); });
-  ws.on('error', () => { onQueueDisconnect(ws); onDisconnect(ws); onHostLinkClose(ws); });
+  ws.on('close', () => { onQueueDisconnect(ws); onDisconnect(ws); });
+  ws.on('error', () => { onQueueDisconnect(ws); onDisconnect(ws); });
 });
 
 // Heartbeat: anyone not answering the ping within one round is a dead socket.
 const heartbeat = setInterval(() => {
-  for (const ws of wss.clients) {
+  for (const ws of [...wss.clients, ...hostLinkWss.clients]) {
     if (ws.isAlive === false) { try { ws.terminate(); } catch {} continue; }
     ws.isAlive = false;
     try { ws.ping(); } catch {}
