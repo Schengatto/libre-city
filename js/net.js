@@ -40,7 +40,7 @@ const net = {
   // ---- Phase 2: client of an AUTHORITATIVE SERVER ----
   authoritative: false,   // true = the server owns the world; here we only render it
   snap: null,             // last 'w' snapshot received
-  trainTick: null, trainTickFrame: 0,   // sim tick of the last snapshot + local frame it arrived on
+  trainTick: null, trainTickFrame: 0,
   inSeq: 0,               // running id of the input sent
   firePending: false, enterEdge: false, hornEdge: false, weaponReq: null,  // one-shot actions → server
   wcars: new Map(), wpeds: new Map(),   // id → world entities (interpolated)
@@ -636,7 +636,6 @@ function netMakePlayerCar(cp) {
   return c;
 }
 
-// A snapshot arrives: update the interpolation targets for the world and the ghosts.
 function netNoteTrainTick(m) {
   if (!Number.isFinite(m.tick)) return;
   net.trainTick = m.tick; net.trainTickFrame = frame;
@@ -644,6 +643,7 @@ function netNoteTrainTick(m) {
 function netTrainClock() {
   return net.trainTick === null ? frame : net.trainTick + (frame - net.trainTickFrame);
 }
+// A snapshot arrives: update the interpolation targets for the world and the ghosts.
 function netOnSnapshot(m) {
   net.snap = m;
   netNoteTrainTick(m);
