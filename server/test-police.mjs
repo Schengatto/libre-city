@@ -50,5 +50,43 @@ for (const scenario of scenarios) {
   if (scenario.playerCount > 1) ok(result.innocentMaxWanted === 0, 'innocent players stay unwanted');
 }
 
+console.log('population reaches a far second player');
+{
+  const sim = createRoomSim('CROWD1');
+  const hostId = sim.addPlayer('Host', 0), guestId = sim.addPlayer('Guest', 1);
+  const host = sim._player(hostId), guest = sim._player(guestId);
+  const farSpot = sim._randomWalkNear(host.x, host.y, 3500, 4500);
+  guest.x = farSpot.x; guest.y = farSpot.y;
+  const nearGuest = e => Math.hypot(e.x - guest.x, e.y - guest.y) < 900;
+  let civiliansNearGuest = 0, trafficNearGuest = 0;
+  for (let i = 0; i < 1200; i++) {
+    sim.tick();
+    if (i % 100 === 99) {
+      civiliansNearGuest += sim._peds().filter(p => p.role === 'civ' && nearGuest(p)).length;
+      trafficNearGuest += sim._cars().filter(c => c.role === 'traffic' && nearGuest(c)).length;
+    }
+  }
+  console.log('  ', JSON.stringify({ civiliansNearGuest, trafficNearGuest }));
+  ok(civiliansNearGuest > 0, 'civilians spawn around the far guest');
+  ok(trafficNearGuest > 0, 'traffic spawns around the far guest');
+}
+
+console.log('a cop chases the wanted player, not a closer innocent');
+{
+  const sim = createRoomSim('CHASE1');
+  const innocentId = sim.addPlayer('Innocent', 0), criminalId = sim.addPlayer('Criminal', 1);
+  const innocent = sim._player(innocentId), criminal = sim._player(criminalId);
+  criminal.wanted = 3; criminal.wantedHeat = 3.5; criminal.crimeCd = 600;
+  const cop = sim._spawnPed(criminal.x - 300, criminal.y, 'cop');
+  innocent.x = cop.x; innocent.y = cop.y + 50;
+  sim.tick();
+  const towardCriminal = Math.atan2(criminal.y - cop.y, criminal.x - cop.x);
+  const towardInnocent = Math.atan2(innocent.y - cop.y, innocent.x - cop.x);
+  const angleGap = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+  console.log('   facing', cop.facing.toFixed(2), 'criminal', towardCriminal.toFixed(2), 'innocent', towardInnocent.toFixed(2));
+  ok(angleGap(cop.facing, towardCriminal) < 0.3, 'the cop heads for the wanted player');
+  ok(angleGap(cop.facing, towardInnocent) > 0.6, 'the cop ignores the closer innocent');
+}
+
 console.log(`\n${pass} OK, ${fail} FAIL`);
 process.exit(fail ? 1 : 0);

@@ -455,7 +455,7 @@ function updateRobber(p) {
 // ---------- Cop on foot ----------
 const COP_RANGE = 330;
 function updateCop(p) {
-  const tp = nearestPlayer(p.x, p.y);            // hunts the nearest player
+  const tp = nearestWantedPlayer(p.x, p.y);      // hunts the nearest wanted player
   const tx = tp.x - p.x, ty = tp.y - p.y, d = Math.hypot(tx, ty) || 1;
   p.dir = { x: tx / d, y: ty / d }; p.speed = 2.0;
   p.facing = Math.atan2(ty, tx);
@@ -667,7 +667,7 @@ function updateCar(c) {
 }
 function updatePoliceCar(c) {
   c.lightPhase += 0.2;
-  const tp = nearestPlayer(c.x, c.y);
+  const tp = nearestWantedPlayer(c.x, c.y);
   const target = Math.atan2(tp.y - c.y, tp.x - c.x);
   c.angle = steerToward(c.angle, target, 0.07);
   const d = dist(c.x, c.y, tp.x, tp.y);
@@ -1156,16 +1156,16 @@ function respawnPlayer() {
 }
 
 // ---------- Dynamic population (spawn/despawn around the player) ----------
+// Centre of the viewport: on the client it follows the camera (which can be "stuck" to
+// the world edges, so the player is NOT at the centre), and on the headless server it
+// coincides with the player. Spawning around THIS centre, beyond the view's half
+// diagonal, guarantees no entity is born inside the visible rectangle: no pop-in on screen.
+function spawnCentre(focus = spawnFocus()) {
+  return cameraActive ? { x: camX + vw / 2, y: camY + vh / 2 } : focus;
+}
 function managePopulation() {
   const despawnR = Math.max(vw, vh) * 1.3 + 300;
   const nP = MP ? Math.max(1, MP.length) : 1;    // scale density with the number of players
-  const fp = spawnFocus();                        // player to spawn around (in rotation)
-  // Centre of the viewport: on the client it follows the camera (which can be "stuck" to
-  // the world edges, so the player is NOT at the centre), and on the headless server it
-  // coincides with the player. Spawning around THIS centre, beyond the view's half
-  // diagonal, guarantees no entity is born inside the visible rectangle: no pop-in on screen.
-  const scx = cameraActive ? camX + vw / 2 : fp.x;
-  const scy = cameraActive ? camY + vh / 2 : fp.y;
   const viewDiag = Math.hypot(vw, vh) / 2;         // distance from centre to the furthest visible corner
   const inMin = viewDiag + 80;                     // just OUTSIDE the corner of the viewport
   const inMax = viewDiag + Math.max(vw, vh) * 0.5; // spawn band just past the edge (within the despawn radius)
@@ -1195,19 +1195,21 @@ function managePopulation() {
     if (c.isDelivery) nDeliv++;
   }
   // Civilians.
-  if (nCiv < 26 * nP && frame % 8 === 0) { const p = randomWalkNear(scx, scy, inMin, inMax); if (p) peds.push(makePed(p.x, p.y, 'civ')); }
+  if (nCiv < 26 * nP && frame % 8 === 0) { const centre = spawnCentre(); const p = randomWalkNear(centre.x, centre.y, inMin, inMax); if (p) peds.push(makePed(p.x, p.y, 'civ')); }
   // Moving traffic.
-  if (nTraf < 14 * nP && frame % 12 === 0) { const c = spawnTrafficNear(scx, scy, inMin, inMax); if (c) cars.push(c); }
+  if (nTraf < 14 * nP && frame % 12 === 0) { const centre = spawnCentre(); const c = spawnTrafficNear(centre.x, centre.y, inMin, inMax); if (c) cars.push(c); }
   // Parked cars.
-  if (nPark < 14 * nP && frame % 16 === 0) { const p = randomParkingNear(scx, scy, inMin, inMax); if (p) cars.push(makeParked(p.x, p.y, p.angle)); }
+  if (nPark < 14 * nP && frame % 16 === 0) { const centre = spawnCentre(); const p = randomParkingNear(centre.x, centre.y, inMin, inMax); if (p) cars.push(makeParked(p.x, p.y, p.angle)); }
   // A few taxis around the city, always.
   if (frame % 40 === 0 && nTaxi < 3 * nP) {
-    const c = spawnTrafficNear(scx, scy, inMin, inMax);
+    const centre = spawnCentre();
+    const c = spawnTrafficNear(centre.x, centre.y, inMin, inMax);
     if (c) { makeTaxi(c); cars.push(c); }
   }
   // ...and at least a couple of delivery bikes.
   if (frame % 40 === 20 && nDeliv < 2 * nP) {
-    const c = spawnTrafficNear(scx, scy, inMin, inMax);
+    const centre = spawnCentre();
+    const c = spawnTrafficNear(centre.x, centre.y, inMin, inMax);
     if (c) { makeDeliveryMoto(c); cars.push(c); }
   }
   // Replaces (off-screen) the service vehicles in front of each special building.
@@ -1228,18 +1230,18 @@ function managePopulation() {
   }
   // Scattered coins + a few hidden away in the alleys.
   const wantCoins = 2 * nP;
-  if (coins.length < wantCoins && frame % 40 === 0) spawnCoinNear(scx, scy, inMin, inMax);
-  if (coins.length < wantCoins && frame % 120 === 0) spawnAlleyCoin(scx, scy, inMax);
+  if (coins.length < wantCoins && frame % 40 === 0) { const centre = spawnCentre(); spawnCoinNear(centre.x, centre.y, inMin, inMax); }
+  if (coins.length < wantCoins && frame % 120 === 0) { const centre = spawnCentre(); spawnAlleyCoin(centre.x, centre.y, inMax); }
   // MILITARY ALERT: while it lasts, soldiers and armed jeeps give chase.
   if (armyAlertT > 0) {
-    if (nSoldier < 3 * nP && frame % 40 === 0) { const p = randomWalkNear(scx, scy, inMin, inMax); if (p) peds.push(makeSoldier(p.x, p.y)); }
-    if (nArmy < 2 * nP && frame % 60 === 0) { const p = randomRoadNear(scx, scy, inMin, inMax); if (p) cars.push(makeArmyCar(p.x, p.y)); }
+    if (nSoldier < 3 * nP && frame % 40 === 0) { const centre = spawnCentre(); const p = randomWalkNear(centre.x, centre.y, inMin, inMax); if (p) peds.push(makeSoldier(p.x, p.y)); }
+    if (nArmy < 2 * nP && frame % 60 === 0) { const centre = spawnCentre(); const p = randomRoadNear(centre.x, centre.y, inMin, inMax); if (p) cars.push(makeArmyCar(p.x, p.y)); }
   }
   // POLICE according to the wanted level (room-wide heat, shared in multiplayer).
   const wantCops = wanted * nP;                  // cops on foot
   const wantCopCars = Math.max(0, wanted - 1) * nP;   // patrol cars
-  if (wanted > 0 && nCop < wantCops && frame % 30 === 0) { const focus = policeSpawnFocus(scx, scy); const p = randomWalkNear(focus.x, focus.y, inMin, inMax); if (p) peds.push(makePed(p.x, p.y, 'cop')); }
-  if (wanted >= 2 && nPolice < wantCopCars && frame % 50 === 0) { const focus = policeSpawnFocus(scx, scy); const p = randomRoadNear(focus.x, focus.y, inMin, inMax); if (p) { const c = makeCar(p.x, p.y, 'police'); c.wasPolice = true; cars.push(c); } }
+  if (wanted > 0 && nCop < wantCops && frame % 30 === 0) { const centre = spawnCentre(policeSpawnFocus()); const p = randomWalkNear(centre.x, centre.y, inMin, inMax); if (p) peds.push(makePed(p.x, p.y, 'cop')); }
+  if (wanted >= 2 && nPolice < wantCopCars && frame % 50 === 0) { const centre = spawnCentre(policeSpawnFocus()); const p = randomRoadNear(centre.x, centre.y, inMin, inMax); if (p) { const c = makeCar(p.x, p.y, 'police'); c.wasPolice = true; cars.push(c); } }
 }
 
 // ---------- Particles / effects ----------
