@@ -290,6 +290,21 @@ var __sim = {
   playerState(id) { const p = playerById(id); return p ? { id: p.id, x: R2(p.x), y: R2(p.y), hp: R2(p.health), cash: p.cash, down: p.downT > 0, inCar: !!p.car, wanted: p.wanted | 0 } : null; },
   scores() { return players.map(p => ({ id: p.id, name: p.name, k: p.kills, d: p.deaths, c: p.cash, s: p.score | 0, b: p.bounty | 0 })); },
   playerCount() { return players.length; },
+  exportPlayers() {
+    return players.map(p => ({
+      id: p.id, name: p.name, shirtIdx: p.shirtIdx, x: p.x, y: p.y, hp: p.health, cash: p.cash,
+      k: p.kills, d: p.deaths, s: p.score, stk: p.streak, b: p.bounty,
+      own: p.owned.slice(), wp: p.weaponIdx, wanted: p.wanted, wantedHeat: p.wantedHeat,
+    }));
+  },
+  restorePlayer(id, name, shirtIdx, state) {
+    __sim.addPlayer(name, shirtIdx, id);
+    const pl = playerById(id);
+    const fieldByStateKey = { x: 'x', y: 'y', hp: 'health', cash: 'cash', k: 'kills', d: 'deaths', s: 'score',
+      stk: 'streak', b: 'bounty', wp: 'weaponIdx', wanted: 'wanted', wantedHeat: 'wantedHeat' };
+    for (const key in fieldByStateKey) if (state && state[key] != null) pl[fieldByStateKey[key]] = state[key];
+    if (state && state.own) pl.owned = state.own.slice();
+  },
   _player(id) { return playerById(id); },   // tests only: direct reference to the player object
   _spawnPed(x, y, role) { const p = makePed(x, y, role); peds.push(p); return p; },   // tests only
   _cars() { return cars; },                 // tests only: traffic/collisions

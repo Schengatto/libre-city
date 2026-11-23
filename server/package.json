@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
-    "test": "node test.mjs && node test-i18n.mjs && node test-traffic.mjs && node test-hot-paths.mjs && node test-sim-clock.mjs && node test-sim-stubs.mjs && node test-queue.mjs && node test-leaderboard.mjs && node test-music.mjs && node test-police.mjs"
+    "test": "node test.mjs && node test-i18n.mjs && node test-traffic.mjs && node test-hot-paths.mjs && node test-sim-clock.mjs && node test-sim-stubs.mjs && node test-sim-restore.mjs && node test-queue.mjs && node test-leaderboard.mjs && node test-music.mjs && node test-police.mjs"
   },
   "dependencies": {
     "ws": "^8.18.0"
