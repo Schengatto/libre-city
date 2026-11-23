@@ -23,7 +23,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 const ROOT = __dirname;
-const DIST = path.join(ROOT, 'dist');
+const DIST = process.env.LC_DIST_DIR ? path.resolve(process.env.LC_DIST_DIR) : path.join(ROOT, 'dist');
 
 const hash = (buf) => crypto.createHash('sha256').update(buf).digest('hex').slice(0, 10);
 
@@ -90,6 +90,19 @@ if (leftover) {
   console.error(`Riferimento non riscritto: ${leftover[0]} — build annullata.`);
   process.exit(1);
 }
+
+const { buildSimWorkerBundle } = require('./build-sim-worker.js');
+const simWorkerBundle = buildSimWorkerBundle(ROOT);
+const simWorkerRel = `js/sim-worker.${hash(simWorkerBundle)}.js`;
+fs.writeFileSync(path.join(DIST, simWorkerRel), simWorkerBundle);
+const simWorkerMetaRe = /<meta name="lc-sim-worker" content="[^"]*">/;
+if (!simWorkerMetaRe.test(html)) {
+  console.error('Meta lc-sim-worker mancante in index.html: build annullata.');
+  process.exit(1);
+}
+html = html.replace(simWorkerMetaRe, `<meta name="lc-sim-worker" content="${simWorkerRel}">`);
+hashedRels.push(simWorkerRel);
+console.log(`  js/sim-worker.js  →  ${simWorkerRel}`);
 
 // --- 3. BUILD_ID + anti-cache version check on the HTML --------------------
 // Deterministic: it depends only on the contents (same sources → same build).

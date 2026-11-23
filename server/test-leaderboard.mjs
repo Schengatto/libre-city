@@ -73,6 +73,21 @@ console.log('3) soglie: chi ha giocato troppo poco non falsa la classifica');
   ok(lb.rankOf('Nessuno') === null, 'chi non è in classifica non ha posizione');
 }
 
+console.log('3b) implausible totals are clamped to the time played');
+{
+  const cappedScore = lb.MAX_PPM * 4;
+  const cappedKills = lb.MAX_KILLS_PER_MINUTE * 4;
+  lb.record({ name: 'Cheater', ms: 4 * MIN, score: 2 ** 40, kills: 1e9, deaths: Infinity });
+  const cheater = lb.top(10).find(r => r.name === 'Cheater');
+  ok(cheater && cheater.score === cappedScore && cheater.kills === cappedKills && cheater.deaths === 0,
+     'score and kills are capped per minute played, non-finite deaths count as 0');
+  ok(cheater && cheater.ppm === lb.MAX_PPM && cheater.best.ppm === lb.MAX_PPM && cheater.best.score === cappedScore,
+     'ppm and the personal best use the clamped score');
+  const sanitized = lb.plausibleTotals({ score: 12.9, kills: -3, deaths: '7' }, MIN);
+  ok(sanitized.score === 12 && sanitized.kills === 0 && sanitized.deaths === 0,
+     'totals are non-negative integers and non-numbers count as 0');
+}
+
 console.log('4) persistenza: il file è scritto e rileggibile');
 {
   lb.flush();
@@ -90,7 +105,7 @@ const PORT = Number(process.env.TEST_PORT) || 8793;
 const WSURL = `ws://127.0.0.1:${PORT}`;
 const HTTPURL = `http://127.0.0.1:${PORT}`;
 const SRV_ENV = {
-  ...process.env, PORT: String(PORT), LEADERBOARD_FILE: SRV_FILE,
+  ...process.env, PORT: String(PORT), LEADERBOARD_FILE: SRV_FILE, SIM_MODE: 'server',
   LEADERBOARD_QUALIFY_MS: '200', LEADERBOARD_MIN_SESSION_MS: '50',
 };
 

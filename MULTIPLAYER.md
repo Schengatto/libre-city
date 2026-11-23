@@ -44,6 +44,62 @@ che elimina davvero il **disallineamento** e i **veicoli invisibili**. La sim
 (`city.js`, `entities.js`, `gameplay.js`, `army.js`, `missions.js`) è già quasi
 headless: quasi nessuna dipendenza dai global del browser. Vedi la roadmap in fondo.
 
+## Fase 3 — Host giocatore
+
+La sim non gira più sul server: gira nel browser di un giocatore (**host**), in un
+Web Worker (`js/sim-worker.js`). Il server resta relay, tiene il clock di stanza,
+elegge e migra l'host. È la modalità di default.
+
+**Ruoli**
+- **Host**: il suo worker apre un secondo WebSocket su `/hostlink` (auth con `code` + `token`),
+  riceve `hoststart` (roster + ultimo stato giocatori), simula a 60 Hz e manda al server
+  gli snapshot per gli altri giocatori come frame `W|<id>|<json>` (uno ogni 2 tick, ~30/s)
+  e ogni 500 ms `hst` (stato giocatori e punteggi, usato per la migrazione e la classifica).
+  Il suo snapshot passa dal worker al thread principale, non dalla rete.
+- **Guest**: come in Fase 2 (input → snapshot, prediction sul proprio player). Non vede la differenza.
+- **Server**: relay di input verso l'host e di snapshot verso i guest, clock, punteggi.
+  Un host "barare" è accettato per design: l'host è autoritativo sulla stanza.
+
+**Elezione**
+- Eleggibile solo chi ha `build` uguale a quella del server (in sviluppo entrambe nulle).
+- Preferenza: giocatore connesso `desktop` (`dev` nell'hello, da `usingTouch`), poi id più basso.
+  Chi ha rinunciato (`resign`, es. worker fallito) è escluso; solo l'host può rinunciare.
+- Nuova elezione quando il socket dell'host si chiude, oppure non arrivano frame per
+  `HOST_STALL_MS` (2000 ms), oppure l'host eletto non aggancia l'hostlink entro `HOST_BIND_MS`
+  (10000 ms, env `HOST_BIND_MS`). Stallo e mancato aggancio rieleggono solo se la stanza ha
+  almeno 2 giocatori e c'è un altro giocatore connesso eleggibile: altrimenti l'host resta.
+  Il server avvisa tutti con `{t:'host', id, name}`;
+  `ok.host` porta l'host corrente a chi entra o si riaggancia.
+
+**`SIM_MODE`**
+- `SIM_MODE=host` (default): sim sull'host.
+- `SIM_MODE=server`: comportamento di Fase 2 (sim sul server, `ok.host` assente), come rollback.
+
+**Fallback per stanza**: se nessun giocatore è eleggibile (build diversa, tutti hanno
+rinunciato) la stanza usa la sim del server; `ok.host` nullo = sim del server.
+
+**Migrazione dell'host**: il nuovo host riparte dall'ultimo `hst` (giocatori e punteggi).
+Si perdono: il veicolo di ogni giocatore, le missioni in corso e fino a 0,5 s di stato.
+
+**Banda** (misura con `.tmp/host-bandwidth.mjs`: worker reale nell'harness di
+`server/test-sim-worker.mjs`, 4 giocatori, 10 s, `Math.random` con seed, 900 frame `W`
+da ~26 KB raw, 30/s per guest). Soglia: 300 KB/s di upload dell'host.
+
+| Compressione dei frame `W` sull'hostlink | seed 1 | seed 1-5 (media / max) |
+|---|---|---|
+| raw | 2303,9 KB/s | 2294 / 2502 KB/s |
+| prima: senza context takeover, livello 3 | 444,6 KB/s | 441 / 473 KB/s |
+| dopo: context takeover, livello 3 | 265,6 KB/s | 267 / 324 KB/s |
+| dopo: context takeover, livello 6 | 180,2 KB/s | 183 / 239 KB/s |
+
+L'hostlink (`hostLinkWss`) non chiede più `client_no_context_takeover`: il compressore del
+browser host tiene il dizionario tra un frame e l'altro, e i frame consecutivi (snapshot
+quasi uguali, anche di guest diversi) si comprimono contro il precedente. Il socket di gioco
+resta senza context takeover lato client, per la RAM dei telefoni. Il livello 6 è quello
+reale: i browser comprimono con il livello zlib di default, il livello 3 della config vale
+solo per ciò che comprime il server. Decisione: basta il context takeover (~183 KB/s reali,
+max 239); delta e frequenza più bassa degli snapshot non servono per ora.
+
 ---
 
 ## Avvio in locale

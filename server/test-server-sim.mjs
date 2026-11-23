@@ -16,7 +16,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  OK ', m); } else { fail++
 
 // Start the server.
 const srv = spawn(process.execPath, [path.join(__dirname, 'index.js')],
-  { env: { ...process.env, PORT: String(PORT), HOST: '127.0.0.1', STATIC_DIR: '' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  { env: { ...process.env, PORT: String(PORT), HOST: '127.0.0.1', STATIC_DIR: '', SIM_MODE: 'server' }, stdio: ['ignore', 'pipe', 'pipe'] });
 srv.stdout.on('data', d => process.env.DBG && process.stdout.write('[srv] ' + d));
 srv.stderr.on('data', d => process.stdout.write('[srv:err] ' + d));
 

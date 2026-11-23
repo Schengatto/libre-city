@@ -48,7 +48,23 @@ const HOST = process.env.HOST || '0.0.0.0';
 // the site on the same origin, so the client talks wss:// to the same host with no CORS.
 // Empty = WebSocket only (site deployed separately).
 const STATIC_DIR = process.env.STATIC_DIR ? path.resolve(process.env.STATIC_DIR) : '';
-const GRACE_MS = 30_000;          // reconnection window after a network drop
+const GRACE_MS = Number(process.env.GRACE_MS) || 30_000;          // reconnection window after a network drop
+const SIM_MODE = process.env.SIM_MODE === 'server' ? 'server' : 'host';
+const HOST_MODE = SIM_MODE === 'host';
+const HOST_STALL_MS = 2000;
+const HOST_BIND_MS = Number(process.env.HOST_BIND_MS) || 10_000;
+const HOST_STALL_CHECK_MS = 500;
+const HOST_LINK_PATH = '/hostlink';
+const HOST_LINK_MAX_PAYLOAD = 256 * 1024;
+const HOST_LINK_HELLO_MS = Number(process.env.HOST_LINK_HELLO_MS) || 5000;
+const HOST_LINK_MESSAGES_PER_SECOND = 400;
+const HOST_LINK_MESSAGE_BURST = 800;
+const MAX_RELAY_BUFFERED_BYTES = 1024 * 1024;
+const MAX_HOST_INPUT_BUFFERED_BYTES = 256 * 1024;
+const FORWARDED_INPUT_NUMBER_FIELDS = ['seq', 'ax', 'ay', 'aim', 'b', 'px', 'py', 'cx', 'cy', 'ca', 'csp', 'w', 'vr'];
+const SNAPSHOT_FRAME_BYTE = 0x57;
+const FRAME_SEPARATOR_BYTE = 0x7c;
+const SNAPSHOT_PAYLOAD_PREFIX = Buffer.from('{"t":"w"');
 const HEARTBEAT_MS = 30_000;      // application-level ping to spot dead sockets
 // ABSOLUTE room lifetime cap: any instance is torn down 35 min after creation, regardless
 // of the match length, reconnections or players still connected. It prevents "ghost" rooms
@@ -158,11 +174,15 @@ function roster(room, exceptId) {
 function playedMs(p) {
   return (p.playedMs || 0) + (p.activeSince ? now() - p.activeSince : 0);
 }
-// The score is taken from the room's AUTHORITATIVE simulation. In the Phase 1 relay fallback
-// (no sim) the server does not own the score, so nothing is recorded: better a leaderboard
-// with a hole in it than one built on numbers a client reports about itself.
+// The score is taken from the room's AUTHORITATIVE simulation: the server sim or, in host mode,
+// the host's worker, whose reported rows are kept only for the room's players and clamped to
+// plausible totals. In the Phase 1 relay fallback (no sim, no host) nothing is recorded: better
+// a leaderboard with a hole in it than one built on numbers a client reports about itself.
+function currentScores(room) {
+  return room.sim ? room.sim.scores() : room.hostState?.scores || room.finalScores;
+}
 function scoreOf(room, id) {
-  const list = room.sim ? room.sim.scores() : room.finalScores;
+  const list = currentScores(room);
   return (list && list.find(s => s.id === id)) || null;
 }
 function recordPlayer(room, p) {
@@ -178,7 +198,7 @@ function recordPlayer(room, p) {
 // Everyone still in the room. Called at the final whistle and at teardown; the scores are
 // snapshotted FIRST because stopSim() takes the simulation (and with it scores()) away.
 function recordAll(room) {
-  if (room.sim) room.finalScores = room.sim.scores();
+  room.finalScores = currentScores(room);
   for (const p of room.players.values()) recordPlayer(room, p);
 }
 
@@ -210,6 +230,7 @@ function finishRoom(room) {
   broadcast(room, { t: 'end' });
   recordAll(room);                           // before stopSim: the scores live in the sim
   stopSim(room);
+  stopHostWatch(room);
   clearTimeout(room.reaperTimer);
   room.reaperTimer = setTimeout(() => destroyRoom(room), END_LINGER_MS);
   log('room ended', room.code, `(posto liberato, ${liveRooms()}/${MAX_ROOMS} vive)`);
@@ -245,6 +266,7 @@ function destroyRoom(room) {
   clearTimeout(room.reaperTimer);
   recordAll(room);                           // teardown (reaper, room emptied): idempotent
   stopSim(room);
+  stopHostWatch(room);
   for (const p of room.players.values()) clearTimeout(p.dropTimer);
   rooms.delete(room.code);
   log('room destroyed', room.code);
@@ -386,24 +408,205 @@ function stopSim(room) {
   clearInterval(room.simTimer); room.simTimer = null; room.sim = null;
 }
 
+function hostModeActive(room) {
+  return HOST_MODE && !room.sim && !room.ended;
+}
+function handshakeSimFields(room) {
+  return HOST_MODE ? { sim: true, host: room.hostId } : { sim: !!room.sim };
+}
+function normalizedBuild(build) {
+  return typeof build === 'string' && build ? build : null;
+}
+function deviceOf(hello) {
+  return hello.dev === 'desktop' ? 'desktop' : 'touch';
+}
+function playerNumber(p) {
+  return Number(p.id.slice(1));
+}
+function isBetterHost(candidate, current) {
+  const candidateIsDesktop = candidate.dev === 'desktop';
+  if (candidateIsDesktop !== (current.dev === 'desktop')) return candidateIsDesktop;
+  return playerNumber(candidate) < playerNumber(current);
+}
+function pickHost(room, excludeId) {
+  let build;
+  let best = null;
+  for (const p of room.players.values()) {
+    if (p.gone || p.id === excludeId || room.resigned.has(p.id)) continue;
+    if (build === undefined) build = normalizedBuild(serverBuild());
+    if (p.build !== build) continue;
+    if (!best || isBetterHost(p, best)) best = p;
+  }
+  return best;
+}
+function closeHostLink(room) {
+  const link = room.hostLink;
+  room.hostLink = null;
+  if (link) { try { link.close(); } catch {} }
+}
+function fallbackToServerSim(room) {
+  if (!createRoomSim || room.sim || room.ended) return;
+  startSim(room);
+  if (!room.sim) return;
+  const savedRowById = new Map((room.hostState?.players || [])
+    .filter(row => row && typeof row.id === 'string').map(row => [row.id, row]));
+  for (const p of room.players.values()) {
+    const savedRow = savedRowById.get(p.id);
+    if (savedRow) room.sim.restorePlayer(p.id, p.name, p.shirtIdx, savedRow);
+    else room.sim.addPlayer(p.name, p.shirtIdx, p.id);
+  }
+  room.hostState = null;
+  broadcast(room, { t: 'host', id: null });
+  log('server sim fallback', room.code);
+}
+function electHost(room, excludeId) {
+  const next = pickHost(room, excludeId);
+  closeHostLink(room);
+  room.hostId = next ? next.id : null;
+  awaitFirstHostFrame(room);
+  if (!next) { fallbackToServerSim(room); return; }
+  broadcast(room, { t: 'host', id: next.id, name: next.name });
+  log('host', room.code, next.id, next.name);
+}
+function migrateHostIfPossible(room) {
+  if (hostModeActive(room) && pickHost(room, room.hostId)) electHost(room, room.hostId);
+}
+function ensureHost(room) {
+  if (!hostModeActive(room)) return;
+  const current = room.players.get(room.hostId);
+  if (current && !current.gone) return;
+  if (room.hostId === null || pickHost(room, null)) electHost(room, null);
+}
+function awaitFirstHostFrame(room) {
+  room.hostBindStartedAt = now();
+  room.hostLastFrameAt = 0;
+}
+function hostStalled(room) {
+  if (!room.hostId) return false;
+  if (room.hostLastFrameAt) return now() - room.hostLastFrameAt >= HOST_STALL_MS;
+  return now() - room.hostBindStartedAt >= HOST_BIND_MS;
+}
+function startHostWatch(room) {
+  room.hostWatchTimer = setInterval(() => {
+    if (room.players.size > 1 && hostStalled(room)) migrateHostIfPossible(room);
+  }, HOST_STALL_CHECK_MS);
+}
+function stopHostWatch(room) {
+  clearInterval(room.hostWatchTimer); room.hostWatchTimer = null;
+  closeHostLink(room);
+}
+function handleHostLink(ws, m) {
+  const room = rooms.get(String(m.code || '').toUpperCase());
+  const p = room && typeof m.token === 'string' && [...room.players.values()].find(pp => pp.token === m.token);
+  if (!p || !hostModeActive(room) || room.hostId !== p.id) { ws.terminate(); return; }
+  const previousLink = room.hostLink;
+  room.hostLink = ws;
+  ws._hostRoom = room;
+  if (previousLink) awaitFirstHostFrame(room);
+  if (previousLink && previousLink !== ws) { try { previousLink.close(); } catch {} }
+  sendRaw(ws, {
+    t: 'hoststart',
+    roster: [...room.players.values()].map(pp => ({ id: pp.id, name: pp.name, shirtIdx: pp.shirtIdx })),
+    state: room.hostState?.players || [],
+  });
+  log('hostlink', room.code, p.id);
+}
+function startsWithSnapshotPayload(data, payloadStart) {
+  const payloadEnd = payloadStart + SNAPSHOT_PAYLOAD_PREFIX.length;
+  return data.length >= payloadEnd
+    && data.compare(SNAPSHOT_PAYLOAD_PREFIX, 0, SNAPSHOT_PAYLOAD_PREFIX.length, payloadStart, payloadEnd) === 0;
+}
+function relaySnapshot(room, data) {
+  const separatorAt = data.indexOf(FRAME_SEPARATOR_BYTE, 2);
+  if (separatorAt < 0 || !startsWithSnapshotPayload(data, separatorAt + 1)) return;
+  const target = room.players.get(data.toString('utf8', 2, separatorAt));
+  if (!target || target.gone || !target.ws || target.ws.readyState !== 1) return;
+  if (target.ws.bufferedAmount > MAX_RELAY_BUFFERED_BYTES) return;
+  try { target.ws.send(data.subarray(separatorAt + 1), { binary: false }); } catch {}
+}
+function onHostLinkHello(ws, data) {
+  let m = null;
+  if (data.length <= MAX_PAYLOAD) { try { m = JSON.parse(data); } catch {} }
+  if (m && m.t === 'hostlink') handleHostLink(ws, m);
+  else ws.terminate();
+}
+function withinHostLinkRate(ws) {
+  const at = now();
+  ws._rateTokens = Math.min(HOST_LINK_MESSAGE_BURST,
+    ws._rateTokens + ((at - ws._rateCheckedAt) * HOST_LINK_MESSAGES_PER_SECOND) / 1000);
+  ws._rateCheckedAt = at;
+  if (ws._rateTokens < 1) return false;
+  ws._rateTokens--;
+  return true;
+}
+function plausibleHostRow(row, elapsedMs) {
+  const totals = leaderboard.plausibleTotals({ score: row.s, kills: row.k, deaths: row.d }, elapsedMs);
+  return { ...row, s: totals.score, k: totals.kills, d: totals.deaths };
+}
+function roomHostRows(room, rows) {
+  if (!Array.isArray(rows)) return [];
+  const elapsedMs = now() - room.startAt;
+  return rows.filter(row => row && typeof row.id === 'string' && room.players.has(row.id))
+    .map(row => plausibleHostRow(row, elapsedMs));
+}
+function onHostLinkMessage(ws, data) {
+  const room = ws._hostRoom;
+  if (room.hostLink !== ws) return;
+  const isSnapshot = data[0] === SNAPSHOT_FRAME_BYTE && data[1] === FRAME_SEPARATOR_BYTE;
+  if (!isSnapshot && data.length > MAX_PAYLOAD) return;
+  room.hostLastFrameAt = now();
+  if (isSnapshot) { relaySnapshot(room, data); return; }
+  let m;
+  try { m = JSON.parse(data); } catch { return; }
+  if (!m || m.t !== 'hst') return;
+  room.hostState = {
+    players: roomHostRows(room, m.players),
+    scores: roomHostRows(room, m.scores).map(({ id, k, d, s }) => ({ id, k, d, s })),
+  };
+}
+function forwardedInput(m, id) {
+  const input = { t: 'i' };
+  for (const field of FORWARDED_INPUT_NUMBER_FIELDS) if (Number.isFinite(m[field])) input[field] = m[field];
+  if (m.drive && typeof m.drive === 'object') {
+    input.drive = { active: !!m.drive.active, angle: Number.isFinite(m.drive.angle) ? m.drive.angle : 0 };
+  }
+  input.id = id;
+  return input;
+}
+function forwardInputToHost(room, m, id) {
+  const link = room.hostLink;
+  if (!link || link.bufferedAmount > MAX_HOST_INPUT_BUFFERED_BYTES) return;
+  sendRaw(link, forwardedInput(m, id));
+}
+function onHostLinkClose(ws) {
+  const room = ws._hostRoom;
+  if (!room || room.hostLink !== ws) return;
+  room.hostLink = null;
+  awaitFirstHostFrame(room);
+  migrateHostIfPossible(room);
+}
+
 // ---------- Entering a match ------------------------------------------------
-function addPlayer(ws, room, name) {
+function addPlayer(ws, room, hello) {
   const n = ++room.idSeq;                    // 1 for the creator, then 2, 3, …
   const id = 'p' + n;
   const p = {
-    id, name: String(name || 'Ospite').slice(0, 14), shirtIdx: (n - 1) % SHIRTS,  // creator → shirt 0
+    id, name: String(hello.name || 'Ospite').slice(0, 14), shirtIdx: (n - 1) % SHIRTS,  // creator → shirt 0
     token: crypto.randomUUID(), ws: null, gone: false, dropTimer: null,
     playedMs: 0, activeSince: 0, recorded: false,   // shared-leaderboard accounting
+    dev: deviceOf(hello), build: normalizedBuild(hello.build),
   };
   room.players.set(id, p);
-  bindWs(ws, room, p);
   if (room.sim) room.sim.addPlayer(p.name, p.shirtIdx, p.id);   // Phase 2: join the authoritative city
+  ensureHost(room);
+  bindWs(ws, room, p);
   sendRaw(ws, {
     t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes,
-    left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, sim: !!room.sim,
+    left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, ...handshakeSimFields(room),
     build: serverBuild(),
   });
   broadcast(room, { t: 'join', id: p.id, name: p.name, shirtIdx: p.shirtIdx }, p.id);
+  sendRaw(room.hostLink, { t: 'join', id: p.id, name: p.name, shirtIdx: p.shirtIdx });
   log('join', room.code, p.id, p.name, `(${activeCount(room)}/${room.max})`);
 }
 // Attaches a (new) socket to a player: used both on first entry and on reconnect.
@@ -450,14 +653,16 @@ function createRoom(ws, m) {
     code, pass: String(m.pass || ''), max: clamp(+m.max || 4, 2, MAX_PLAYERS_CAP),
     minutes: Math.max(0, +m.minutes || 0), startAt: now(),
     idSeq: 0, players: new Map(), endTimer: null, ended: false,
+    hostId: null, hostLink: null, hostBindStartedAt: 0, hostLastFrameAt: 0, hostState: null, resigned: new Set(), hostWatchTimer: null,
   };
   rooms.set(code, room);
   scheduleEnd(room);
   scheduleReaper(room);                      // absolute lifetime cap: 35 min, then gone
-  startSim(room);                            // Phase 2: start the room's authoritative city
+  if (HOST_MODE) startHostWatch(room);
+  else startSim(room);                       // Phase 2: start the room's authoritative city
   log('room created', code, 'by', String(m.name || '?'),
       `(${room.minutes}min, max ${room.max}, sim ${room.sim ? 'on' : 'off'}, ${liveRooms()}/${MAX_ROOMS} vive)`);
-  addPlayer(ws, room, m.name);
+  addPlayer(ws, room, m);
 }
 // Joins an existing room (or reconnects with the token).
 function handleJoin(ws, m) {
@@ -472,10 +677,12 @@ function handleJoin(ws, m) {
     if (p) {
       clearTimeout(p.dropTimer); p.dropTimer = null;
       const wasGone = p.gone; p.gone = false;
+      p.dev = deviceOf(m); p.build = normalizedBuild(m.build);
+      ensureHost(room);
       bindWs(ws, room, p);
       sendRaw(ws, {
         t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes,
-        left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, resumed: true, sim: !!room.sim,
+        left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, resumed: true, ...handshakeSimFields(room),
         build: serverBuild(),
       });
       // If their departure had already been announced, the others re-add them.
@@ -491,7 +698,7 @@ function handleJoin(ws, m) {
   if (room.ended) { sendRaw(ws, { t: 'no', r: 'notfound' }); return; }
   if ((room.pass || '') !== String(m.pass || '')) { sendRaw(ws, { t: 'no', r: 'pass' }); return; }
   if (activeCount(room) >= room.max) { sendRaw(ws, { t: 'no', r: 'full' }); return; }
-  addPlayer(ws, room, m.name);
+  addPlayer(ws, room, m);
 }
 
 // ---------- Game messages (relay) -------------------------------------------
@@ -504,6 +711,12 @@ function onGameMessage(ws, m) {
     // world and answers with 'w' snapshots).
     case 'i':
       if (room.sim) room.sim.applyInput(p.id, m);
+      else if (HOST_MODE && p.id !== room.hostId) forwardInputToHost(room, m, p.id);
+      break;
+    case 'resign':
+      if (!hostModeActive(room) || room.hostId !== p.id) break;
+      room.resigned.add(p.id);
+      electHost(room, p.id);
       break;
     // Phase 1 (compat): state and events relayed to the others, signed with the sender's id.
     case 's': case 'shot': case 'punch': case 'rocket': case 'park': case 'gone':
@@ -532,14 +745,17 @@ function onDisconnect(ws) {
   p.gone = true;
   // The played-time clock stops here: the grace window is not play (see playedMs).
   p.playedMs = playedMs(p); p.activeSince = 0;
+  if (room.hostId === p.id) migrateHostIfPossible(room);
   p.dropTimer = setTimeout(() => {
     recordPlayer(room, p);                       // a real departure: their stint goes on record
     room.players.delete(p.id);
     if (room.sim) room.sim.removePlayer(p.id);   // a real departure: remove them from the authoritative city too
     broadcast(room, { t: 'leave', id: p.id });
+    sendRaw(room.hostLink, { t: 'leave', id: p.id });
     log('leave', room.code, p.id, p.name);
     // Room emptied ahead of time: it disappears and the slot goes to whoever is queued.
     if (room.players.size === 0) { const live = !room.ended; destroyRoom(room); if (live) pumpQueue(); }
+    else if (room.hostId === p.id && hostModeActive(room)) electHost(room, p.id);
   }, GRACE_MS);
 }
 
@@ -615,14 +831,44 @@ const server = http.createServer((req, res) => {
 // change that makes multiplayer playable. A low level (near-identical ratio, less CPU); a
 // threshold to skip small messages (client input); and no client-side context takeover, to
 // keep RAM down on phones.
-const wss = new WebSocketServer({
-  server, maxPayload: MAX_PAYLOAD,
-  perMessageDeflate: {
-    threshold: 256,                       // below 256B compression is not worth it
-    zlibDeflateOptions: { level: 3, memLevel: 8 },
-    clientNoContextTakeover: true, serverNoContextTakeover: false,
-    concurrencyLimit: 10,
-  },
+const perMessageDeflate = {
+  threshold: 256,                       // below 256B compression is not worth it
+  zlibDeflateOptions: { level: 3, memLevel: 8 },
+  clientNoContextTakeover: true, serverNoContextTakeover: false,
+  concurrencyLimit: 10,
+};
+const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD, perMessageDeflate });
+const hostLinkWss = new WebSocketServer({
+  noServer: true, maxPayload: HOST_LINK_MAX_PAYLOAD,
+  perMessageDeflate: { ...perMessageDeflate, clientNoContextTakeover: false },
+});
+
+function requestPathname(req) {
+  try { return new URL(req.url, 'http://localhost').pathname; } catch { return ''; }
+}
+function rejectUpgrade(socket) {
+  try { socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n'); } catch {}
+  socket.destroy();
+}
+server.on('upgrade', (req, socket, head) => {
+  const target = requestPathname(req) === HOST_LINK_PATH ? (HOST_MODE ? hostLinkWss : null) : wss;
+  if (!target) { rejectUpgrade(socket); return; }
+  target.handleUpgrade(req, socket, head, ws => target.emit('connection', ws, req));
+});
+
+hostLinkWss.on('connection', ws => {
+  ws.isAlive = true;
+  ws._rateTokens = HOST_LINK_MESSAGE_BURST;
+  ws._rateCheckedAt = now();
+  const helloTimer = setTimeout(() => { if (!ws._hostRoom) ws.terminate(); }, HOST_LINK_HELLO_MS);
+  ws.on('pong', () => { ws.isAlive = true; });
+  ws.on('message', (data, isBinary) => {
+    if (isBinary || !withinHostLinkRate(ws)) { ws.terminate(); return; }
+    if (ws._hostRoom) onHostLinkMessage(ws, data);
+    else onHostLinkHello(ws, data);
+  });
+  ws.on('close', () => { clearTimeout(helloTimer); onHostLinkClose(ws); });
+  ws.on('error', () => onHostLinkClose(ws));
 });
 
 wss.on('connection', ws => {
@@ -637,7 +883,7 @@ wss.on('connection', ws => {
       if (m.t === 'create') handleCreate(ws, m);
       else if (m.t === 'join') handleJoin(ws, m);
       else if (m.t === 'unqueue') { removeFromQueue(ws); try { ws.close(); } catch {} }
-      else ws.close();
+      else if (m.t !== 'hostlink') ws.close();
       return;
     }
     onGameMessage(ws, m);
@@ -648,7 +894,7 @@ wss.on('connection', ws => {
 
 // Heartbeat: anyone not answering the ping within one round is a dead socket.
 const heartbeat = setInterval(() => {
-  for (const ws of wss.clients) {
+  for (const ws of [...wss.clients, ...hostLinkWss.clients]) {
     if (ws.isAlive === false) { try { ws.terminate(); } catch {} continue; }
     ws.isAlive = false;
     try { ws.ping(); } catch {}

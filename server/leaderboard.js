@@ -43,6 +43,8 @@ const MIN_SESSION_MS = Number(process.env.LEADERBOARD_MIN_SESSION_MS) || 30_000;
 // lowest ppm drop out (the unranked ones first, since they have no standing to lose).
 const MAX_ENTRIES = Number(process.env.LEADERBOARD_MAX) || 500;
 const SAVE_DEBOUNCE_MS = 5_000;
+const MAX_PPM = Number(process.env.LEADERBOARD_MAX_PPM) || 10_000;
+const MAX_KILLS_PER_MINUTE = Number(process.env.LEADERBOARD_MAX_KILLS_PER_MINUTE) || 60;
 
 const log = (...a) => console.log(new Date().toISOString(), '[leaderboard]', ...a);
 
@@ -57,6 +59,18 @@ function ppmOf(e) { return e.ms > 0 ? (e.score * 60_000) / e.ms : 0; }
 // The name as it is SHOWN: tidied up (the padding is not part of the nickname), capped at the
 // same 14 characters the client allows.
 function displayName(name) { return String(name || '').trim().replace(/\s+/g, ' ').slice(0, 14); }
+
+function plausibleCount(value, perMinute, ms) {
+  const count = Number.isFinite(value) ? Math.floor(value) : 0;
+  return Math.max(0, Math.min(count, Math.ceil((perMinute * ms) / 60_000)));
+}
+function plausibleTotals({ score, kills, deaths }, ms) {
+  return {
+    score: plausibleCount(score, MAX_PPM, ms),
+    kills: plausibleCount(kills, MAX_KILLS_PER_MINUTE, ms),
+    deaths: plausibleCount(deaths, MAX_KILLS_PER_MINUTE, ms),
+  };
+}
 
 function blank(name) {
   return { name: displayName(name), ms: 0, score: 0, kills: 0, deaths: 0, matches: 0,
@@ -74,18 +88,19 @@ function record({ name, ms, score = 0, kills = 0, deaths = 0, at = Date.now() })
   let e = entries.get(key);
   if (!e) { e = blank(name); entries.set(key, e); }
   else e.name = displayName(name);           // the display name follows the latest spelling
+  const totals = plausibleTotals({ score, kills, deaths }, ms);
   e.ms += ms;
-  e.score += Math.max(0, score | 0);
-  e.kills += Math.max(0, kills | 0);
-  e.deaths += Math.max(0, deaths | 0);
+  e.score += totals.score;
+  e.kills += totals.kills;
+  e.deaths += totals.deaths;
   e.matches++;
   e.at = at;
   // Personal best: the single match with the highest ppm, kept as a "career highlight"
   // alongside the (more honest) career average. Only qualifying-length matches compete for
   // it, otherwise the best is always the shortest match.
-  const mppm = (score * 60_000) / ms;
+  const mppm = (totals.score * 60_000) / ms;
   if (ms >= MIN_SESSION_MS * 2 && (!e.best || mppm > e.best.ppm)) {
-    e.best = { ppm: Math.round(mppm * 10) / 10, score: score | 0, ms, at };
+    e.best = { ppm: Math.round(mppm * 10) / 10, score: totals.score, ms, at };
   }
   touch();
   return e;
@@ -176,5 +191,5 @@ function _reset() { entries.clear(); dirty = false; }
 
 load();
 
-module.exports = { record, top, snapshot, rankOf, flush, save, _reset,
-                   FILE, QUALIFY_MS, MIN_SESSION_MS };
+module.exports = { record, top, snapshot, rankOf, flush, save, _reset, plausibleTotals,
+                   FILE, QUALIFY_MS, MIN_SESSION_MS, MAX_PPM, MAX_KILLS_PER_MINUTE };
