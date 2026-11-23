@@ -22,7 +22,7 @@ function simHostStart() {
     startMessage = { type: 'start', code: ROOM_CODE, hostId: net.myId, url: simHostLinkUrl(), token: net.token };
     worker = new Worker(simHostWorkerUrl());
   } catch {
-    netSend({ t: 'resign' });
+    simHostResign();
     return;
   }
   simHostWorker = worker;

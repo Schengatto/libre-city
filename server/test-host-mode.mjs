@@ -378,6 +378,17 @@ try {
   check(resignElection && resignElection.id === nextHost.id, 'resign elects the other eligible player');
   closeAll([quittingHost.ws, nextHost.ws]);
 
+  console.log('resign from a non-host is ignored');
+  const stayingHost = await createRoom('RESG02', 'Hank');
+  const staleResigner = await joinRoom('RESG02', 'Gail', 'touch');
+  send(staleResigner.ws, { t: 'resign' });
+  await wait(SILENCE_MS);
+  check(!findType(stayingHost.ws, 'host') && !findType(staleResigner.ws, 'host'), 'a non-host resign triggers no election');
+  send(stayingHost.ws, { t: 'resign' });
+  const laterElection = await waitFor(() => findType(staleResigner.ws, 'host'));
+  check(laterElection && laterElection.id === staleResigner.id, 'a later election can still pick the player whose resign was ignored');
+  closeAll([stayingHost.ws, staleResigner.ws]);
+
   console.log('server mode keeps the old handshake');
   const serverModePlayer = await enter(SERVER_MODE_PORT, { t: 'create', code: 'SRVM01', name: 'Sam', max: 8, minutes: 0 });
   check(serverModePlayer.ok && serverModePlayer.ok.sim === true && !('host' in serverModePlayer.ok), 'ok has sim true and no host field');

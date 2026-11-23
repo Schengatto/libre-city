@@ -680,9 +680,9 @@ function onGameMessage(ws, m) {
       else if (HOST_MODE && p.id !== room.hostId) sendRaw(room.hostLink, { ...m, id: p.id });
       break;
     case 'resign':
-      if (!hostModeActive(room)) break;
+      if (!hostModeActive(room) || room.hostId !== p.id) break;
       room.resigned.add(p.id);
-      if (room.hostId === p.id) electHost(room, p.id);
+      electHost(room, p.id);
       break;
     // Phase 1 (compat): state and events relayed to the others, signed with the sender's id.
     case 's': case 'shot': case 'punch': case 'rocket': case 'park': case 'gone':
