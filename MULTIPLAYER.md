@@ -66,7 +66,9 @@ elegge e migra l'host. È la modalità di default.
   Chi ha rinunciato (`resign`, es. worker fallito) è escluso; solo l'host può rinunciare.
 - Nuova elezione quando il socket dell'host si chiude, oppure non arrivano frame per
   `HOST_STALL_MS` (2000 ms), oppure l'host eletto non aggancia l'hostlink entro `HOST_BIND_MS`
-  (10000 ms, env `HOST_BIND_MS`). Il server avvisa tutti con `{t:'host', id, name}`;
+  (10000 ms, env `HOST_BIND_MS`). Stallo e mancato aggancio rieleggono solo se la stanza ha
+  almeno 2 giocatori e c'è un altro giocatore connesso eleggibile: altrimenti l'host resta.
+  Il server avvisa tutti con `{t:'host', id, name}`;
   `ok.host` porta l'host corrente a chi entra o si riaggancia.
 
 **`SIM_MODE`**

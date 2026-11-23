@@ -91,7 +91,6 @@ if (leftover) {
   process.exit(1);
 }
 
-// --- 2b. Host sim worker: stubs + sim files + worker body in ONE hashed bundle ---------
 const { buildSimWorkerBundle } = require('./build-sim-worker.js');
 const simWorkerBundle = buildSimWorkerBundle(ROOT);
 const simWorkerRel = `js/sim-worker.${hash(simWorkerBundle)}.js`;

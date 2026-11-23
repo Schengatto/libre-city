@@ -174,9 +174,10 @@ function roster(room, exceptId) {
 function playedMs(p) {
   return (p.playedMs || 0) + (p.activeSince ? now() - p.activeSince : 0);
 }
-// The score is taken from the room's AUTHORITATIVE simulation. In the Phase 1 relay fallback
-// (no sim) the server does not own the score, so nothing is recorded: better a leaderboard
-// with a hole in it than one built on numbers a client reports about itself.
+// The score is taken from the room's AUTHORITATIVE simulation: the server sim or, in host mode,
+// the host's worker, whose reported rows are kept only for the room's players and clamped to
+// plausible totals. In the Phase 1 relay fallback (no sim, no host) nothing is recorded: better
+// a leaderboard with a hole in it than one built on numbers a client reports about itself.
 function currentScores(room) {
   return room.sim ? room.sim.scores() : room.hostState?.scores || room.finalScores;
 }
