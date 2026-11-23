@@ -468,6 +468,7 @@ function handleJoin(ws, m) {
   // Reconnect: the same token within the grace window → same id/shirt, no flicker.
   if (m.token) {
     const p = [...room.players.values()].find(pp => pp.token === m.token);
+    if (p && room.ended) { sendRaw(ws, { t: 'end' }); return; }
     if (p) {
       clearTimeout(p.dropTimer); p.dropTimer = null;
       const wasGone = p.gone; p.gone = false;

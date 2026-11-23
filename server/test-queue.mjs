@@ -161,8 +161,12 @@ try {
   send(z, { t: 'join', code: 'SHORT1', name: 'Z' });
   await waitFor(() => findT(z, 'no') || findT(z, 'ok'));
   ok(findT(z, 'no')?.r === 'notfound', 'non si entra in una partita già finita');
+  const resumedAfterEnd = await open(PORT2);
+  send(resumedAfterEnd, { t: 'join', code: 'SHORT1', name: 'X', token: findT(x, 'ok').token });
+  ok(!!(await waitFor(() => findT(resumedAfterEnd, 'end'))), 'a player resuming with its token after the final whistle still receives end');
+  ok(!findT(resumedAfterEnd, 'ok'), 'the resumed player is not readmitted into the ended match');
 
-  for (const ws of [x, y, z]) { try { ws.close(); } catch {} }
+  for (const ws of [x, y, z, resumedAfterEnd]) { try { ws.close(); } catch {} }
   await wait(200);
   console.log(failures ? `\n❌  ${failures} test FALLITI` : '\n✅  tutti i test della sala d\'attesa superati');
 } catch (err) {

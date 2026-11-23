@@ -1290,6 +1290,7 @@ function updateCamera() {
 }
 
 // ---------- Main update ----------
+const SERVER_END_GRACE_FRAMES = 5 * 60;
 function update() {
   // Timed match: the clock always runs, even while dead/busted and even on an
   // authoritative server (where updateNetClient RENDERS the rest of the world). In MP the
@@ -1298,8 +1299,7 @@ function update() {
   if (gameMinutes > 0) {
     timeLeft--;
     if (timeLeft % 20 === 0) updateTimer();
-    // Single-player: the client calls time; in MP it waits for the server.
-    if (timeLeft <= 0 && !authClient()) { endGame('time'); return; }
+    if (timeLeft <= (authClient() ? -SERVER_END_GRACE_FRAMES : 0)) { endGame('time'); return; }
   }
   // Phase 2: with an authoritative server the client does not simulate the world, it
   // RENDERS it (prediction of its own player + snapshot interpolation). See net.js.
