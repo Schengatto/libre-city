@@ -84,7 +84,7 @@ function makeGhost(id, name, shirtIdx) {
 // drop.
 
 // Host: creates the room and sets its parameters (duration, max players, password).
-function netStartHost(pass, maxPlayers, done) {
+function netStartHost(pass, maxPlayers, police, done) {
   const url = netServerUrl();
   if (!url) { done('noserver'); return; }
   net.mode = 'host'; net.url = url;
@@ -93,7 +93,7 @@ function netStartHost(pass, maxPlayers, done) {
   document.body.classList.add('mp');
   net.rejoin = { code: ROOM_CODE, name: playerName, pass: net.pass };
   net.hello  = { t: 'create', code: ROOM_CODE, name: playerName, pass: net.pass,
-                 max: net.maxPlayers, minutes: gameMinutes };
+                 max: net.maxPlayers, minutes: gameMinutes, police };
   netDial(done);
 }
 // Client: joins a room that already exists.
@@ -210,6 +210,7 @@ function netOnJoined(m) {
   netSyncHostRole();
   player.shirt = NET_SHIRTS[m.shirtIdx % NET_SHIRTS.length];
   if (m.minutes != null) gameMinutes = m.minutes;   // the server sets the match's pace
+  policeOn = m.police !== false;
   net.clockLeft = m.left;
   if (resumed && started && gameMinutes > 0) timeLeft = net.clockLeft;
   // Sync the roster without clearing ghosts that are already there (important on reconnect).
@@ -291,6 +292,7 @@ function netShutdown() {
   net.players.clear(); net.looseCars.clear(); net.remoteCops.clear();
   net.mode = null; net.myId = null; net.token = null; net.clockLeft = null;
   net.score = 0; net.streak = 0; net.bounty = 0; updateBountyHud(0);
+  policeOn = true;
   document.body.classList.remove('mp');
   netRefreshBadge();
 }

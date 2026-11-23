@@ -75,6 +75,7 @@ let timeLeft = 0;                              // frames left (only when a lengt
 // (neither player nor NPCs), and police missions end simply by reaching the thief.
 // In MULTIPLAYER violence is ALWAYS on, hence peaceMode() also requires !net.
 let violenceOn = true;
+let policeOn = true;
 function peaceMode() { return !violenceOn && !(typeof net !== 'undefined' && net && net.mode !== null); }
 let camX = 0, camY = 0;
 // True only on the client that renders (never on the headless server): enables
@@ -189,21 +190,23 @@ function policeSpawnFocus() {
 // the victim/author v, then restores them: this lets the existing damage/death/credit/
 // crime functions (hurtPlayer, startDown, cash+=…, commitCrime) act on the right player.
 // `v` may be the player object or its id (e.g. car.owner).
+let playerOwningGlobals = null;
 function asPlayer(v, fn) {
   if (!MP) return fn();                            // local: the globals ARE the single player's
   if (typeof v === 'string') { let f = null; for (const q of MP) if (q.id === v) { f = q; break; } v = f; }
   if (!v) return fn();                             // unknown author: no rebinding
-  // On the server we ALWAYS marshal (even if v is the already-bound player): downT/
-  // downKind/cash and the wanted level are globals separate from the object, and the
-  // functions (startDown/die/commitCrime) write to those.
+  if (v === playerOwningGlobals) return fn();
   const sp = player, sdt = downT, sdk = downKind, sc = cash, swh = wantedHeat, sw = wanted, scc = crimeCd;
+  const previousOwner = playerOwningGlobals;
   player = v; downT = v.downT | 0; downKind = v.downKind; cash = v.cash | 0;
   wantedHeat = v.wantedHeat || 0; wanted = v.wanted | 0; crimeCd = v.crimeCd | 0;
+  playerOwningGlobals = v;
   try { return fn(); }
   finally {
     v.downT = downT; v.downKind = downKind; v.cash = cash;
     v.wantedHeat = wantedHeat; v.wanted = wanted; v.crimeCd = crimeCd;
     player = sp; downT = sdt; downKind = sdk; cash = sc; wantedHeat = swh; wanted = sw; crimeCd = scc;
+    playerOwningGlobals = previousOwner;
   }
 }
 

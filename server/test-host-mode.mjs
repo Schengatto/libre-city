@@ -38,6 +38,11 @@ const SHORT_MATCH_MINUTES = 0.05;
 const MATCH_END_TIMEOUT_MS = 8000;
 const HOST_SCORE = 300;
 const GUEST_SCORE = 40;
+const PUNCH_TIMEOUT_MS = 30_000;
+const PUNCH_INPUT_MS = 50;
+const PUNCH_OFFSET_PX = 10;
+const PUNCH_BUTTONS = 3;
+const POLICE_OFF_KNOCKOUTS = 3;
 const LEADERBOARD_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'lc-host-lb-'));
 
 function startServer(port, simMode, label) {
@@ -141,6 +146,40 @@ async function openPausedHostLink(code, token) {
   await waitFor(() => findType(ws, 'hoststart'));
   ws.pause();
   return ws;
+}
+
+async function punchPedestrians(ws, isDone) {
+  const deadline = performance.now() + PUNCH_TIMEOUT_MS;
+  const result = { done: false, maxWanted: 0, maxCops: 0, knockedPeds: 0 };
+  const knockedPedIds = new Set();
+  let seq = 0;
+  let checkedSnapshots = 0;
+  while (performance.now() < deadline) {
+    const snapshots = ws.inbox.filter(message => message.t === 'w');
+    for (const snapshot of snapshots.slice(checkedSnapshots)) {
+      result.maxWanted = Math.max(result.maxWanted, snapshot.me.wanted);
+      result.maxCops = Math.max(result.maxCops, snapshot.peds.filter(p => p.role === 'cop').length);
+      for (const ped of snapshot.peds) if (ped.role === 'civ' && ped.ko) knockedPedIds.add(ped.id);
+      result.knockedPeds = knockedPedIds.size;
+      if (isDone(snapshot, result)) result.done = true;
+    }
+    checkedSnapshots = snapshots.length;
+    if (result.done) return result;
+    const snapshot = snapshots[snapshots.length - 1];
+    if (snapshot) {
+      let target = null, bestDistance = Infinity;
+      for (const ped of snapshot.peds) {
+        if (ped.role !== 'civ' || ped.ko) continue;
+        const distance = Math.hypot(ped.x - snapshot.me.x, ped.y - snapshot.me.y);
+        if (distance < bestDistance) { bestDistance = distance; target = ped; }
+      }
+      const input = { t: 'i', seq: ++seq, ax: 0, ay: 0, aim: 0, b: 0, px: snapshot.me.x, py: snapshot.me.y };
+      if (target) { input.px = target.x - PUNCH_OFFSET_PX; input.py = target.y; input.b = PUNCH_BUTTONS; }
+      send(ws, input);
+    }
+    await wait(PUNCH_INPUT_MS);
+  }
+  return result;
 }
 
 const closeAll = sockets =>{ for (const ws of sockets) { try { ws.close(); } catch {} } };
@@ -525,6 +564,39 @@ try {
   check(await waitFor(() => findType(serverModeLink, 'pong')) && !serverModeLink.closed, 'a hostlink sent on a game socket is ignored in server mode');
   check(!findType(serverModeLink, 'hoststart'), 'no hoststart in server mode');
   closeAll([serverModePlayer.ws, serverModeLink]);
+
+  console.log('police room option');
+  const defaultPoliceHost = await createRoom('POLD01', 'Dora');
+  check(defaultPoliceHost.ok && defaultPoliceHost.ok.police === true, 'ok.police defaults to true');
+  const junkPoliceHost = await enter(PORT, { t: 'create', code: 'POLJ01', name: 'Jim', max: 8, minutes: 0, police: 'off' });
+  check(junkPoliceHost.ok && junkPoliceHost.ok.police === true, 'a non-boolean police value falls back to true');
+  const policeOffHost = await enter(PORT, { t: 'create', code: 'POLF01', name: 'Fred', max: 8, minutes: 0, police: false });
+  check(policeOffHost.ok && policeOffHost.ok.police === false, 'ok.police is false for a police-off room');
+  const policeOffGuest = await joinRoom('POLF01', 'Gina');
+  check(policeOffGuest.ok && policeOffGuest.ok.police === false, 'a joining guest gets ok.police false');
+  const policeOffLink = await openHostLink('POLF01', policeOffHost.token);
+  const policeOffStart = await waitFor(() => findType(policeOffLink, 'hoststart'));
+  check(policeOffStart && policeOffStart.police === false, 'hoststart carries police false');
+  send(policeOffHost.ws, { t: 'resign' });
+  const policeOffNewHost = await waitFor(() => findType(policeOffGuest.ws, 'host'));
+  check(policeOffNewHost && policeOffNewHost.id === policeOffGuest.id, 'the guest becomes host after the resign');
+  const migratedLink = await openHostLink('POLF01', policeOffGuest.token);
+  const migratedStart = await waitFor(() => findType(migratedLink, 'hoststart'));
+  check(migratedStart && migratedStart.police === false, 'after migration hoststart still carries police false');
+  closeAll([defaultPoliceHost.ws, junkPoliceHost.ws, policeOffHost.ws, policeOffGuest.ws, policeOffLink, migratedLink]);
+
+  console.log('police room option in server mode');
+  const serverPoliceOn = await enter(SERVER_MODE_PORT, { t: 'create', code: 'SPON01', name: 'Olly', max: 8, minutes: 0 });
+  const policeOnResult = await punchPedestrians(serverPoliceOn.ws, snapshot => snapshot.me.wanted >= 1 && snapshot.peds.some(p => p.role === 'cop'));
+  console.log('  ', JSON.stringify(policeOnResult));
+  check(policeOnResult.done, 'server sim: punching pedestrians brings stars and cops');
+  const serverPoliceOff = await enter(SERVER_MODE_PORT, { t: 'create', code: 'SPOF01', name: 'Ophelia', max: 8, minutes: 0, police: false });
+  check(serverPoliceOff.ok && serverPoliceOff.ok.police === false, 'server mode ok.police is false for a police-off room');
+  const policeOffResult = await punchPedestrians(serverPoliceOff.ws, (snapshot, progress) => progress.knockedPeds >= POLICE_OFF_KNOCKOUTS);
+  console.log('  ', JSON.stringify(policeOffResult));
+  check(policeOffResult.done && policeOffResult.maxWanted === 0 && policeOffResult.maxCops === 0,
+    'server sim with the police off: knockouts bring no stars and no cops');
+  closeAll([serverPoliceOn.ws, serverPoliceOff.ws]);
 
   await wait(200);
   console.log(failures ? `\n${failures} host-mode checks FAILED` : '\nall host-mode checks passed');

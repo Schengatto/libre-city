@@ -108,6 +108,7 @@
     switch (message.t) {
       case 'hoststart':
         if (tickTimer) return;
+        sim.setPolice(message.police !== false);
         startRoom(Array.isArray(message.roster) ? message.roster : [], message.state);
         beginTicking();
         post({ type: 'ready' });

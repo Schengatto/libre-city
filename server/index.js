@@ -372,6 +372,7 @@ function startSim(room) {
   if (!createRoomSim) return;                 // module missing: stays a Phase 1 relay
   try { room.sim = makeSim(room.code); }
   catch (e) { console.error('sim non avviata per', room.code, '—', e.message); room.sim = null; return; }
+  room.sim.setPolice(room.police);
   room.simTick = 0;
   // Fixed-step accumulator (like the client): the world advances at EXACTLY SIM_HZ steps per
   // wall-clock second even when Node's timer is imprecise or late. Without it,
@@ -508,6 +509,7 @@ function handleHostLink(ws, m) {
     t: 'hoststart',
     roster: [...room.players.values()].map(pp => ({ id: pp.id, name: pp.name, shirtIdx: pp.shirtIdx })),
     state: room.hostState?.players || [],
+    police: room.police,
   });
   log('hostlink', room.code, p.id);
 }
@@ -601,7 +603,7 @@ function addPlayer(ws, room, hello) {
   ensureHost(room);
   bindWs(ws, room, p);
   sendRaw(ws, {
-    t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes,
+    t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes, police: room.police,
     left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, ...handshakeSimFields(room),
     build: serverBuild(),
   });
@@ -651,7 +653,7 @@ function createRoom(ws, m) {
   if (existing) destroyRoom(existing);
   const room = {
     code, pass: String(m.pass || ''), max: clamp(+m.max || 4, 2, MAX_PLAYERS_CAP),
-    minutes: Math.max(0, +m.minutes || 0), startAt: now(),
+    minutes: Math.max(0, +m.minutes || 0), police: typeof m.police === 'boolean' ? m.police : true, startAt: now(),
     idSeq: 0, players: new Map(), endTimer: null, ended: false,
     hostId: null, hostLink: null, hostBindStartedAt: 0, hostLastFrameAt: 0, hostState: null, resigned: new Set(), hostWatchTimer: null,
   };
@@ -681,7 +683,7 @@ function handleJoin(ws, m) {
       ensureHost(room);
       bindWs(ws, room, p);
       sendRaw(ws, {
-        t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes,
+        t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes, police: room.police,
         left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, resumed: true, ...handshakeSimFields(room),
         build: serverBuild(),
       });
