@@ -81,6 +81,7 @@ function drawWorldStatic() {
     else drawAsphaltGrain(px, py, x, y);
     if (tileAt(x, y - 1) === BUILDING) { ctx.fillStyle = 'rgba(0,0,0,.20)'; ctx.fillRect(px, py, T, 5); }
     if (tileAt(x - 1, y) === BUILDING) { ctx.fillStyle = 'rgba(0,0,0,.14)'; ctx.fillRect(px, py, 5, T); }
+    drawBridgeParapets(px, py, x, y);
   }
   drawMarkings();
   drawCrosswalks();
@@ -133,19 +134,19 @@ function drawRoads() {
   const nodeVisible = (n, r) => !(n.x + r < camX || n.x - r > camX + vw || n.y + r < camY || n.y - r > camY + vh);
   // --- Pavement band ---
   ctx.strokeStyle = '#9aa0a8'; ctx.lineWidth = 2 * SWHALF; ctx.beginPath();
-  for (const e of edges) if (!e.dead && edgeVisible(e, pad)) traceEdge(e);
+  for (const e of edges) if (edgeVisible(e, pad)) traceEdge(e);
   ctx.stroke();
   ctx.fillStyle = '#9aa0a8';
   for (const n of nodes) if (n.live !== false && nodeVisible(n, SWHALF)) { ctx.beginPath(); ctx.arc(n.x - camX, n.y - camY, HALF_ROAD * 1.05 + SW_BAND, 0, TAU); ctx.fill(); }
   // --- Kerb (dark ring between paving and asphalt) ---
   ctx.strokeStyle = '#767d87'; ctx.lineWidth = 2 * HALF_ROAD + 7; ctx.beginPath();
-  for (const e of edges) if (!e.dead && edgeVisible(e, pad)) traceEdge(e);
+  for (const e of edges) if (edgeVisible(e, pad)) traceEdge(e);
   ctx.stroke();
   ctx.fillStyle = '#767d87';
   for (const n of nodes) if (n.live !== false && nodeVisible(n, SWHALF)) { ctx.beginPath(); ctx.arc(n.x - camX, n.y - camY, HALF_ROAD * 1.05 + 3.5, 0, TAU); ctx.fill(); }
   // --- Asphalt ---
   ctx.strokeStyle = '#33363d'; ctx.lineWidth = 2 * HALF_ROAD; ctx.beginPath();
-  for (const e of edges) if (!e.dead && edgeVisible(e, pad)) traceEdge(e);
+  for (const e of edges) if (edgeVisible(e, pad)) traceEdge(e);
   ctx.stroke();
   ctx.fillStyle = '#33363d';
   for (const n of nodes) if (n.live !== false && nodeVisible(n, SWHALF)) { ctx.beginPath(); ctx.arc(n.x - camX, n.y - camY, HALF_ROAD * 1.05, 0, TAU); ctx.fill(); }
@@ -314,6 +315,15 @@ function drawWaterTile(px, py, x, y) {
       ctx.fillStyle = '#b4b9c0'; edgeBand(px, py, dx, dy, 3);
       ctx.fillStyle = 'rgba(255,255,255,.35)'; edgeBand(px, py, dx, dy, 1);
     }
+  }
+}
+function drawBridgeParapets(px, py, x, y) {
+  const island = armyZone && armyZone.island;
+  if (!island || x < island.x0 || x > island.x1 || y < island.y0 || y > island.y1) return;
+  for (const [dx, dy] of WATER_SIDES) {
+    if (tileAt(x + dx, y + dy) !== WATER) continue;
+    ctx.fillStyle = 'rgba(0,0,0,.35)'; edgeBand(px, py, dx, dy, 5);
+    ctx.fillStyle = '#c9c4b8'; edgeBand(px, py, dx, dy, 3.5);
   }
 }
 function treeInPlanter(x, y) {
@@ -1173,12 +1183,11 @@ function drawFacade(b, px, py, W, H, L) {
     // North/west: the door stays hidden behind the roof.
   }
 }
-// Dashed centre lines following the curve of each road.
+// Dashed centre lines along each road.
 function drawMarkings() {
   ctx.save();
   ctx.strokeStyle = '#e8c84a'; ctx.lineWidth = 2; ctx.setLineDash([12, 14]); ctx.lineCap = 'butt';
   for (const e of edges) {
-    if (e.dead) continue;                             // road suppressed by the military base
     const A = nodes[e.a], B = nodes[e.b];
     const minx = Math.min(A.x, B.x, e.cx) - 40, maxx = Math.max(A.x, B.x, e.cx) + 40;
     const miny = Math.min(A.y, B.y, e.cy) - 40, maxy = Math.max(A.y, B.y, e.cy) + 40;

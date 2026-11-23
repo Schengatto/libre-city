@@ -69,61 +69,70 @@ for (let i = 0; i < 300; i++) {
 }
 ok(spawnedInside === 0, 'i punti di spawn a piedi escludono la base (' + spawnedInside + ')');
 
-console.log('5) base fuori città, oltre il fiume, raggiungibile solo dal ponte');
-function checkOutskirtsBase(roomSim, code) {
-  const armyBase = roomSim._landmarks().find(l => l.type === 'army');
-  const kinds = roomSim._tileKinds(), cityW = roomSim._cityWidth(), { nodes, edges } = roomSim._roadGraph();
+
+console.log('5) base on an island inside the city, reachable only over the bridge');
+const ISLAND_BANKS = 5;
+const armyOf = roomSim => roomSim._landmarks().find(l => l.type === 'army');
+function ringTiles(base, distance) {
+  const tiles = [], x0 = base.x0 - distance, y0 = base.y0 - distance, x1 = base.x1 + distance, y1 = base.y1 + distance;
+  for (let x = x0; x < x1; x++) tiles.push([x, y0]);
+  for (let y = y0; y < y1; y++) tiles.push([x1, y]);
+  for (let x = x1; x > x0; x--) tiles.push([x, y1]);
+  for (let y = y1; y > y0; y--) tiles.push([x0, y]);
+  return tiles;
+}
+function checkIslandBase(roomSim, code) {
+  const armyBase = armyOf(roomSim), kinds = roomSim._tileKinds();
   const { worldW, worldH } = roomSim.worldInfo(), mapW = worldW / T, mapH = worldH / T;
-  ok(armyBase.x0 > cityW && armyBase.x1 < mapW, code + ': la base sta interamente oltre il bordo della città');
+  ok(armyBase.x0 >= 8 && armyBase.y0 >= 8 && armyBase.x1 <= mapW - 8 && armyBase.y1 <= mapH - 8, code + ': the base fence lies inside the city');
 
-  const riverRows = [];
-  for (let y = 0; y < mapH; y++) if (roomSim._tileAt(cityW, y) !== kinds.WATER) riverRows.push(y);
-  const contiguous = riverRows.every((row, i) => i === 0 || row === riverRows[i - 1] + 1);
-  ok(riverRows.length >= 3 && riverRows.length <= 7 && contiguous,
-     code + ': il fiume è acqua da bordo a bordo tranne il ponte (' + riverRows.length + ' righe)');
-
-  const isCity = node => node.x < cityW * T;
-  const crossings = edges.filter(e => !e.dead && isCity(nodes[e.a]) !== isCity(nodes[e.b]));
-  ok(crossings.length === 1, code + ': una sola strada attraversa il fiume (' + crossings.length + ')');
-  const bridge = crossings[0];
-  const bridgeRow = Math.floor(nodes[bridge.a].y / T);
-  ok(riverRows.includes(bridgeRow) && roomSim._tileAt(cityW, bridgeRow) === kinds.ROAD, code + ': il varco nel fiume è la carreggiata del ponte');
-
-  const islandEnd = isCity(nodes[bridge.a]) ? nodes[bridge.b] : nodes[bridge.a];
-  ok(Math.hypot(islandEnd.x - armyBase.gate.x, islandEnd.y - armyBase.gate.y) < 5 * T, code + ': il ponte arriva davanti al cancello');
-  const reachedByRoad = new Set([nodes.indexOf(islandEnd)]);
-  const roadQueue = [...reachedByRoad];
-  while (roadQueue.length) {
-    const n = roadQueue.pop();
-    for (const ei of nodes[n].edges) {
-      if (edges[ei].dead) continue;
-      const next = edges[ei].a === n ? edges[ei].b : edges[ei].a;
-      if (!reachedByRoad.has(next)) { reachedByRoad.add(next); roadQueue.push(next); }
-    }
+  const gateX = Math.floor(armyBase.gate.x / T), gateY = Math.floor(armyBase.gate.y / T);
+  const onGateSide = gateY === armyBase.y0 ? (x, y) => y < armyBase.y0
+    : gateY === armyBase.y1 ? (x, y) => y > armyBase.y1
+    : gateX === armyBase.x0 ? x => x < armyBase.x0 : x => x > armyBase.x1;
+  const bridgeTiles = [];
+  let moatIntact = true;
+  for (const distance of [2, 3, 4]) {
+    const ring = ringTiles(armyBase, distance), dry = ring.map(([x, y]) => roomSim._tileAt(x, y) !== kinds.WATER);
+    const runStarts = dry.filter((isDry, k) => isDry && !dry[(k + ring.length - 1) % ring.length]).length;
+    const dryTiles = ring.filter((_, k) => dry[k]);
+    const deckOnly = dryTiles.every(([x, y]) => [kinds.ROAD, kinds.SIDEWALK].includes(roomSim._tileAt(x, y)) && onGateSide(x, y));
+    if (runStarts !== 1 || !deckOnly) moatIntact = false;
+    bridgeTiles.push(...dryTiles);
   }
-  ok([...reachedByRoad].some(n => isCity(nodes[n]) && nodes[n].x < (cityW - 20) * T), code + ': dalla città si arriva al cancello in auto, passando dal ponte');
+  ok(moatIntact, code + ': the moat is water all round except one bridge on the gate side (' + bridgeTiles.length + ' tiles)');
 
-  const passable = (x, y) => { const t = roomSim._tileAt(x, y); return t !== kinds.BUILDING && t !== kinds.TREE && t !== kinds.WATER; };
-  const reachesCityOnFoot = blocked => {
-    const start = [Math.floor(armyBase.gate.x / T), Math.floor(armyBase.gate.y / T)];
-    const seen = new Uint8Array(mapW * mapH), queue = [start];
-    seen[start[1] * mapW + start[0]] = 1;
+  const bridgeKeys = new Set(bridgeTiles.map(([x, y]) => y * mapW + x));
+  const walkable = [kinds.ROAD, kinds.SIDEWALK, kinds.ALLEY, kinds.GRASS];
+  const outsideIsland = (x, y) => x < armyBase.x0 - ISLAND_BANKS || x > armyBase.x1 + ISLAND_BANKS ||
+                                  y < armyBase.y0 - ISLAND_BANKS || y > armyBase.y1 + ISLAND_BANKS;
+  const reachesCityRoad = blockBridge => {
+    const seen = new Uint8Array(mapW * mapH), queue = [[gateX, gateY]];
+    seen[gateY * mapW + gateX] = 1;
     while (queue.length) {
       const [x, y] = queue.pop();
-      if (x < cityW) return true;
+      if (outsideIsland(x, y) && roomSim._tileAt(x, y) === kinds.ROAD) return true;
       for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
-        if (nx < 0 || ny < 0 || nx >= mapW || ny >= mapH || seen[ny * mapW + nx]) continue;
-        seen[ny * mapW + nx] = 1;
-        if (passable(nx, ny) && !blocked(nx, ny)) queue.push([nx, ny]);
+        const key = ny * mapW + nx;
+        if (nx < 0 || ny < 0 || nx >= mapW || ny >= mapH || seen[key]) continue;
+        seen[key] = 1;
+        if (walkable.includes(roomSim._tileAt(nx, ny)) && !(blockBridge && bridgeKeys.has(key))) queue.push([nx, ny]);
       }
     }
     return false;
   };
-  ok(reachesCityOnFoot(() => false), code + ': dal cancello si raggiunge la città a piedi');
-  ok(!reachesCityOnFoot((x, y) => x === cityW && riverRows.includes(y)), code + ': senza il ponte la base è isolata');
+  ok(reachesCityRoad(false), code + ': from the gate a city road is reachable on foot');
+  ok(!reachesCityRoad(true), code + ': without the bridge the base is cut off');
 }
-checkOutskirtsBase(sim, 'ARMY01');
-for (const code of ['MARMY2', 'GARMY3']) checkOutskirtsBase(createRoomSim(code), code);
+checkIslandBase(sim, 'ARMY01');
+for (const code of ['PABC12', 'MABC12', 'GABC12']) checkIslandBase(createRoomSim(code), code);
+
+const seededBases = ['PAAA01', 'PAAA02', 'PAAA03', 'PAAA04', 'PAAA05', 'PAAA06'].map(code => {
+  const roomSim = createRoomSim(code), armyBase = armyOf(roomSim);
+  return { cx: armyBase.cx, cy: armyBase.cy, worldW: roomSim.worldInfo().worldW };
+});
+ok(new Set(seededBases.map(b => b.cx + ',' + b.cy)).size > 1, 'the base position changes with the seed');
+ok(seededBases.some(b => b.cx < b.worldW * 2 / 3), 'the base is not always in the right third of the map');
 
 console.log(`\n${fail === 0 ? '✅' : '❌'}  ${pass} ok, ${fail} fail`);
 process.exit(fail === 0 ? 0 : 1);

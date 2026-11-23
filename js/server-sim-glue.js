@@ -329,7 +329,7 @@ var __sim = {
   _tileAt(tx, ty) { return tileAt(tx, ty); },
   _randomWalkNear(x, y, rmin, rmax) { return randomWalkNear(x, y, rmin, rmax); },
   _roadGraph() { return { nodes, edges }; },
-  _cityWidth() { return CITY_W; },
+  _cityWidth() { return MAP_W; },
   _tileKinds() { return { ROAD, SIDEWALK, BUILDING, GRASS, TREE, WATER, ALLEY, COURT }; },
   // --- Diagnostics for the tests ---
   worldInfo() {

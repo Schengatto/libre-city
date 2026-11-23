@@ -356,7 +356,7 @@ function parkServiceCar(lm) {
   if (sp) cars.push(makeServiceCar(lm.type, sp));
 }
 
-// ---------- Traffic spawned on a network edge (follows the curved road) ----------
+// ---------- Traffic spawned on a network edge (follows the road) ----------
 function makeTrafficCar(edge, ed, t) {
   const c = makeCar(0, 0, 'traffic');
   c.edge = edge; c.ed = ed; c.t = t; c.turnCd = rndi(20, 60);
@@ -366,7 +366,6 @@ function makeTrafficCar(edge, ed, t) {
 function spawnTrafficNear(cx, cy, rmin, rmax) {
   for (let i = 0; i < 40; i++) {
     const ei = rndi(0, edges.length - 1), mp = edgePos(edges[ei], 0.5);
-    if (edges[ei].dead) continue;                     // road suppressed by the military base
     const d = dist(mp.x, mp.y, cx, cy);
     if (d < rmin || d > rmax) continue;
     const ed = Math.random() < 0.5 ? 1 : -1;

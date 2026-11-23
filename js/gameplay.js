@@ -555,7 +555,6 @@ function signalStop(c) {
 function enterNode(c, nodeIdx) {
   const node = nodes[nodeIdx], inDir = c.dir, outs = [];
   for (const ei of node.edges) {
-    if (edges[ei].dead) continue;                           // suppressed road: cannot be taken
     if (ei === c.edge && node.edges.length > 1) continue;   // avoid a U-turn if there are alternatives
     const e = edges[ei], startsHere = e.a === nodeIdx, ed = startsHere ? 1 : -1;
     const tan = edgeTangent(e, startsHere ? 0 : 1);
