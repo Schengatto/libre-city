@@ -257,6 +257,13 @@ function snapshotFor(id) {
 }
 
 // ===== Control API exposed to the Node harness (top-level var ⇒ property of the global) =====
+const RESTORABLE_NUMBER_FIELDS = {
+  x: () => ['x', 0, WORLD_W, false], y: () => ['y', 0, WORLD_H, false],
+  hp: () => ['health', 0, 100, false], cash: () => ['cash', 0, 1e9, true],
+  k: () => ['kills', 0, 1e9, true], d: () => ['deaths', 0, 1e9, true], s: () => ['score', 0, 1e9, true],
+  stk: () => ['streak', 0, 1e9, true], b: () => ['bounty', 0, 1e9, true],
+  wanted: () => ['wanted', 0, 5, true], wantedHeat: () => ['wantedHeat', 0, 5.99, false],
+};
 var __sim = {
   addPlayer(name, shirtIdx, id) { const pl = makeSimPlayer(name, shirtIdx); if (id) pl.id = id; players.push(pl); return pl.id; },
   removePlayer(id) {
@@ -298,12 +305,17 @@ var __sim = {
     }));
   },
   restorePlayer(id, name, shirtIdx, state) {
+    if (typeof id !== 'string' || !id) return;
+    __sim.removePlayer(id);
     __sim.addPlayer(name, shirtIdx, id);
     const pl = playerById(id);
-    const fieldByStateKey = { x: 'x', y: 'y', hp: 'health', cash: 'cash', k: 'kills', d: 'deaths', s: 'score',
-      stk: 'streak', b: 'bounty', wp: 'weaponIdx', wanted: 'wanted', wantedHeat: 'wantedHeat' };
-    for (const key in fieldByStateKey) if (state && state[key] != null) pl[fieldByStateKey[key]] = state[key];
-    if (state && state.own) pl.owned = state.own.slice();
+    if (!state || typeof state !== 'object') return;
+    for (const key in RESTORABLE_NUMBER_FIELDS) {
+      const [field, min, max, integer] = RESTORABLE_NUMBER_FIELDS[key](), value = state[key];
+      if (typeof value === 'number' && Number.isFinite(value)) pl[field] = clamp(integer ? Math.trunc(value) : value, min, max);
+    }
+    if (Number.isInteger(state.wp) && state.wp >= 0 && state.wp < WEAPONS.length) pl.weaponIdx = state.wp;
+    if (Array.isArray(state.own)) pl.owned = WEAPONS.map((w, i) => state.own[i] === true || !w.price);
   },
   _player(id) { return playerById(id); },   // tests only: direct reference to the player object
   _spawnPed(x, y, role) { const p = makePed(x, y, role); peds.push(p); return p; },   // tests only
