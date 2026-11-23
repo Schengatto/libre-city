@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import NodeWebSocket from 'ws';
 
@@ -22,6 +23,12 @@ const HOST_LINK_PATH = '/hostlink';
 const BACKLOG_FRAME_COUNT = 24;
 const BACKLOG_FRAME_BYTES = 900_000;
 const BACKLOG_SETTLE_MS = 1500;
+const OLD_BUILD = 'old';
+const SHORT_MATCH_MINUTES = 0.05;
+const MATCH_END_TIMEOUT_MS = 8000;
+const HOST_SCORE = 300;
+const GUEST_SCORE = 40;
+const LEADERBOARD_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'lc-host-lb-'));
 
 function startServer(port, simMode, label) {
   const child = spawn('node', ['index.js'], {
@@ -29,6 +36,8 @@ function startServer(port, simMode, label) {
     env: {
       ...process.env, PORT: String(port), HOST: '127.0.0.1', STATIC_DIR: '',
       LC_BUILD: BUILD, SIM_MODE: simMode, GRACE_MS: String(GRACE_MS), HOST_BIND_MS: String(HOST_BIND_MS),
+      LEADERBOARD_FILE: path.join(LEADERBOARD_DIR, `${label}.json`),
+      LEADERBOARD_QUALIFY_MS: '200', LEADERBOARD_MIN_SESSION_MS: '50',
     },
     stdio: ['ignore', 'ignore', 'pipe'],
   });
@@ -310,6 +319,65 @@ try {
     `the stall election comes HOST_STALL_MS after the first frame (${Math.round(silenceAfterFirstFrameMs)} ms)`);
   closeAll([slowHost.ws, slowGuest.ws, guestLink]);
 
+  console.log('leaderboard from hst');
+  const scoringHost = await enter(PORT, { t: 'create', code: 'LBHST1', name: 'Lena', max: 8, minutes: SHORT_MATCH_MINUTES });
+  const scoringLink = await openHostLink('LBHST1', scoringHost.token);
+  await waitFor(() => findType(scoringLink, 'hoststart'));
+  scoringLink.send(JSON.stringify({
+    t: 'hst',
+    players: [{ id: scoringHost.id, s: HOST_SCORE }],
+    scores: [{ id: scoringHost.id, s: HOST_SCORE, k: 3, d: 1 }, null, { id: 7, s: 1e9 }],
+  }));
+  check(await waitFor(() => findType(scoringHost.ws, 'end'), MATCH_END_TIMEOUT_MS), 'the short match ends');
+  const board = await (await fetch(`http://127.0.0.1:${PORT}/leaderboard?limit=100`)).json();
+  const lenaRow = board.top.find(row => row.name === 'Lena');
+  check(lenaRow && lenaRow.score === HOST_SCORE && lenaRow.kills === 3 && lenaRow.deaths === 1,
+    'the leaderboard records the hst score of the host');
+  closeAll([scoringHost.ws, scoringLink]);
+
+  console.log('fallback when nobody eligible');
+  const oldCreator = await enter(PORT, { t: 'create', code: 'FALL01', name: 'Olga', max: 8, minutes: 0, build: OLD_BUILD });
+  check(oldCreator.ok && oldCreator.ok.host === null && oldCreator.ok.sim === true, 'ok.host is null when no player has the server build');
+  const oldGuest = await joinRoom('FALL01', 'Otto', 'desktop', OLD_BUILD);
+  check(oldGuest.ok && oldGuest.ok.host === null, 'a later old-build guest also gets ok.host null');
+  check(await waitFor(() => findType(oldCreator.ws, 'w')) && await waitFor(() => findType(oldGuest.ws, 'w')),
+    'both players receive w snapshots from the server sim');
+  const guestSnapshot = findType(oldGuest.ws, 'w');
+  check(guestSnapshot && guestSnapshot.me && guestSnapshot.me.sco === 0 && guestSnapshot.sc.length === 2,
+    'the fallback sim tracks both players once');
+  closeAll([oldCreator.ws, oldGuest.ws]);
+
+  console.log('fallback restores the hst state');
+  const resigningHost = await createRoom('FALL02', 'Rita');
+  const oldPeer = await joinRoom('FALL02', 'Pete', 'desktop', OLD_BUILD);
+  const resigningLink = await openHostLink('FALL02', resigningHost.token);
+  await waitFor(() => findType(resigningLink, 'hoststart'));
+  resigningLink.send(JSON.stringify({
+    t: 'hst',
+    players: [{ id: resigningHost.id, s: HOST_SCORE, cash: 777 }, { id: oldPeer.id, s: GUEST_SCORE }],
+    scores: [{ id: resigningHost.id, s: HOST_SCORE }, { id: oldPeer.id, s: GUEST_SCORE }],
+  }));
+  await wait(200);
+  send(resigningHost.ws, { t: 'resign' });
+  const fallbackNotice = await waitFor(() => findType(oldPeer.ws, 'host'));
+  check(fallbackNotice && fallbackNotice.id === null, 'the peer is told there is no host any more');
+  check(await waitFor(() => resigningLink.closed), 'the resigned host link is closed');
+  const hostSnapshot = await waitFor(() => findType(resigningHost.ws, 'w'));
+  check(hostSnapshot && hostSnapshot.me.sco === HOST_SCORE && hostSnapshot.me.cash === 777,
+    'the fallback sim restores the host from the last hst');
+  const peerSnapshot = await waitFor(() => findType(oldPeer.ws, 'w'));
+  check(peerSnapshot && peerSnapshot.me.sco === GUEST_SCORE, 'the fallback sim restores the peer from the last hst');
+  check(peerSnapshot && Array.isArray(peerSnapshot.sc) && peerSnapshot.sc.length === 2, 'each player is in the fallback sim exactly once');
+  closeAll([resigningHost.ws, oldPeer.ws, resigningLink]);
+
+  console.log('resign elects another');
+  const quittingHost = await createRoom('RESG01', 'Quinn');
+  const nextHost = await joinRoom('RESG01', 'Nora', 'touch');
+  send(quittingHost.ws, { t: 'resign' });
+  const resignElection = await waitFor(() => findType(nextHost.ws, 'host'));
+  check(resignElection && resignElection.id === nextHost.id, 'resign elects the other eligible player');
+  closeAll([quittingHost.ws, nextHost.ws]);
+
   console.log('server mode keeps the old handshake');
   const serverModePlayer = await enter(SERVER_MODE_PORT, { t: 'create', code: 'SRVM01', name: 'Sam', max: 8, minutes: 0 });
   check(serverModePlayer.ok && serverModePlayer.ok.sim === true && !('host' in serverModePlayer.ok), 'ok has sim true and no host field');
@@ -330,5 +398,6 @@ try {
   hostServer.kill('SIGTERM');
   serverModeServer.kill('SIGTERM');
   await wait(200);
+  try { fs.rmSync(LEADERBOARD_DIR, { recursive: true, force: true }); } catch {}
   process.exit(failures ? 1 : 0);
 }

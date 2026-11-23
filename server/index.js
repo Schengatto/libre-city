@@ -172,8 +172,11 @@ function playedMs(p) {
 // The score is taken from the room's AUTHORITATIVE simulation. In the Phase 1 relay fallback
 // (no sim) the server does not own the score, so nothing is recorded: better a leaderboard
 // with a hole in it than one built on numbers a client reports about itself.
+function currentScores(room) {
+  return room.sim ? room.sim.scores() : room.hostState?.scores || room.finalScores;
+}
 function scoreOf(room, id) {
-  const list = room.sim ? room.sim.scores() : room.finalScores;
+  const list = currentScores(room);
   return (list && list.find(s => s.id === id)) || null;
 }
 function recordPlayer(room, p) {
@@ -189,7 +192,7 @@ function recordPlayer(room, p) {
 // Everyone still in the room. Called at the final whistle and at teardown; the scores are
 // snapshotted FIRST because stopSim() takes the simulation (and with it scores()) away.
 function recordAll(room) {
-  if (room.sim) room.finalScores = room.sim.scores();
+  room.finalScores = currentScores(room);
   for (const p of room.players.values()) recordPlayer(room, p);
 }
 
@@ -435,7 +438,21 @@ function closeHostLink(room) {
   room.hostLink = null;
   if (link) { try { link.close(); } catch {} }
 }
-function fallbackToServerSim(room) {}
+function fallbackToServerSim(room) {
+  if (!createRoomSim || room.sim || room.ended) return;
+  startSim(room);
+  if (!room.sim) return;
+  const savedRowById = new Map((room.hostState?.players || [])
+    .filter(row => row && typeof row.id === 'string').map(row => [row.id, row]));
+  for (const p of room.players.values()) {
+    const savedRow = savedRowById.get(p.id);
+    if (savedRow) room.sim.restorePlayer(p.id, p.name, p.shirtIdx, savedRow);
+    else room.sim.addPlayer(p.name, p.shirtIdx, p.id);
+  }
+  room.hostState = null;
+  broadcast(room, { t: 'host', id: null });
+  log('server sim fallback', room.code);
+}
 function electHost(room, excludeId) {
   const next = pickHost(room, excludeId);
   closeHostLink(room);
@@ -507,6 +524,14 @@ function onHostLinkHello(ws, data, isBinary) {
   if (m && m.t === 'hostlink') handleHostLink(ws, m);
   else { try { ws.close(); } catch {} }
 }
+function finiteOrZero(value) {
+  return Number.isFinite(value) ? value : 0;
+}
+function sanitizedHostScores(scores) {
+  if (!Array.isArray(scores)) return [];
+  return scores.filter(row => row && typeof row.id === 'string')
+    .map(row => ({ id: row.id, k: finiteOrZero(row.k), d: finiteOrZero(row.d), s: finiteOrZero(row.s) }));
+}
 function onHostLinkMessage(ws, data, isBinary) {
   const room = ws._hostRoom;
   if (isBinary || room.hostLink !== ws) return;
@@ -517,7 +542,7 @@ function onHostLinkMessage(ws, data, isBinary) {
   let m;
   try { m = JSON.parse(data); } catch { return; }
   if (!m || m.t !== 'hst') return;
-  room.hostState = { players: Array.isArray(m.players) ? m.players : [], scores: Array.isArray(m.scores) ? m.scores : [] };
+  room.hostState = { players: Array.isArray(m.players) ? m.players : [], scores: sanitizedHostScores(m.scores) };
 }
 function onHostLinkClose(ws) {
   const room = ws._hostRoom;
@@ -538,9 +563,9 @@ function addPlayer(ws, room, hello) {
     dev: deviceOf(hello), build: normalizedBuild(hello.build),
   };
   room.players.set(id, p);
+  if (room.sim) room.sim.addPlayer(p.name, p.shirtIdx, p.id);   // Phase 2: join the authoritative city
   ensureHost(room);
   bindWs(ws, room, p);
-  if (room.sim) room.sim.addPlayer(p.name, p.shirtIdx, p.id);   // Phase 2: join the authoritative city
   sendRaw(ws, {
     t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes,
     left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, ...handshakeSimFields(room),
