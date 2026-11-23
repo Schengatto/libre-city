@@ -1299,7 +1299,6 @@ function update() {
   if (gameMinutes > 0) {
     timeLeft--;
     if (timeLeft % 20 === 0) updateTimer();
-    // Single-player: the client calls time; in MP it waits for the server.
     if (timeLeft <= (authClient() ? -SERVER_END_GRACE_FRAMES : 0)) { endGame('time'); return; }
   }
   // Phase 2: with an authoritative server the client does not simulate the world, it
