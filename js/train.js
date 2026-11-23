@@ -20,11 +20,11 @@ const TRAIN_HORN_NEAR = 300, TRAIN_HORN_FAR = 370;
 
 // Train state: rebuilt every frame in updateTrainKinematics(); `segs` are the oriented
 // boxes (locomotive + carriages) with centre, heading, length and a locomotive flag.
-const train = { active: true, isTrain: true, x: 0, y: 0, s: 0, segs: [] };
+const train = { isTrain: true, x: 0, y: 0, s: 0, segs: [] };
 const railWrap = along => ((along % RAIL_LOOP_LEN) + RAIL_LOOP_LEN) % RAIL_LOOP_LEN;
 
-// Train position as a function of `frame` alone (no randomness: identical on every
-// client/server). Kinematics only — collisions live in trainCollide(), called AFTER
+// Train position as a function of `trainClock` alone (default `frame`; a client rendering
+// a server passes the snapshot tick): no randomness, identical on every client/server. Kinematics only — collisions live in trainCollide(), called AFTER
 // cars and players have moved so the wall is solid (no one-frame overlap). A client
 // rendering an authoritative server calls only this one (the server rules on impacts).
 function updateTrainKinematics(trainClock = frame) {

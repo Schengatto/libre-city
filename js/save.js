@@ -56,7 +56,8 @@ function applySave(s) {
   wanted = s.wanted | 0; wantedHeat = +s.wantedHeat || 0; crimeCd = s.crimeCd | 0;
   lightClock = s.lightClock | 0;
   const p = s.player || {};
-  player.x = p.x; player.y = p.y;
+  const onMap = p.x > 0 && p.y > 0 && p.x < WORLD_W && p.y < WORLD_H;
+  if (onMap && !boxHits(p.x, p.y, player.r, player.r)) { player.x = p.x; player.y = p.y; }
   player.health = clamp(p.health == null ? 100 : p.health, 1, 100);
   player.weaponIdx = clamp(p.weaponIdx | 0, 0, WEAPONS.length - 1);
   // Free weapons stay unlocked even if the save predates them.
