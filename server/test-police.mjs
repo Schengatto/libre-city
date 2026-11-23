@@ -125,5 +125,17 @@ console.log('a cop chases the wanted player, not a closer innocent');
   ok(angleGap(cop.facing, towardInnocent) > 0.6, 'the cop ignores the closer innocent');
 }
 
+console.log('a restored player keeps no wanted level when the police is off');
+{
+  const policeOffSim = createRoomSim('PRESTORE');
+  policeOffSim.setPolice(false);
+  policeOffSim.restorePlayer('p1', 'Host', 0, { wanted: 5, wantedHeat: 5.9 });
+  const restoredOff = policeOffSim._player('p1');
+  ok(restoredOff.wanted === 0 && restoredOff.wantedHeat === 0, 'police off: restored wanted level is zeroed');
+  const policeOnSim = createRoomSim('PRESTORE');
+  policeOnSim.restorePlayer('p1', 'Host', 0, { wanted: 5, wantedHeat: 5.9 });
+  ok(policeOnSim._player('p1').wanted === 5, 'police on: restored wanted level is kept');
+}
+
 console.log(`\n${pass} OK, ${fail} FAIL`);
 process.exit(fail ? 1 : 0);

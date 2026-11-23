@@ -316,6 +316,7 @@ var __sim = {
       const [field, min, max, integer] = RESTORABLE_NUMBER_FIELDS[key](), value = state[key];
       if (typeof value === 'number' && Number.isFinite(value)) pl[field] = clamp(integer ? Math.trunc(value) : value, min, max);
     }
+    if (!policeOn) { pl.wanted = 0; pl.wantedHeat = 0; }
     if (Number.isInteger(state.wp) && state.wp >= 0 && state.wp < WEAPONS.length) pl.weaponIdx = state.wp;
     if (Array.isArray(state.own)) pl.owned = WEAPONS.map((w, i) => state.own[i] === true || !w.price);
   },

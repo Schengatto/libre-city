@@ -196,10 +196,6 @@ function asPlayer(v, fn) {
   if (typeof v === 'string') { let f = null; for (const q of MP) if (q.id === v) { f = q; break; } v = f; }
   if (!v) return fn();                             // unknown author: no rebinding
   if (v === playerOwningGlobals) return fn();
-  // On the server we marshal even if v is the already-bound `player`, unless the globals are
-  // known to hold v's live state (playerOwningGlobals): downT/downKind/cash and the wanted
-  // level are globals separate from the object, and the functions (startDown/die/commitCrime)
-  // write to those.
   const sp = player, sdt = downT, sdk = downKind, sc = cash, swh = wantedHeat, sw = wanted, scc = crimeCd;
   const previousOwner = playerOwningGlobals;
   player = v; downT = v.downT | 0; downKind = v.downKind; cash = v.cash | 0;
