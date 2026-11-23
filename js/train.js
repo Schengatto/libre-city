@@ -27,8 +27,8 @@ const railWrap = along => ((along % RAIL_LOOP_LEN) + RAIL_LOOP_LEN) % RAIL_LOOP_
 // client/server). Kinematics only — collisions live in trainCollide(), called AFTER
 // cars and players have moved so the wall is solid (no one-frame overlap). A client
 // rendering an authoritative server calls only this one (the server rules on impacts).
-function updateTrainKinematics() {
-  const headS = railWrap(frame * TRAIN_SPEED), head = railPointAt(headS);
+function updateTrainKinematics(trainClock = frame) {
+  const headS = railWrap(trainClock * TRAIN_SPEED), head = railPointAt(headS);
   train.s = headS; train.x = head.x; train.y = head.y;
   train.segs.length = 0;
   let off = 0;

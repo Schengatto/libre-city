@@ -40,6 +40,7 @@ const net = {
   // ---- Phase 2: client of an AUTHORITATIVE SERVER ----
   authoritative: false,   // true = the server owns the world; here we only render it
   snap: null,             // last 'w' snapshot received
+  trainTick: null, trainTickFrame: 0,   // sim tick of the last snapshot + local frame it arrived on
   inSeq: 0,               // running id of the input sent
   firePending: false, enterEdge: false, hornEdge: false, weaponReq: null,  // one-shot actions → server
   wcars: new Map(), wpeds: new Map(),   // id → world entities (interpolated)
@@ -290,6 +291,7 @@ function netShutdown() {
   net.sock = null; net._open = null; net.hello = null; net.rejoin = null;
   net.players.clear(); net.looseCars.clear(); net.remoteCops.clear();
   net.mode = null; net.myId = null; net.token = null; net.clockLeft = null;
+  net.trainTick = null;
   net.score = 0; net.streak = 0; net.bounty = 0; updateBountyHud(0);
   document.body.classList.remove('mp');
   netRefreshBadge();
@@ -635,8 +637,16 @@ function netMakePlayerCar(cp) {
 }
 
 // A snapshot arrives: update the interpolation targets for the world and the ghosts.
+function netNoteTrainTick(m) {
+  if (!Number.isFinite(m.tick)) return;
+  net.trainTick = m.tick; net.trainTickFrame = frame;
+}
+function netTrainClock() {
+  return net.trainTick === null ? frame : net.trainTick + (frame - net.trainTickFrame);
+}
 function netOnSnapshot(m) {
   net.snap = m;
+  netNoteTrainTick(m);
   // --- World cars (traffic/police/parked/abandoned) ---
   const seen = new Set();
   for (const cp of m.cars) {
@@ -800,7 +810,7 @@ function netSendInput() {
 function updateNetClient() {
   applyTouchInput();                                   // mobile: pours the sticks into virtual keys/aim/fire (no-op on desktop)
   if (mClicked) net.firePending = true;                // remember the click (the server does the firing)
-  updateTrainKinematics();                             // train: kinematics only (the server rules on impacts)
+  updateTrainKinematics(netTrainClock());              // train: kinematics only, on the sim's clock (the server rules on impacts)
   netInterpWorld();                                    // world (traffic/pedestrians) from the snapshots
   netRebuildArrays();                                  // populates cars[]/peds[] (world + your own vehicle)
   netReconcileMe();                                    // health/cash/weapon/car/death from the server (NOT the position)

@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import vm from 'node:vm';
 import runtime from './sim-runtime.js';
 const { createRoomSim } = runtime;
 
@@ -94,6 +97,45 @@ for (const code of Object.keys(GRID_SIZES)) {
   const lx = dx * carriage.cos + dy * carriage.sin, ly = dy * carriage.cos - dx * carriage.sin;
   const outside = Math.abs(lx) >= carriage.w / 2 + car.colH || Math.abs(ly) >= TRAIN_BODY_H / 2 + car.colH;
   ok(sim._cars().includes(car) && outside, `${code}: a car overlapping a carriage is pushed out of it (local ${lx.toFixed(1)}, ${ly.toFixed(1)})`);
+}
+console.log('client train clock');
+{
+  const netSource = fs.readFileSync(path.join(runtime.JS_DIR, 'net.js'), 'utf8');
+  const clockSource = netSource.match(/^function netNoteTrainTick\([\s\S]*?^}\r?\nfunction netTrainClock\([\s\S]*?^}/m);
+  ok(!!clockSource, 'net.js defines the train clock helpers');
+  const makeClient = localFrame => {
+    const context = { net: { trainTick: null, trainTickFrame: 0 }, frame: localFrame };
+    vm.runInNewContext(clockSource[0], context);
+    context.noteSnapshot = snapshot => vm.runInContext('netNoteTrainTick', context)(snapshot);
+    context.clock = () => vm.runInContext('netTrainClock()', context);
+    return context;
+  };
+  const trainAt = (room, clock) => { room._setFrame(clock); return JSON.stringify(room._train().segs); };
+
+  const authority = createRoomSim('PABC12'), client = createRoomSim('PABC12');
+  authority.addPlayer('Tester', 0, 'p1');
+  const snapshotAt = tick => { authority._setFrame(tick); return authority.snapshotFor('p1'); };
+
+  const snapshot = snapshotAt(1234);
+  ok(snapshot.tick === 1234, 'the snapshot carries the sim tick');
+  const synced = makeClient(500);
+  synced.noteSnapshot(snapshot);
+  ok(synced.clock() === 1234, 'on the snapshot frame the client clock is the sim tick, not its local frame');
+  ok(trainAt(client, synced.clock()) === trainAt(authority, 1234), 'client train equals the sim train at the snapshot tick although the local frame differs');
+
+  synced.frame = 500 + 17;
+  ok(trainAt(client, synced.clock()) === trainAt(authority, 1234 + 17), 'between snapshots the client train advances with the local frames from the last tick');
+
+  synced.noteSnapshot(snapshotAt(5000));
+  ok(trainAt(client, synced.clock()) === trainAt(authority, 5000), 'a later snapshot re-aligns the client train, no drift');
+
+  const fresh = makeClient(321);
+  ok(fresh.clock() === 321, 'without a snapshot the clock is the local frame (single-player)');
+  fresh.noteSnapshot({ t: 'w' });
+  ok(fresh.clock() === 321, 'a snapshot without a tick leaves the clock on the local frame');
+
+  ok(/updateTrainKinematics\(netTrainClock\(\)\)/.test(netSource), 'updateNetClient drives the train from the snapshot clock');
+  ok(/function netOnSnapshot\(m\) \{\r?\n  net\.snap = m;\r?\n  netNoteTrainTick\(m\);/.test(netSource), 'netOnSnapshot reads the tick of every snapshot');
 }
 console.log('peace city: skipped, the server runtime cannot create one (PEACE_CITY reads localStorage); the railway does not depend on PEACE_CITY');
 
