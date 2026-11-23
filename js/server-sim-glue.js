@@ -300,6 +300,9 @@ var __sim = {
   _landmarks() { return landmarks; },
   _tileAt(tx, ty) { return tileAt(tx, ty); },
   _randomWalkNear(x, y, rmin, rmax) { return randomWalkNear(x, y, rmin, rmax); },
+  _roadGraph() { return { nodes, edges }; },
+  _cityWidth() { return CITY_W; },
+  _tileKinds() { return { ROAD, SIDEWALK, BUILDING, GRASS, TREE, WATER, ALLEY, COURT }; },
   // --- Diagnostics for the tests ---
   worldInfo() {
     let sig = 0;

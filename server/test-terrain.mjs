@@ -21,6 +21,7 @@ const EXPORTS = ['T', 'GRASS', 'TREE', 'WATER', 'SIDEWALK', 'GRASS_DARK', 'GRASS
   'drawVehicleShadow', 'bodyPaint', 'drawSaloonCabin', 'drawVanCabin', 'drawCarLights', 'BUILDING', 'solidTile', 'clipOutTiles'];
 const loadRenderer = new Function('ctx', 'camX', 'camY', 'frame', 'MAP_W', 'MAP_H', 'grid', 'PERIOD', 'blockCat', 'blockKind',
   `const gi = (x, y) => y * MAP_W + x;
+   const CITY_W = MAP_W;
    const tileAt = (x, y) => x < 0 || y < 0 || x >= MAP_W || y >= MAP_H ? GRASS : grid[gi(x, y)];
    ${moduleSource}
    const vw = MAP_W * T, vh = MAP_H * T;
