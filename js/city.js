@@ -71,10 +71,11 @@ const nodes = [];   // { x, y, edges:[idx...], signal, live }
 const edges = [];   // { a, b, cx, cy, len }
 const MARGIN = 8, BLOCK_PITCH = 24;
 const NX = Math.round((MAP_W - 2 * MARGIN) / BLOCK_PITCH) + 1, NY = Math.round((MAP_H - 2 * MARGIN) / BLOCK_PITCH) + 1;
-function gridLines(count, span, salt, seed) {
+const ROAD_SEED = hashStr(ROOM_CODE + ':ROADS');
+function gridLines(count, span, lineSalt, axisSalt) {
   const pitch = span / (count - 1), lines = [];
   for (let k = 0; k < count; k++) {
-    let jitter = k === 0 || k === count - 1 ? 0 : (hash2(k + salt, seed) % 1000 / 1000 - 0.5) * pitch * 0.30;
+    let jitter = k === 0 || k === count - 1 ? 0 : (hash2(k + lineSalt, axisSalt ^ ROAD_SEED) % 1000 / 1000 - 0.5) * pitch * 0.30;
     if (k === 1) jitter = Math.max(0, jitter); else if (k === count - 2) jitter = Math.min(0, jitter);
     lines.push(MARGIN * T + k * pitch + jitter);
   }
@@ -93,8 +94,8 @@ function buildGraph() {
   const armyNode = island ? idOf(island.i, island.j) : -1;
   const streets = [];
   for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
-    if (i < NX - 1) streets.push({ a: idOf(i, j), b: idOf(i + 1, j), ring: j === 0 || j === NY - 1, roll: hash2(i * 3 + 1, j * 7 + 2) % 5 === 0 });
-    if (j < NY - 1) streets.push({ a: idOf(i, j), b: idOf(i, j + 1), ring: i === 0 || i === NX - 1, roll: hash2(i * 9 + 4, j * 5 + 6) % 5 === 0 });
+    if (i < NX - 1) streets.push({ a: idOf(i, j), b: idOf(i + 1, j), ring: j === 0 || j === NY - 1, roll: hash2(i * 3 + 1, (j * 7 + 2) ^ ROAD_SEED) % 3 === 0 });
+    if (j < NY - 1) streets.push({ a: idOf(i, j), b: idOf(i, j + 1), ring: i === 0 || i === NX - 1, roll: hash2(i * 9 + 4, (j * 5 + 6) ^ ROAD_SEED) % 3 === 0 });
   }
   const candidates = streets.filter(s => s.a !== armyNode && s.b !== armyNode);
   const degree = new Uint8Array(nodes.length);
@@ -110,22 +111,17 @@ function buildGraph() {
 }
 
 // ---------- Rasterising the roads onto tiles ----------
-function stampDisc(wx, wy, r, val) {
-  const x0 = Math.max(0, Math.floor((wx - r) / T)), x1 = Math.min(MAP_W - 1, Math.floor((wx + r) / T));
-  const y0 = Math.max(0, Math.floor((wy - r) / T)), y1 = Math.min(MAP_H - 1, Math.floor((wy + r) / T));
-  const r2 = r * r;
-  for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
-    const ex = (tx + 0.5) * T - wx, ey = (ty + 0.5) * T - wy;
-    if (ex * ex + ey * ey <= r2) grid[gi(tx, ty)] = val;
-  }
+function stampRoadRect(x0, y0, x1, y1) {
+  const tx0 = Math.max(0, Math.ceil(x0 / T - 0.5)), tx1 = Math.min(MAP_W - 1, Math.floor(x1 / T - 0.5));
+  const ty0 = Math.max(0, Math.ceil(y0 / T - 0.5)), ty1 = Math.min(MAP_H - 1, Math.floor(y1 / T - 0.5));
+  for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) grid[gi(tx, ty)] = ROAD;
 }
 function bakeRoads() {
   grid.fill(BUILDING);
   for (const e of edges) {
-    const A = nodes[e.a], B = nodes[e.b], steps = Math.max(8, Math.ceil(e.len / (T * 0.5)));
-    for (let s = 0; s <= steps; s++) { const p = bez(A, B, e.cx, e.cy, s / steps); stampDisc(p.x, p.y, HALF_ROAD, ROAD); }
+    const A = nodes[e.a], B = nodes[e.b];
+    stampRoadRect(Math.min(A.x, B.x) - HALF_ROAD, Math.min(A.y, B.y) - HALF_ROAD, Math.max(A.x, B.x) + HALF_ROAD, Math.max(A.y, B.y) + HALF_ROAD);
   }
-  for (const n of nodes) if (n.live !== false) stampDisc(n.x, n.y, HALF_ROAD * 1.05, ROAD);   // junction apron
 }
 const walkableTile = t => t === ROAD || t === SIDEWALK || t === ALLEY;
 function bakeSidewalksAndBlocks() {
@@ -197,7 +193,7 @@ function pickArmyIsland() {
   const span = (lines, k) => (lines[k + 1] - lines[k - 1] - 2 * clearance) / T;
   const superblocks = [];
   for (let j = 2; j <= NY - 3; j++) for (let i = 2; i <= NX - 3; i++) superblocks.push({ i, j, w: span(colX, i), h: span(rowY, j) });
-  const fitting = superblocks.filter(s => s.w >= ARMY_W + 2 * ISLAND_BANKS + 6 && s.h >= ARMY_H + 2 * ISLAND_BANKS + 6);
+  const fitting = superblocks.filter(s => s.w >= ARMY_W + 2 * ISLAND_BANKS + 3 && s.h >= ARMY_H + 2 * ISLAND_BANKS + 3);
   return fitting.length ? fitting[rndi(0, fitting.length - 1)] : superblocks.reduce((best, s) => s.w * s.h > best.w * best.h ? s : best);
 }
 function reserveArmyIsland({ i, j }, armyNode) {

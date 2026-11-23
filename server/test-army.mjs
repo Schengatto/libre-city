@@ -132,7 +132,8 @@ const seededBases = ['PAAA01', 'PAAA02', 'PAAA03', 'PAAA04', 'PAAA05', 'PAAA06']
   return { cx: armyBase.cx, cy: armyBase.cy, worldW: roomSim.worldInfo().worldW };
 });
 ok(new Set(seededBases.map(b => b.cx + ',' + b.cy)).size > 1, 'the base position changes with the seed');
-ok(seededBases.some(b => b.cx < b.worldW * 2 / 3), 'the base is not always in the right third of the map');
+ok(seededBases.some(b => b.cx < b.worldW / 2), 'some seed puts the base in the left half of the map');
+ok(seededBases.some(b => b.cx > b.worldW / 2), 'some seed puts the base in the right half of the map');
 
 console.log(`\n${fail === 0 ? '✅' : '❌'}  ${pass} ok, ${fail} fail`);
 process.exit(fail === 0 ? 0 : 1);

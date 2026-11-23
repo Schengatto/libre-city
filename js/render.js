@@ -102,7 +102,7 @@ function roadAdjacent(x, y) {
   }
   return false;
 }
-// Traces a road edge's curve (Bézier) in screen coordinates.
+// Traces a road edge in screen coordinates.
 function traceEdge(e) {
   const A = nodes[e.a], B = nodes[e.b], steps = Math.max(6, Math.ceil(e.len / (T * 0.7)));
   for (let s = 0; s <= steps; s++) {
@@ -130,26 +130,19 @@ function clipOutTiles(isClippedOut) {
 function drawRoads() {
   const SWHALF = HALF_ROAD + SW_BAND, pad = SWHALF + 6;
   ctx.save();
-  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-  const nodeVisible = (n, r) => !(n.x + r < camX || n.x - r > camX + vw || n.y + r < camY || n.y - r > camY + vh);
+  ctx.lineJoin = 'miter'; ctx.lineCap = 'square';
   // --- Pavement band ---
   ctx.strokeStyle = '#9aa0a8'; ctx.lineWidth = 2 * SWHALF; ctx.beginPath();
   for (const e of edges) if (edgeVisible(e, pad)) traceEdge(e);
   ctx.stroke();
-  ctx.fillStyle = '#9aa0a8';
-  for (const n of nodes) if (n.live !== false && nodeVisible(n, SWHALF)) { ctx.beginPath(); ctx.arc(n.x - camX, n.y - camY, HALF_ROAD * 1.05 + SW_BAND, 0, TAU); ctx.fill(); }
   // --- Kerb (dark ring between paving and asphalt) ---
   ctx.strokeStyle = '#767d87'; ctx.lineWidth = 2 * HALF_ROAD + 7; ctx.beginPath();
   for (const e of edges) if (edgeVisible(e, pad)) traceEdge(e);
   ctx.stroke();
-  ctx.fillStyle = '#767d87';
-  for (const n of nodes) if (n.live !== false && nodeVisible(n, SWHALF)) { ctx.beginPath(); ctx.arc(n.x - camX, n.y - camY, HALF_ROAD * 1.05 + 3.5, 0, TAU); ctx.fill(); }
   // --- Asphalt ---
   ctx.strokeStyle = '#33363d'; ctx.lineWidth = 2 * HALF_ROAD; ctx.beginPath();
   for (const e of edges) if (edgeVisible(e, pad)) traceEdge(e);
   ctx.stroke();
-  ctx.fillStyle = '#33363d';
-  for (const n of nodes) if (n.live !== false && nodeVisible(n, SWHALF)) { ctx.beginPath(); ctx.arc(n.x - camX, n.y - camY, HALF_ROAD * 1.05, 0, TAU); ctx.fill(); }
   ctx.restore();
 }
 function drawTile(t, px, py, x, y) {
@@ -322,8 +315,9 @@ function drawBridgeParapets(px, py, x, y) {
   if (!island || x < island.x0 || x > island.x1 || y < island.y0 || y > island.y1) return;
   for (const [dx, dy] of WATER_SIDES) {
     if (tileAt(x + dx, y + dy) !== WATER) continue;
-    ctx.fillStyle = 'rgba(0,0,0,.35)'; edgeBand(px, py, dx, dy, 5);
-    ctx.fillStyle = '#c9c4b8'; edgeBand(px, py, dx, dy, 3.5);
+    ctx.fillStyle = 'rgba(0,0,0,.45)'; edgeBand(px, py, dx, dy, 8);
+    ctx.fillStyle = '#ddd6c6'; edgeBand(px, py, dx, dy, 5);
+    ctx.fillStyle = 'rgba(255,255,255,.55)'; edgeBand(px, py, dx, dy, 1.5);
   }
 }
 function treeInPlanter(x, y) {

@@ -16,6 +16,9 @@ for (const [code, [columns, rows]] of Object.entries(GRID_SIZES)) {
   ok(nodes.length === gridCount + 1, `${code}: ${columns} x ${rows} junctions plus the gate approach (${nodes.length})`);
   ok(edges.every(e => nodes[e.a].x === nodes[e.b].x || nodes[e.a].y === nodes[e.b].y), `${code}: every street is straight and axis-aligned`);
   ok(nodes.every(n => n.live !== false || n.edges.length === 0), `${code}: junctions that are not live have no streets`);
+  const fullGridEdges = columns * (rows - 1) + rows * (columns - 1), islandEdgesRemoved = 4, bridgeEdges = 1;
+  const pruned = fullGridEdges - islandEdgesRemoved + bridgeEdges - edges.length;
+  ok(pruned >= 2, `${code}: pruning merges some blocks (${pruned} streets removed)`);
 
   const badJunctions = nodes.filter((n, idx) => {
     if (n.live === false || idx === gateApproach) return false;
@@ -35,6 +38,9 @@ for (const [code, [columns, rows]] of Object.entries(GRID_SIZES)) {
   ok(reached.size === liveCount, `${code}: every live junction is connected to the network (${reached.size}/${liveCount})`);
   ok(roomSim._cityWidth() * T === roomSim.worldInfo().worldW, `${code}: the city spans the whole map width`);
 }
+const streetLayout = code => { const { nodes } = createRoomSim(code)._roadGraph(); return nodes.slice(0, -1).map(n => n.x + ',' + n.y).join(';'); };
+ok(streetLayout('PABC12') !== streetLayout('PQRS77'), 'the street grid changes with the room code');
+ok(streetLayout('PABC12') === streetLayout('PABC12'), 'the street grid is the same for the same room code');
 console.log('peace city: skipped, the server runtime cannot create one (PEACE_CITY reads localStorage)');
 
 console.log(`\n${fail === 0 ? '✅' : '❌'}  ${pass} ok, ${fail} fail`);
