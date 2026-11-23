@@ -1238,8 +1238,8 @@ function managePopulation() {
   // POLICE according to the wanted level (room-wide heat, shared in multiplayer).
   const wantCops = wanted * nP;                  // cops on foot
   const wantCopCars = Math.max(0, wanted - 1) * nP;   // patrol cars
-  if (wanted > 0 && nCop < wantCops && frame % 30 === 0) { const p = randomWalkNear(scx, scy, inMin, inMax); if (p) peds.push(makePed(p.x, p.y, 'cop')); }
-  if (wanted >= 2 && nPolice < wantCopCars && frame % 50 === 0) { const p = randomRoadNear(scx, scy, inMin, inMax); if (p) { const c = makeCar(p.x, p.y, 'police'); c.wasPolice = true; cars.push(c); } }
+  if (wanted > 0 && nCop < wantCops && frame % 30 === 0) { const focus = policeSpawnFocus(scx, scy); const p = randomWalkNear(focus.x, focus.y, inMin, inMax); if (p) peds.push(makePed(p.x, p.y, 'cop')); }
+  if (wanted >= 2 && nPolice < wantCopCars && frame % 50 === 0) { const focus = policeSpawnFocus(scx, scy); const p = randomRoadNear(focus.x, focus.y, inMin, inMax); if (p) { const c = makeCar(p.x, p.y, 'police'); c.wasPolice = true; cars.push(c); } }
 }
 
 // ---------- Particles / effects ----------

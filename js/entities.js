@@ -162,6 +162,17 @@ function playerTouching(x, y, r) {
 }
 // A player to centre repopulation spawns on (rotates between players).
 function spawnFocus() { return MP ? (MP[frame % MP.length] || player) : player; }
+let policeFocusSeq = 0;
+function policeSpawnFocus(fallbackX, fallbackY) {
+  if (MP && MP.length) {
+    policeFocusSeq = (policeFocusSeq + 1) % MP.length;
+    for (let k = 0; k < MP.length; k++) {
+      const candidate = MP[(policeFocusSeq + k) % MP.length];
+      if ((candidate.wanted | 0) > 0) return candidate;
+    }
+  }
+  return { x: fallbackX, y: fallbackY };
+}
 // Runs fn with the player globals (player, downT, downKind, cash, wanted…) REBOUND to
 // the victim/author v, then restores them: this lets the existing damage/death/credit/
 // crime functions (hurtPlayer, startDown, cash+=…, commitCrime) act on the right player.
