@@ -42,7 +42,7 @@ Scelta: 1, con la modalità server mantenuta come fallback (`SIM_MODE=server`).
 - `room.hostId`: il creatore all'inizio.
 - Ogni hello (`create`/`join`) porta `dev: 'desktop' | 'touch'` (da `usingTouch`). L'elezione preferisce un giocatore connesso `desktop`, poi l'id più basso.
 - Si elegge un nuovo host quando: il socket dell'host si chiude; oppure l'host non manda frame per `HOST_STALL_MS` (2000 ms) e c'è un altro giocatore connesso.
-- All'elezione il server manda a tutti `{t:'host', id, state}`; `state` è l'ultimo stato giocatori ricevuto dall'host (sotto). Il vecchio host, se ancora connesso o quando si riaggancia, riceve `host` / `ok` con un altro id e ferma il suo worker.
+- All'elezione il server manda a tutti `{t:'host', id, name}`; l'ultimo stato giocatori ricevuto dall'host (sotto) va al nuovo host nel `hoststart` sul suo hostlink. Il vecchio host, se ancora connesso o quando si riaggancia, riceve `host` / `ok` con un altro id e ferma il suo worker.
 - Nessun giocatore connesso: `hostId = null`; il primo che si riaggancia diventa host.
 
 ### Protocollo in modalità host
