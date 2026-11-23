@@ -54,7 +54,7 @@ The owner reported three problems with the generated map:
 
 ### Street grid (`js/city.js`, `buildGraph`)
 
-- Target block pitch about 24 tiles. `NX = round((MAP_W - 2*MARGIN) / 24) + 1`, `NY` the same on `MAP_H`. Small map: 8 x 8 (unchanged). Medium: 8 x 16. Large: 15 x 15.
+- Target block pitch about 24 tiles. `NX = round((MAP_W - 2*MARGIN) / 24) + 1`, `NY` the same on `MAP_H`. Small map: 8 x 8 (unchanged). Medium: 8 x 16. Large: 16 x 16.
 - Column `i` has one x for every row. Row `j` has one y for every column. Interior lines get a deterministic jitter (`hash2`), at most about ±15 % of the pitch. Border lines have no jitter.
 - The first and the last interior line on each axis are pushed inward only, never outward, so that the rail corridor has room (see Railway).
 - All edges are straight. `addRoadEdge` loses the curve logic.

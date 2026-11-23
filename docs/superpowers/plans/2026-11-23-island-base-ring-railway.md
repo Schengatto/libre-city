@@ -78,7 +78,7 @@ Same style as `test-army.mjs` (`ok(cond, msg)`, exit code 1 on failure). For `PA
 - `ok(edges.every(e => nodes[e.a].x === nodes[e.b].x || nodes[e.a].y === nodes[e.b].y), 'every street is straight and axis-aligned')`;
 - every live node except `gateApproach` has degree 3 or 4 (ring corners: 2);
 - BFS over edges from node 0 reaches every live node;
-- node counts: P 64 (+1 gate approach), M `8 x 16` (+1), G `15 x 15` (+1);
+- node counts: P `8 x 8` (+1 gate approach), M `8 x 16` (+1), G `16 x 16` (+1);
 - `_cityWidth() * 32 === worldInfo().worldW`.
 Add `test-roads.mjs` to the `test` script in `server/package.json`.
 
