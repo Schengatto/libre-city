@@ -1,12 +1,14 @@
 (function () {
+  // dev-only:begin
   const SIM_SCRIPT_FILES = ['core.js', 'i18n.js', 'city.js', 'train.js', 'entities.js', 'missions.js', 'army.js', 'gameplay.js', 'server-sim-glue.js'];
+  // dev-only:end
   const STEP_MS = 1000 / 60;
   const MAX_CATCHUP_MS = 250;
   const TICK_TIMER_MS = 16;
   const SNAPSHOT_EVERY_TICKS = 2;
   const HOST_STATE_INTERVAL_MS = 500;
   const OPEN_SOCKET_STATE = 1;
-  const alreadyBundled = typeof __sim !== 'undefined';
+  const bundled = typeof makeSimStubs === 'function';
 
   let sim = null;
   let hostId = null;
@@ -29,11 +31,15 @@
     for (const key in stubs) if (!(key in self)) self[key] = stubs[key];
   }
 
+  // dev-only:begin
   function loadSimScripts(roomCode) {
     importScripts('sim-stubs.js');
     applySimStubs(roomCode);
     importScripts(...SIM_SCRIPT_FILES);
   }
+  // dev-only:end
+
+  if (bundled) applySimStubs(self.location.hash.replace(/^#room=/, ''));
 
   function sendToServer(payload) {
     if (socket && socket.readyState === OPEN_SOCKET_STATE) socket.send(typeof payload === 'string' ? payload : JSON.stringify(payload));
@@ -153,7 +159,9 @@
     if (sim) return;
     try {
       const roomCode = String(message.code || '').toUpperCase();
-      if (!alreadyBundled) loadSimScripts(roomCode);
+      // dev-only:begin
+      if (!bundled) loadSimScripts(roomCode);
+      // dev-only:end
       sim = __sim;
       hostId = message.hostId;
       openHostLink(message.url, roomCode, message.token);

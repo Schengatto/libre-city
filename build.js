@@ -23,7 +23,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 const ROOT = __dirname;
-const DIST = path.join(ROOT, 'dist');
+const DIST = process.env.LC_DIST_DIR ? path.resolve(process.env.LC_DIST_DIR) : path.join(ROOT, 'dist');
 
 const hash = (buf) => crypto.createHash('sha256').update(buf).digest('hex').slice(0, 10);
 
@@ -92,15 +92,8 @@ if (leftover) {
 }
 
 // --- 2b. Host sim worker: stubs + sim files + worker body in ONE hashed bundle ---------
-// In the browser the worker loads the sim with importScripts; in dist/ that path is removed
-// (the sim files run at worker load) and the stubs are applied right before them.
-const { SIM_FILES } = require('./server/sim-runtime.js');
-const readJs = name => fs.readFileSync(path.join(ROOT, 'js', name), 'utf8');
-const applySimStubsSource =
-  "(function(){const stubs=makeSimStubs(self.location.hash.replace(/^#room=/,''),900,self);" +
-  'for(const key in stubs)if(!(key in self))self[key]=stubs[key];})();';
-const workerBody = readJs('sim-worker.js').split('\n').filter(line => !line.includes('importScripts(')).join('\n');
-const simWorkerBundle = [readJs('sim-stubs.js'), applySimStubsSource, ...SIM_FILES.map(readJs), workerBody].join('\n');
+const { buildSimWorkerBundle } = require('./build-sim-worker.js');
+const simWorkerBundle = buildSimWorkerBundle(ROOT);
 const simWorkerRel = `js/sim-worker.${hash(simWorkerBundle)}.js`;
 fs.writeFileSync(path.join(DIST, simWorkerRel), simWorkerBundle);
 const simWorkerMetaRe = /<meta name="lc-sim-worker" content="[^"]*">/;

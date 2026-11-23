@@ -3,10 +3,13 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { spawnSync } from 'node:child_process';
 
 const require = createRequire(import.meta.url);
-const JS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'js');
+const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const JS_DIR = path.join(ROOT_DIR, 'js');
 const { SIM_FILES } = require('./sim-runtime.js');
+const { buildSimWorkerBundle } = require('../build-sim-worker.js');
 
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ', msg); } else { fail++; console.log('  XX FAIL:', msg); } };
@@ -135,13 +138,21 @@ failing.send({ type: 'start', url: 'ws://fake/host', code: 'TEST', token: 't', h
 ok(failing.posted.some(m => m.type === 'error' && m.message === 'boom'), 'a sim load failure is posted as an error message');
 
 console.log('built load');
+const TEST_DIST_DIR = path.join(ROOT_DIR, '.tmp', 'test-sim-worker-dist');
+const buildRun = spawnSync(process.execPath, ['build.js'], { cwd: ROOT_DIR, env: { ...process.env, LC_DIST_DIR: TEST_DIST_DIR }, encoding: 'utf8' });
+ok(buildRun.status === 0, 'build.js succeeds' + (buildRun.status === 0 ? '' : ': ' + buildRun.stderr));
+const builtFileName = fs.readdirSync(path.join(TEST_DIST_DIR, 'js')).find(name => /^sim-worker\.[0-9a-f]{10}\.js$/.test(name));
+ok(!!builtFileName, 'dist contains a hashed sim-worker bundle');
+const builtSource = fs.readFileSync(path.join(TEST_DIST_DIR, 'js', builtFileName), 'utf8');
+ok(builtSource === buildSimWorkerBundle(ROOT_DIR), 'dist bundle is what buildSimWorkerBundle returns');
+ok(!builtSource.includes('importScripts(') && !builtSource.includes('dev-only') && !builtSource.includes('loadSimScripts'), 'bundle has no dev loading path');
+ok(builtSource.indexOf('function makeSimStubs') < builtSource.indexOf('var __sim ='), 'stubs come before the sim files');
+const builtHtml = fs.readFileSync(path.join(TEST_DIST_DIR, 'index.html'), 'utf8');
+ok(builtHtml.includes('<meta name="lc-sim-worker" content="js/' + builtFileName + '">'), 'index.html meta points at the bundle');
+ok(fs.readFileSync(path.join(TEST_DIST_DIR, 'sw.js'), 'utf8').includes('js/' + builtFileName), 'sw.js precaches the bundle');
+
 const built = createWorkerHarness();
-const bundleSource = [
-  'js/sim-stubs.js', null, ...SIM_FILES.map(f => 'js/' + f), 'js/sim-worker.js',
-].map(file => file === null
-  ? "(function(){const stubs=makeSimStubs(self.location.hash.replace(/^#room=/,''),900,self);for(const key in stubs)if(!(key in self))self[key]=stubs[key];})();"
-  : fs.readFileSync(path.resolve(JS_DIR, '..', file), 'utf8').split('\n').filter(line => !line.includes('importScripts(')).join('\n')).join('\n');
-vm.runInContext(bundleSource, built.scope, { filename: 'sim-worker-bundle.js' });
+vm.runInContext(builtSource, built.scope, { filename: builtFileName });
 FakeSocket.instances.length = 0;
 built.send({ type: 'start', url: 'ws://fake/host', code: 'TEST', token: 't', hostId: 'p1' });
 ok(built.importedFiles.length === 0, 'built bundle never calls importScripts');
@@ -150,6 +161,7 @@ builtSocket.onopen();
 deliver(builtSocket, { t: 'hoststart', roster: [{ id: 'p1', name: 'Host', shirtIdx: 0 }], state: [] });
 built.advance(100);
 ok(built.posted.some(m => m.type === 'snapshot'), 'built bundle runs the sim');
+fs.rmSync(TEST_DIST_DIR, { recursive: true, force: true });
 
 console.log(`\n${pass} ok, ${fail} fail`);
 process.exit(fail ? 1 : 0);
