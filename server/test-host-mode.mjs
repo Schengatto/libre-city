@@ -294,6 +294,32 @@ try {
   check(keptRow && keptRow.s === 111, 'the oversized hst is ignored and the last valid hst is kept');
   closeAll([hardenedHost.ws, hardenedLink, relink]);
 
+  console.log('hostlink keeps the deflate context');
+  const deflateHost = await createRoom('HOSTH1', 'Ida');
+  const openWithNegotiatedExtensions = async url => {
+    const ws = new NodeWebSocket(url);
+    ws.inbox = [];
+    ws.on('message', data => { try { ws.inbox.push(JSON.parse(data)); } catch {} });
+    ws.once('upgrade', response => { ws.negotiatedExtensions = response.headers['sec-websocket-extensions'] || ''; });
+    await new Promise((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
+    return ws;
+  };
+  const deflateLink = await openWithNegotiatedExtensions(`ws://127.0.0.1:${PORT}${HOST_LINK_PATH}`);
+  const gameSocketDeflate = await openWithNegotiatedExtensions(`ws://127.0.0.1:${PORT}`);
+  check(deflateLink.negotiatedExtensions.includes('permessage-deflate') && !deflateLink.negotiatedExtensions.includes('client_no_context_takeover'),
+    `the hostlink negotiates client context takeover (${deflateLink.negotiatedExtensions})`);
+  check(gameSocketDeflate.negotiatedExtensions.includes('client_no_context_takeover'),
+    `the game socket keeps client_no_context_takeover (${gameSocketDeflate.negotiatedExtensions})`);
+  deflateLink.send(JSON.stringify({ t: 'hostlink', code: 'HOSTH1', token: deflateHost.token }));
+  await waitFor(() => findType(deflateLink, 'hoststart'));
+  const repeatedSnapshot = { t: 'w', pad: 'car,'.repeat(500) };
+  for (let frameIndex = 0; frameIndex < 3; frameIndex++) {
+    deflateLink.send('W|' + deflateHost.id + '|' + JSON.stringify({ ...repeatedSnapshot, x: frameIndex }));
+  }
+  check(await waitFor(() => deflateHost.ws.inbox.filter(message => message.t === 'w').length === 3),
+    'consecutive W frames compressed with a shared context are all relayed');
+  closeAll([deflateHost.ws, deflateLink, gameSocketDeflate]);
+
   console.log('relay skips a reader over the buffer cap');
   const busyHost = await createRoom('HOSTG1', 'Gil');
   const busyLink = await openHostLink('HOSTG1', busyHost.token);

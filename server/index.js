@@ -838,7 +838,10 @@ const perMessageDeflate = {
   concurrencyLimit: 10,
 };
 const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD, perMessageDeflate });
-const hostLinkWss = new WebSocketServer({ noServer: true, maxPayload: HOST_LINK_MAX_PAYLOAD, perMessageDeflate });
+const hostLinkWss = new WebSocketServer({
+  noServer: true, maxPayload: HOST_LINK_MAX_PAYLOAD,
+  perMessageDeflate: { ...perMessageDeflate, clientNoContextTakeover: false },
+});
 
 function requestPathname(req) {
   try { return new URL(req.url, 'http://localhost').pathname; } catch { return ''; }

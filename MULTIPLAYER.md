@@ -81,11 +81,24 @@ rinunciato) la stanza usa la sim del server; `ok.host` nullo = sim del server.
 **Migrazione dell'host**: il nuovo host riparte dall'ultimo `hst` (giocatori e punteggi).
 Si perdono: il veicolo di ogni giocatore, le missioni in corso e fino a 0,5 s di stato.
 
-**Banda** (misura con `.tmp/host-bandwidth.mjs`: worker reale, 4 giocatori, 10 s,
-frame `W` compressi con deflate raw livello 3): **~445 KB/s** di upload dell'host
-(3 guest, ~148 KB/s per guest, ~5 KB per frame). Supera la soglia di 300 KB/s prevista:
-vedi task di follow-up (ridurre dimensione/frequenza dello snapshot, delta). Una connessione
-mobile o un telefono lento come host possono non reggerla.
+**Banda** (misura con `.tmp/host-bandwidth.mjs`: worker reale nell'harness di
+`server/test-sim-worker.mjs`, 4 giocatori, 10 s, `Math.random` con seed, 900 frame `W`
+da ~26 KB raw, 30/s per guest). Soglia: 300 KB/s di upload dell'host.
+
+| Compressione dei frame `W` sull'hostlink | seed 1 | seed 1-5 (media / max) |
+|---|---|---|
+| raw | 2303,9 KB/s | 2294 / 2502 KB/s |
+| prima: senza context takeover, livello 3 | 444,6 KB/s | 441 / 473 KB/s |
+| dopo: context takeover, livello 3 | 265,6 KB/s | 267 / 324 KB/s |
+| dopo: context takeover, livello 6 | 180,2 KB/s | 183 / 239 KB/s |
+
+L'hostlink (`hostLinkWss`) non chiede più `client_no_context_takeover`: il compressore del
+browser host tiene il dizionario tra un frame e l'altro, e i frame consecutivi (snapshot
+quasi uguali, anche di guest diversi) si comprimono contro il precedente. Il socket di gioco
+resta senza context takeover lato client, per la RAM dei telefoni. Il livello 6 è quello
+reale: i browser comprimono con il livello zlib di default, il livello 3 della config vale
+solo per ciò che comprime il server. Decisione: basta il context takeover (~183 KB/s reali,
+max 239); delta e frequenza più bassa degli snapshot non servono per ora.
 
 ---
 
