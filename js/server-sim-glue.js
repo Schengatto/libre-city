@@ -256,7 +256,6 @@ function snapshotFor(id) {
   return out;
 }
 
-// ===== Control API exposed to the Node harness (top-level var ⇒ property of the global) =====
 const RESTORABLE_NUMBER_FIELDS = {
   x: () => ['x', 0, WORLD_W, false], y: () => ['y', 0, WORLD_H, false],
   hp: () => ['health', 0, 100, false], cash: () => ['cash', 0, 1e9, true],
@@ -264,6 +263,8 @@ const RESTORABLE_NUMBER_FIELDS = {
   stk: () => ['streak', 0, 1e9, true], b: () => ['bounty', 0, 1e9, true],
   wanted: () => ['wanted', 0, 5, true], wantedHeat: () => ['wantedHeat', 0, 5.99, false],
 };
+
+// ===== Control API exposed to the Node harness (top-level var ⇒ property of the global) =====
 var __sim = {
   addPlayer(name, shirtIdx, id) { const pl = makeSimPlayer(name, shirtIdx); if (id) pl.id = id; players.push(pl); return pl.id; },
   removePlayer(id) {

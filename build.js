@@ -91,6 +91,27 @@ if (leftover) {
   process.exit(1);
 }
 
+// --- 2b. Host sim worker: stubs + sim files + worker body in ONE hashed bundle ---------
+// In the browser the worker loads the sim with importScripts; in dist/ that path is removed
+// (the sim files run at worker load) and the stubs are applied right before them.
+const { SIM_FILES } = require('./server/sim-runtime.js');
+const readJs = name => fs.readFileSync(path.join(ROOT, 'js', name), 'utf8');
+const applySimStubsSource =
+  "(function(){const stubs=makeSimStubs(self.location.hash.replace(/^#room=/,''),900,self);" +
+  'for(const key in stubs)if(!(key in self))self[key]=stubs[key];})();';
+const workerBody = readJs('sim-worker.js').split('\n').filter(line => !line.includes('importScripts(')).join('\n');
+const simWorkerBundle = [readJs('sim-stubs.js'), applySimStubsSource, ...SIM_FILES.map(readJs), workerBody].join('\n');
+const simWorkerRel = `js/sim-worker.${hash(simWorkerBundle)}.js`;
+fs.writeFileSync(path.join(DIST, simWorkerRel), simWorkerBundle);
+const simWorkerMetaRe = /<meta name="lc-sim-worker" content="[^"]*">/;
+if (!simWorkerMetaRe.test(html)) {
+  console.error('Meta lc-sim-worker mancante in index.html: build annullata.');
+  process.exit(1);
+}
+html = html.replace(simWorkerMetaRe, `<meta name="lc-sim-worker" content="${simWorkerRel}">`);
+hashedRels.push(simWorkerRel);
+console.log(`  js/sim-worker.js  →  ${simWorkerRel}`);
+
 // --- 3. BUILD_ID + anti-cache version check on the HTML --------------------
 // Deterministic: it depends only on the contents (same sources → same build).
 const BUILD_ID = hash(fileHashes.join('|') + hash(html));
