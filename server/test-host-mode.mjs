@@ -1,4 +1,7 @@
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import NodeWebSocket from 'ws';
 
 const PORT = Number(process.env.TEST_PORT) || 8796;
 const SERVER_MODE_PORT = PORT + 1;
@@ -16,6 +19,9 @@ const HOST_BIND_MS = 5000;
 const HOST_CHECK_SLACK_MS = 1500;
 const FIRST_FRAME_BEFORE_BIND_DEADLINE_MS = 800;
 const HOST_LINK_PATH = '/hostlink';
+const BACKLOG_FRAME_COUNT = 24;
+const BACKLOG_FRAME_BYTES = 900_000;
+const BACKLOG_SETTLE_MS = 1500;
 
 function startServer(port, simMode, label) {
   const child = spawn('node', ['index.js'], {
@@ -94,7 +100,18 @@ function connectionOutcome(port, path) {
   });
 }
 
-const closeAll = sockets => { for (const ws of sockets) { try { ws.close(); } catch {} } };
+async function joinPausedReader(code, name) {
+  const ws = new NodeWebSocket(`ws://127.0.0.1:${PORT}`, { perMessageDeflate: false });
+  ws.inbox = [];
+  ws.on('message', data => { try { ws.inbox.push(JSON.parse(data)); } catch {} });
+  await new Promise((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
+  ws.send(JSON.stringify({ t: 'join', code, name, dev: 'touch', build: BUILD }));
+  const ok = await waitFor(() => findType(ws, 'ok'));
+  ws.pause();
+  return { ws, id: ok && ok.id };
+}
+
+const closeAll = sockets =>{ for (const ws of sockets) { try { ws.close(); } catch {} } };
 
 try {
   console.log('creator is host');
@@ -222,8 +239,10 @@ try {
   check(await waitFor(() => findType(hardenedLink, 'hoststart')), `the hostlink binds on ${HOST_LINK_PATH}`);
   const gameSocketLink = await open();
   send(gameSocketLink, { t: 'hostlink', code: 'HOSTF1', token: hardenedHost.token });
-  check(await waitFor(() => gameSocketLink.closed), 'a hostlink sent on a game socket closes that socket');
+  send(gameSocketLink, { t: 'ping' });
+  check(await waitFor(() => findType(gameSocketLink, 'pong')) && !gameSocketLink.closed, 'a hostlink sent on a game socket is ignored');
   check(!findType(gameSocketLink, 'hoststart') && !hardenedLink.closed, 'the game socket does not bind and the real hostlink stays');
+  closeAll([gameSocketLink]);
   hardenedLink.send(JSON.stringify({ t: 'hst', players: [{ id: hardenedHost.id, s: 111 }], scores: [] }));
   hardenedLink.send(JSON.stringify({ t: 'hst', players: [{ id: hardenedHost.id, s: 999 }], scores: [], pad: 'a'.repeat(OVERSIZED_PAYLOAD_BYTES) }));
   hardenedLink.send('W|' + hardenedHost.id + '|{"t":"end"}');
@@ -239,6 +258,28 @@ try {
   const keptRow = relinkStart && relinkStart.state.find(row => row.id === hardenedHost.id);
   check(keptRow && keptRow.s === 111, 'the oversized hst is ignored and the last valid hst is kept');
   closeAll([hardenedHost.ws, hardenedLink, relink]);
+
+  console.log('relay skips a reader over the buffer cap');
+  const busyHost = await createRoom('HOSTG1', 'Gil');
+  const busyLink = await openHostLink('HOSTG1', busyHost.token);
+  await waitFor(() => findType(busyLink, 'hoststart'));
+  const pausedReader = await joinPausedReader('HOSTG1', 'Sid');
+  const backlogPad = 'a'.repeat(BACKLOG_FRAME_BYTES);
+  for (let frameIndex = 0; frameIndex < BACKLOG_FRAME_COUNT; frameIndex++) {
+    busyLink.send('W|' + pausedReader.id + '|' + JSON.stringify({ t: 'w', x: frameIndex, pad: backlogPad }));
+  }
+  await waitFor(() => busyLink.bufferedAmount === 0, CONNECT_TIMEOUT_MS);
+  await wait(BACKLOG_SETTLE_MS);
+  pausedReader.ws.resume();
+  await wait(BACKLOG_SETTLE_MS);
+  const relayedFrameCount = pausedReader.ws.inbox.filter(message => message.t === 'w').length;
+  check(relayedFrameCount > 0 && relayedFrameCount < BACKLOG_FRAME_COUNT,
+    `W frames are skipped while the reader is over the buffer cap (${relayedFrameCount}/${BACKLOG_FRAME_COUNT} relayed)`);
+  closeAll([busyHost.ws, busyLink, pausedReader.ws]);
+
+  console.log('stall check skips a lone player');
+  check(/room\.players\.size > 1 && hostStalled\(room\)/.test(fs.readFileSync(path.join(import.meta.dirname, 'index.js'), 'utf8')),
+    'the stall check runs pickHost only with more than one player');
 
   console.log('bind deadline before the first frame');
   const slowHost = await createRoom('HOSTB1', 'Hal');
@@ -275,9 +316,10 @@ try {
   check(await connectionOutcome(SERVER_MODE_PORT, HOST_LINK_PATH) === 'refused', `a ${HOST_LINK_PATH} connection is refused in server mode`);
   const serverModeLink = await open(SERVER_MODE_PORT);
   send(serverModeLink, { t: 'hostlink', code: 'SRVM01', token: serverModePlayer.token });
-  check(await waitFor(() => serverModeLink.closed), 'a hostlink sent on a game socket is refused in server mode');
+  send(serverModeLink, { t: 'ping' });
+  check(await waitFor(() => findType(serverModeLink, 'pong')) && !serverModeLink.closed, 'a hostlink sent on a game socket is ignored in server mode');
   check(!findType(serverModeLink, 'hoststart'), 'no hoststart in server mode');
-  closeAll([serverModePlayer.ws]);
+  closeAll([serverModePlayer.ws, serverModeLink]);
 
   await wait(200);
   console.log(failures ? `\n${failures} host-mode checks FAILED` : '\nall host-mode checks passed');

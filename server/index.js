@@ -465,7 +465,7 @@ function hostStalled(room) {
 }
 function startHostWatch(room) {
   room.hostWatchTimer = setInterval(() => {
-    if (hostStalled(room)) migrateHostIfPossible(room);
+    if (room.players.size > 1 && hostStalled(room)) migrateHostIfPossible(room);
   }, HOST_STALL_CHECK_MS);
 }
 function stopHostWatch(room) {
@@ -817,7 +817,7 @@ wss.on('connection', ws => {
       if (m.t === 'create') handleCreate(ws, m);
       else if (m.t === 'join') handleJoin(ws, m);
       else if (m.t === 'unqueue') { removeFromQueue(ws); try { ws.close(); } catch {} }
-      else ws.close();
+      else if (m.t !== 'hostlink') ws.close();
       return;
     }
     onGameMessage(ws, m);
