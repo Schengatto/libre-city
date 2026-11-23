@@ -55,8 +55,13 @@ const HOST_STALL_MS = 2000;
 const HOST_BIND_MS = Number(process.env.HOST_BIND_MS) || 10_000;
 const HOST_STALL_CHECK_MS = 500;
 const HOST_LINK_PATH = '/hostlink';
-const HOST_LINK_MAX_PAYLOAD = 1024 * 1024;
+const HOST_LINK_MAX_PAYLOAD = 256 * 1024;
+const HOST_LINK_HELLO_MS = Number(process.env.HOST_LINK_HELLO_MS) || 5000;
+const HOST_LINK_MESSAGES_PER_SECOND = 400;
+const HOST_LINK_MESSAGE_BURST = 800;
 const MAX_RELAY_BUFFERED_BYTES = 1024 * 1024;
+const MAX_HOST_INPUT_BUFFERED_BYTES = 256 * 1024;
+const FORWARDED_INPUT_NUMBER_FIELDS = ['seq', 'ax', 'ay', 'aim', 'b', 'px', 'py', 'cx', 'cy', 'ca', 'csp', 'w', 'vr'];
 const SNAPSHOT_FRAME_BYTE = 0x57;
 const FRAME_SEPARATOR_BYTE = 0x7c;
 const SNAPSHOT_PAYLOAD_PREFIX = Buffer.from('{"t":"w"');
@@ -492,7 +497,7 @@ function stopHostWatch(room) {
 function handleHostLink(ws, m) {
   const room = rooms.get(String(m.code || '').toUpperCase());
   const p = room && typeof m.token === 'string' && [...room.players.values()].find(pp => pp.token === m.token);
-  if (!p || !hostModeActive(room) || room.hostId !== p.id) { try { ws.close(); } catch {} return; }
+  if (!p || !hostModeActive(room) || room.hostId !== p.id) { ws.terminate(); return; }
   const previousLink = room.hostLink;
   room.hostLink = ws;
   ws._hostRoom = room;
@@ -518,23 +523,34 @@ function relaySnapshot(room, data) {
   if (target.ws.bufferedAmount > MAX_RELAY_BUFFERED_BYTES) return;
   try { target.ws.send(data.subarray(separatorAt + 1), { binary: false }); } catch {}
 }
-function onHostLinkHello(ws, data, isBinary) {
+function onHostLinkHello(ws, data) {
   let m = null;
-  if (!isBinary && data.length <= MAX_PAYLOAD) { try { m = JSON.parse(data); } catch {} }
+  if (data.length <= MAX_PAYLOAD) { try { m = JSON.parse(data); } catch {} }
   if (m && m.t === 'hostlink') handleHostLink(ws, m);
-  else { try { ws.close(); } catch {} }
+  else ws.terminate();
 }
-function finiteOrZero(value) {
-  return Number.isFinite(value) ? value : 0;
+function withinHostLinkRate(ws) {
+  const at = now();
+  ws._rateTokens = Math.min(HOST_LINK_MESSAGE_BURST,
+    ws._rateTokens + ((at - ws._rateCheckedAt) * HOST_LINK_MESSAGES_PER_SECOND) / 1000);
+  ws._rateCheckedAt = at;
+  if (ws._rateTokens < 1) return false;
+  ws._rateTokens--;
+  return true;
 }
-function sanitizedHostScores(scores) {
-  if (!Array.isArray(scores)) return [];
-  return scores.filter(row => row && typeof row.id === 'string')
-    .map(row => ({ id: row.id, k: finiteOrZero(row.k), d: finiteOrZero(row.d), s: finiteOrZero(row.s) }));
+function plausibleHostRow(row, elapsedMs) {
+  const totals = leaderboard.plausibleTotals({ score: row.s, kills: row.k, deaths: row.d }, elapsedMs);
+  return { ...row, s: totals.score, k: totals.kills, d: totals.deaths };
 }
-function onHostLinkMessage(ws, data, isBinary) {
+function roomHostRows(room, rows) {
+  if (!Array.isArray(rows)) return [];
+  const elapsedMs = now() - room.startAt;
+  return rows.filter(row => row && typeof row.id === 'string' && room.players.has(row.id))
+    .map(row => plausibleHostRow(row, elapsedMs));
+}
+function onHostLinkMessage(ws, data) {
   const room = ws._hostRoom;
-  if (isBinary || room.hostLink !== ws) return;
+  if (room.hostLink !== ws) return;
   const isSnapshot = data[0] === SNAPSHOT_FRAME_BYTE && data[1] === FRAME_SEPARATOR_BYTE;
   if (!isSnapshot && data.length > MAX_PAYLOAD) return;
   room.hostLastFrameAt = now();
@@ -542,7 +558,24 @@ function onHostLinkMessage(ws, data, isBinary) {
   let m;
   try { m = JSON.parse(data); } catch { return; }
   if (!m || m.t !== 'hst') return;
-  room.hostState = { players: Array.isArray(m.players) ? m.players : [], scores: sanitizedHostScores(m.scores) };
+  room.hostState = {
+    players: roomHostRows(room, m.players),
+    scores: roomHostRows(room, m.scores).map(({ id, k, d, s }) => ({ id, k, d, s })),
+  };
+}
+function forwardedInput(m, id) {
+  const input = { t: 'i' };
+  for (const field of FORWARDED_INPUT_NUMBER_FIELDS) if (Number.isFinite(m[field])) input[field] = m[field];
+  if (m.drive && typeof m.drive === 'object') {
+    input.drive = { active: !!m.drive.active, angle: Number.isFinite(m.drive.angle) ? m.drive.angle : 0 };
+  }
+  input.id = id;
+  return input;
+}
+function forwardInputToHost(room, m, id) {
+  const link = room.hostLink;
+  if (!link || link.bufferedAmount > MAX_HOST_INPUT_BUFFERED_BYTES) return;
+  sendRaw(link, forwardedInput(m, id));
 }
 function onHostLinkClose(ws) {
   const room = ws._hostRoom;
@@ -677,7 +710,7 @@ function onGameMessage(ws, m) {
     // world and answers with 'w' snapshots).
     case 'i':
       if (room.sim) room.sim.applyInput(p.id, m);
-      else if (HOST_MODE && p.id !== room.hostId) sendRaw(room.hostLink, { ...m, id: p.id });
+      else if (HOST_MODE && p.id !== room.hostId) forwardInputToHost(room, m, p.id);
       break;
     case 'resign':
       if (!hostModeActive(room) || room.hostId !== p.id) break;
@@ -821,12 +854,16 @@ server.on('upgrade', (req, socket, head) => {
 
 hostLinkWss.on('connection', ws => {
   ws.isAlive = true;
+  ws._rateTokens = HOST_LINK_MESSAGE_BURST;
+  ws._rateCheckedAt = now();
+  const helloTimer = setTimeout(() => { if (!ws._hostRoom) ws.terminate(); }, HOST_LINK_HELLO_MS);
   ws.on('pong', () => { ws.isAlive = true; });
   ws.on('message', (data, isBinary) => {
-    if (ws._hostRoom) onHostLinkMessage(ws, data, isBinary);
-    else onHostLinkHello(ws, data, isBinary);
+    if (isBinary || !withinHostLinkRate(ws)) { ws.terminate(); return; }
+    if (ws._hostRoom) onHostLinkMessage(ws, data);
+    else onHostLinkHello(ws, data);
   });
-  ws.on('close', () => onHostLinkClose(ws));
+  ws.on('close', () => { clearTimeout(helloTimer); onHostLinkClose(ws); });
   ws.on('error', () => onHostLinkClose(ws));
 });
 

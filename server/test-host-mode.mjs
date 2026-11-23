@@ -20,8 +20,18 @@ const HOST_BIND_MS = 5000;
 const HOST_CHECK_SLACK_MS = 1500;
 const FIRST_FRAME_BEFORE_BIND_DEADLINE_MS = 800;
 const HOST_LINK_PATH = '/hostlink';
-const BACKLOG_FRAME_COUNT = 24;
-const BACKLOG_FRAME_BYTES = 900_000;
+const BACKLOG_FRAME_COUNT = 96;
+const BACKLOG_FRAME_BYTES = 200_000;
+const HOST_LINK_HELLO_MS = 1000;
+const ABNORMAL_CLOSE_CODE = 1006;
+const HOST_LINK_FLOOD_COUNT = 2000;
+const HOST_LINK_LEGIT_BURST = 300;
+const INPUT_FLOOD_COUNT = 60_000;
+const HOST_INPUT_SEQ = 4241;
+const GUEST_INPUT_SEQ = 4242;
+const TEST_MAX_PPM = 60_000_000;
+const TEST_MAX_KILLS_PER_MINUTE = 6_000_000;
+const IMPLAUSIBLE_SCORE = 1e15;
 const BACKLOG_SETTLE_MS = 1500;
 const OLD_BUILD = 'old';
 const SHORT_MATCH_MINUTES = 0.05;
@@ -38,6 +48,8 @@ function startServer(port, simMode, label) {
       LC_BUILD: BUILD, SIM_MODE: simMode, GRACE_MS: String(GRACE_MS), HOST_BIND_MS: String(HOST_BIND_MS),
       LEADERBOARD_FILE: path.join(LEADERBOARD_DIR, `${label}.json`),
       LEADERBOARD_QUALIFY_MS: '200', LEADERBOARD_MIN_SESSION_MS: '50',
+      LEADERBOARD_MAX_PPM: String(TEST_MAX_PPM), LEADERBOARD_MAX_KILLS_PER_MINUTE: String(TEST_MAX_KILLS_PER_MINUTE),
+      HOST_LINK_HELLO_MS: String(HOST_LINK_HELLO_MS),
     },
     stdio: ['ignore', 'ignore', 'pipe'],
   });
@@ -67,7 +79,7 @@ function openOnce(port, path) {
     ws.inbox = [];
     ws.closed = false;
     ws.addEventListener('message', event => { try { ws.inbox.push(JSON.parse(event.data)); } catch {} });
-    ws.addEventListener('close', () => { ws.closed = true; });
+    ws.addEventListener('close', event => { ws.closed = true; ws.closeCode = event.code; });
     ws.addEventListener('open', () => resolve(ws));
     ws.addEventListener('error', reject);
   });
@@ -120,6 +132,17 @@ async function joinPausedReader(code, name) {
   return { ws, id: ok && ok.id };
 }
 
+async function openPausedHostLink(code, token) {
+  const ws = new NodeWebSocket(`ws://127.0.0.1:${PORT}${HOST_LINK_PATH}`, { perMessageDeflate: false });
+  ws.inbox = [];
+  ws.on('message', data => { try { ws.inbox.push(JSON.parse(data)); } catch {} });
+  await new Promise((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
+  ws.send(JSON.stringify({ t: 'hostlink', code, token }));
+  await waitFor(() => findType(ws, 'hoststart'));
+  ws.pause();
+  return ws;
+}
+
 const closeAll = sockets =>{ for (const ws of sockets) { try { ws.close(); } catch {} } };
 
 try {
@@ -137,11 +160,13 @@ try {
     'join is forwarded to the hostlink');
 
   console.log('input forwarded to host with id');
-  send(playerA.ws, { t: 'i', marker: 'from-host' });
-  send(playerB.ws, { t: 'i', marker: 'from-guest', id: 'p99' });
-  const forwardedInput = await waitFor(() => findMessage(hostLinkA, message => message.t === 'i' && message.marker === 'from-guest'));
+  send(playerA.ws, { t: 'i', seq: HOST_INPUT_SEQ });
+  send(playerB.ws, { t: 'i', seq: GUEST_INPUT_SEQ, ax: 1, aim: 'x', id: 'p99', junk: 'x', drive: { active: 1, angle: 0.5, extra: 1 } });
+  const forwardedInput = await waitFor(() => findMessage(hostLinkA, message => message.t === 'i' && message.seq === GUEST_INPUT_SEQ));
   check(forwardedInput && forwardedInput.id === playerB.id, 'the guest input reaches the hostlink signed with the sender id');
-  check(!findMessage(hostLinkA, message => message.t === 'i' && message.marker === 'from-host'), 'the host own input is not echoed to its hostlink');
+  check(forwardedInput && forwardedInput.ax === 1 && !('aim' in forwardedInput) && !('junk' in forwardedInput) &&
+    JSON.stringify(forwardedInput.drive) === '{"active":true,"angle":0.5}', 'only the known numeric input fields are forwarded');
+  check(!findMessage(hostLinkA, message => message.t === 'i' && message.seq === HOST_INPUT_SEQ), 'the host own input is not echoed to its hostlink');
 
   console.log('W frame routed to target only');
   hostLinkA.send('W|' + playerB.id + '|{"t":"w","x":1}');
@@ -160,6 +185,7 @@ try {
   check(await waitFor(() => oversizedSender.closed), 'the game socket rejects a frame over 64 KB in host mode');
   const intruder = await openHostLink('HOSTA1', 'not-a-token');
   check(await waitFor(() => intruder.closed), 'a hostlink with an unknown token is closed');
+  check(intruder.closeCode === ABNORMAL_CLOSE_CODE, 'a bad hello terminates the hostlink without a close handshake');
 
   console.log('election on host close carries state');
   hostLinkA.send(JSON.stringify({
@@ -334,6 +360,80 @@ try {
   check(lenaRow && lenaRow.score === HOST_SCORE && lenaRow.kills === 3 && lenaRow.deaths === 1,
     'the leaderboard records the hst score of the host');
   closeAll([scoringHost.ws, scoringLink]);
+
+  console.log('host scores are bounded');
+  const boundedCreatedAt = performance.now();
+  const boundedHost = await enter(PORT, { t: 'create', code: 'LBHST2', name: 'Max', max: 8, minutes: SHORT_MATCH_MINUTES });
+  const boundedLink = await openHostLink('LBHST2', boundedHost.token);
+  await waitFor(() => findType(boundedLink, 'hoststart'));
+  const futureGuestId = 'p' + (Number(boundedHost.id.slice(1)) + 1);
+  boundedLink.send(JSON.stringify({
+    t: 'hst',
+    players: [{ id: boundedHost.id, s: IMPLAUSIBLE_SCORE, k: -4, d: 2.7 }, { id: futureGuestId, s: IMPLAUSIBLE_SCORE }],
+    scores: [{ id: boundedHost.id, s: IMPLAUSIBLE_SCORE, k: -4, d: 2.7 }, { id: futureGuestId, s: GUEST_SCORE, k: 1, d: 0 }],
+  }));
+  await wait(200);
+  const boundedScoreCap = Math.ceil((TEST_MAX_PPM * (performance.now() - boundedCreatedAt)) / 60_000);
+  const lateGuest = await joinRoom('LBHST2', 'Gina');
+  check(lateGuest.id === futureGuestId, 'the late guest gets the id the host reported early');
+  const boundedRelink = await openHostLink('LBHST2', boundedHost.token);
+  const boundedStart = await waitFor(() => findType(boundedRelink, 'hoststart'));
+  const boundedRow = boundedStart && boundedStart.state.find(row => row.id === boundedHost.id);
+  check(boundedRow && boundedRow.s > 0 && boundedRow.s <= boundedScoreCap && boundedRow.k === 0 && boundedRow.d === 2,
+    `hst rows are clamped to non-negative integers within the elapsed-time cap (${boundedRow && boundedRow.s} <= ${boundedScoreCap})`);
+  check(boundedStart && !boundedStart.state.some(row => row.id === futureGuestId), 'hst rows for ids not in the room are dropped');
+  check(await waitFor(() => findType(boundedHost.ws, 'end'), MATCH_END_TIMEOUT_MS), 'the bounded match ends');
+  const boundedBoard = await (await fetch(`http://127.0.0.1:${PORT}/leaderboard?limit=100`)).json();
+  const maxRow = boundedBoard.top.find(row => row.name === 'Max');
+  check(maxRow && boundedRow && maxRow.score === boundedRow.s && maxRow.kills === 0 && maxRow.deaths === 2,
+    'the leaderboard records the clamped host score');
+  check(!boundedBoard.top.some(row => row.name === 'Gina'), 'a score reported for an id not yet in the room is never recorded');
+  closeAll([boundedHost.ws, boundedLink, boundedRelink, lateGuest.ws]);
+
+  console.log('hostlink hello timeout');
+  const silentLinkOpenedAt = performance.now();
+  const silentLink = await open(PORT, HOST_LINK_PATH);
+  check(await waitFor(() => silentLink.closed, HOST_LINK_HELLO_MS + HOST_CHECK_SLACK_MS), 'a hostlink that never says hello is dropped');
+  const silentLinkMs = performance.now() - silentLinkOpenedAt;
+  check(silentLink.closeCode === ABNORMAL_CLOSE_CODE && silentLinkMs >= HOST_LINK_HELLO_MS - 200,
+    `it is terminated once the hello timeout expires (${Math.round(silentLinkMs)} ms)`);
+
+  console.log('hostlink abuse terminates the link');
+  const abusedHost = await createRoom('HOSTR1', 'Rex');
+  const binaryLink = await openHostLink('HOSTR1', abusedHost.token);
+  await waitFor(() => findType(binaryLink, 'hoststart'));
+  binaryLink.send(new Uint8Array([1, 2, 3]));
+  check(await waitFor(() => binaryLink.closed) && binaryLink.closeCode === ABNORMAL_CLOSE_CODE, 'a binary frame terminates the hostlink');
+  const burstLink = await openHostLink('HOSTR1', abusedHost.token);
+  await waitFor(() => findType(burstLink, 'hoststart'));
+  for (let messageIndex = 0; messageIndex < HOST_LINK_LEGIT_BURST; messageIndex++) {
+    burstLink.send(JSON.stringify({ t: 'hst', players: [], scores: [] }));
+  }
+  await wait(SILENCE_MS);
+  check(!burstLink.closed, `a burst of ${HOST_LINK_LEGIT_BURST} frames stays within the rate limit`);
+  for (let messageIndex = 0; messageIndex < HOST_LINK_FLOOD_COUNT; messageIndex++) {
+    burstLink.send(JSON.stringify({ t: 'hst', players: [], scores: [] }));
+  }
+  check(await waitFor(() => burstLink.closed) && burstLink.closeCode === ABNORMAL_CLOSE_CODE,
+    `a flood of ${HOST_LINK_FLOOD_COUNT} frames terminates the hostlink`);
+  check(!abusedHost.ws.closed, 'the host game socket survives the terminated hostlink');
+  closeAll([abusedHost.ws]);
+
+  console.log('guest input skips a host link over the buffer cap');
+  const inputHost = await createRoom('HOSTI1', 'Ivo');
+  const pausedHostLink = await openPausedHostLink('HOSTI1', inputHost.token);
+  const floodingGuest = await joinRoom('HOSTI1', 'Flo');
+  const floodInput = { t: 'i', ax: 1, ay: -1, aim: -3.14453125, b: 15, px: 12345, py: 12345, cx: 12345, cy: 12345,
+    ca: -3.14453125, csp: -12.34, w: 3, vr: 1250, drive: { active: true, angle: -3.14453125 } };
+  for (let inputIndex = 0; inputIndex < INPUT_FLOOD_COUNT; inputIndex++) send(floodingGuest.ws, { ...floodInput, seq: inputIndex });
+  send(floodingGuest.ws, { t: 'ping' });
+  await waitFor(() => findType(floodingGuest.ws, 'pong'), CONNECT_TIMEOUT_MS);
+  pausedHostLink.resume();
+  await wait(BACKLOG_SETTLE_MS);
+  const forwardedInputCount = pausedHostLink.inbox.filter(message => message.t === 'i').length;
+  check(forwardedInputCount > 0 && forwardedInputCount < INPUT_FLOOD_COUNT,
+    `guest inputs are skipped while the host link is over the buffer cap (${forwardedInputCount}/${INPUT_FLOOD_COUNT} forwarded)`);
+  closeAll([inputHost.ws, pausedHostLink, floodingGuest.ws]);
 
   console.log('fallback when nobody eligible');
   const oldCreator = await enter(PORT, { t: 'create', code: 'FALL01', name: 'Olga', max: 8, minutes: 0, build: OLD_BUILD });
