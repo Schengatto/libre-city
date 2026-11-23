@@ -12,7 +12,9 @@ const PERIOD = 14;            // average region size (variety: parks, plazas, co
 // anonymous rooms, see core.js).
 const MAP_DIMS = { P: [184, 184], M: [184, 368], G: [368, 368] };
 const _mapDims = MAP_DIMS[String(ROOM_CODE).charAt(0)] || MAP_DIMS.P;
-const MAP_W = _mapDims[0], MAP_H = _mapDims[1];
+const RIVER_W = 7, OUTSKIRTS_W = 36;
+const CITY_W = _mapDims[0];
+const MAP_W = CITY_W + (PEACE_CITY ? 0 : RIVER_W + OUTSKIRTS_W), MAP_H = _mapDims[1];
 const WORLD_W = MAP_W * T, WORLD_H = MAP_H * T;
 const HALF_ROAD = 2.1 * T;    // half carriageway width (px)
 const LANE = 18;              // right-lane offset from the road centreline
@@ -69,8 +71,21 @@ function bez(A, B, cx, cy, t) {
 const nodes = [];   // { x, y, edges:[idx...], signal }
 const edges = [];   // { a, b, cx, cy, len }
 const NX = 8, NY = 8, MARGIN = 8;
+function addRoadEdge(a, b, straight) {
+  const A = nodes[a], B = nodes[b];
+  const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
+  const dx = B.x - A.x, dy = B.y - A.y, L = Math.hypot(dx, dy) || 1;
+  // Most streets are straight; only ~1 in 4 gets a gentle curve.
+  const curved = !straight && hash2(a + 7, b + 13) % 100 < 26;
+  const bow = curved ? ((hash2(a + 23, b + 5) % 1000 / 1000) - 0.5) * 0.30 : 0;
+  const cx = mx + (-dy / L) * L * bow, cy = my + (dx / L) * L * bow;
+  const e = { a, b, cx, cy, len: 0 };
+  let px = A.x, py = A.y;
+  for (let s = 1; s <= 16; s++) { const p = bez(A, B, cx, cy, s / 16); e.len += Math.hypot(p.x - px, p.y - py); px = p.x; py = p.y; }
+  const idx = edges.length; edges.push(e); A.edges.push(idx); B.edges.push(idx);
+}
 function buildGraph() {
-  const spanX = (MAP_W - 2 * MARGIN) * T, spanY = (MAP_H - 2 * MARGIN) * T;
+  const spanX = (CITY_W - 2 * MARGIN) * T, spanY = (MAP_H - 2 * MARGIN) * T;
   const gx = spanX / (NX - 1), gy = spanY / (NY - 1);
   const idOf = (i, j) => j * NX + i;
   for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
@@ -80,27 +95,14 @@ function buildGraph() {
     const jy = border ? 0 : (hash2(i + 5, j + 17) % 1000 / 1000 - 0.5) * gy * 0.26;
     nodes.push({ x: MARGIN * T + i * gx + jx, y: MARGIN * T + j * gy + jy, edges: [], signal: false });
   }
-  const addEdge = (a, b, straight) => {
-    const A = nodes[a], B = nodes[b];
-    const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
-    const dx = B.x - A.x, dy = B.y - A.y, L = Math.hypot(dx, dy) || 1;
-    // Most streets are straight; only ~1 in 4 gets a gentle curve.
-    const curved = !straight && hash2(a + 7, b + 13) % 100 < 26;
-    const bow = curved ? ((hash2(a + 23, b + 5) % 1000 / 1000) - 0.5) * 0.30 : 0;
-    const cx = mx + (-dy / L) * L * bow, cy = my + (dx / L) * L * bow;
-    const e = { a, b, cx, cy, len: 0 };
-    let px = A.x, py = A.y;
-    for (let s = 1; s <= 16; s++) { const p = bez(A, B, cx, cy, s / 16); e.len += Math.hypot(p.x - px, p.y - py); px = p.x; py = p.y; }
-    const idx = edges.length; edges.push(e); A.edges.push(idx); B.edges.push(idx);
-  };
   for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
     if (i < NX - 1) {                                 // horizontal road heading right
       const onBorder = j === 0 || j === NY - 1;
-      if (onBorder || hash2(i * 3 + 1, j * 7 + 2) % 5 !== 0) addEdge(idOf(i, j), idOf(i + 1, j), onBorder);
+      if (onBorder || hash2(i * 3 + 1, j * 7 + 2) % 5 !== 0) addRoadEdge(idOf(i, j), idOf(i + 1, j), onBorder);
     }
     if (j < NY - 1) {                                 // vertical road heading down
       const onBorder = i === 0 || i === NX - 1;
-      if (onBorder || hash2(i * 9 + 4, j * 5 + 6) % 5 !== 0) addEdge(idOf(i, j), idOf(i, j + 1), onBorder);
+      if (onBorder || hash2(i * 9 + 4, j * 5 + 6) % 5 !== 0) addRoadEdge(idOf(i, j), idOf(i, j + 1), onBorder);
     }
   }
   // Traffic lights only at some busy junctions, NOT at every one.
@@ -186,45 +188,38 @@ function carveAlleys() {
   }
 }
 // ---------- Military zone: reserved BEFORE the roads are paved ----------
-// The army base is huge (26x20 tiles ≈ 6 blocks): no single block can hold it, so the
-// generator reserves an area for it and SUPPRESSES the roads that would cross it
-// (e.dead: never paved nor drawn, and traffic ignores them and drives around the base).
 // VIOLENCE FILTER (single-player, PEACE_CITY in core.js): a peaceful city has no army,
-// so nothing is reserved — no suppressed roads, and ordinary blocks grow where the base
-// would be (armyZone stays null → placeArmyBase returns immediately, taking the
+// so nothing is reserved (armyZone stays null → placeArmyBase returns immediately, taking the
 // barracks, tanks, jeeps, guards and turrets with it).
 const ARMY_W = 26, ARMY_H = 20;
 let armyZone = null;
 const inArmyZone = (tx, ty) => !!armyZone && tx >= armyZone.x0 && tx <= armyZone.x1 && ty >= armyZone.y0 && ty <= armyZone.y1;
 function reserveArmyZone() {
-  if (!PEACE_CITY) {
-    // Never over the map centre (the player spawns there) nor on the border roads.
-    let x0, y0, tries = 0;
-    do { x0 = rndi(14, MAP_W - ARMY_W - 14); y0 = rndi(14, MAP_H - ARMY_H - 14); }
-    while (++tries < 30 && x0 - 12 < MAP_W / 2 && MAP_W / 2 < x0 + ARMY_W + 12 &&
-                           y0 - 12 < MAP_H / 2 && MAP_H / 2 < y0 + ARMY_H + 12);
-    armyZone = { x0, y0, x1: x0 + ARMY_W - 1, y1: y0 + ARMY_H - 1 };
-    // Suppress every road that would run through the zone (band = asphalt + pavement).
-    const PADPX = HALF_ROAD + 2 * T;
-    const rx0 = x0 * T - PADPX, ry0 = y0 * T - PADPX;
-    const rx1 = (armyZone.x1 + 1) * T + PADPX, ry1 = (armyZone.y1 + 1) * T + PADPX;
-    for (const e of edges) {
-      const A = nodes[e.a], B = nodes[e.b];
-      for (let s = 0; s <= 32; s++) {
-        const p = bez(A, B, e.cx, e.cy, s / 32);
-        if (p.x > rx0 && p.x < rx1 && p.y > ry0 && p.y < ry1) { e.dead = true; break; }
-      }
-    }
-  }
-  // Surviving graph: no apron for nodes left without roads, and traffic lights
-  // recomputed from the number of still-live streets.
-  for (let n = 0; n < nodes.length; n++) {
-    const live = nodes[n].edges.filter(ei => !edges[ei].dead).length;
-    nodes[n].live = live > 0;
-    nodes[n].signal = live >= 3 && hash2(n * 3 + 2, n + 5) % 3 === 0;
+  if (PEACE_CITY) return;
+  const cityEndIdx = rndi(1, NY - 2) * NX + NX - 1, cityEnd = nodes[cityEndIdx];
+  const x0 = CITY_W + RIVER_W + ((OUTSKIRTS_W - ARMY_W) >> 1);
+  const y0 = clamp(Math.floor(cityEnd.y / T) - (ARMY_H >> 1), 4, MAP_H - ARMY_H - 4);
+  const gateApproach = { x: (x0 - 3) * T, y: cityEnd.y, edges: [], signal: false };
+  nodes.push(gateApproach);
+  addRoadEdge(cityEndIdx, nodes.length - 1, true);
+  armyZone = { x0, y0, x1: x0 + ARMY_W - 1, y1: y0 + ARMY_H - 1, gateApproach };
+}
+function bakeArmyOutskirts() {
+  if (!armyZone) return;
+  const touchesRoad = (x, y) => {
+    for (let ny = Math.max(0, y - 1); ny <= Math.min(MAP_H - 1, y + 1); ny++)
+      for (let nx = Math.max(0, x - 1); nx <= Math.min(MAP_W - 1, x + 1); nx++) if (grid[gi(nx, ny)] === ROAD) return true;
+    return false;
+  };
+  const clearing = (x, y) => x >= armyZone.x0 - 3 && x <= armyZone.x1 + 3 && y >= armyZone.y0 - 3 && y <= armyZone.y1 + 3;
+  for (let y = 0; y < MAP_H; y++) for (let x = CITY_W; x < MAP_W; x++) {
+    if (touchesRoad(x, y)) continue;
+    if (x < CITY_W + RIVER_W) grid[gi(x, y)] = WATER;
+    else if (!clearing(x, y) && hash2(x >> 1, y >> 1) % 3 === 0 && hash2(x * 5, y * 7) % 4 !== 0) grid[gi(x, y)] = TREE;
+    else grid[gi(x, y)] = GRASS;
   }
 }
-function genCity() { buildGraph(); reserveArmyZone(); bakeRoads(); bakeSidewalksAndBlocks(); carveAlleys(); }
+function genCity() { buildGraph(); reserveArmyZone(); bakeRoads(); bakeSidewalksAndBlocks(); bakeArmyOutskirts(); carveAlleys(); }
 genCity();
 
 const tileAt = (tx, ty) => (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) ? BUILDING : grid[gi(tx, ty)];
@@ -353,7 +348,7 @@ function placeArmyBase() {
   const { x0, y0, x1, y1 } = armyZone;
   const lm = { type: 'army', x0, y0, x1, y1,
                cx: (x0 + (x1 - x0 + 1) / 2) * T, cy: (y0 + (y1 - y0 + 1) / 2) * T };
-  lm.door = landmarkDoor(lm);
+  lm.door = { x: armyZone.gateApproach.x, y: armyZone.gateApproach.y - T };
   const id = landmarks.length; landmarks.push(lm);
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) lmGrid[gi(x, y)] = id;
   carveArmyBase(lm);

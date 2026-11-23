@@ -318,7 +318,7 @@ function drawWaterTile(px, py, x, y) {
 }
 function treeInPlanter(x, y) {
   const bx = Math.floor(x / PERIOD), by = Math.floor(y / PERIOD), cat = blockCat(bx, by);
-  return cat === PLAZA_CAT || (cat === BUILD_CAT && blockKind(bx, by) === OFF_KIND);
+  return x < CITY_W && (cat === PLAZA_CAT || (cat === BUILD_CAT && blockKind(bx, by) === OFF_KIND));
 }
 function drawPlanter(px, py, x, y) {
   const inPlaza = blockCat(Math.floor(x / PERIOD), Math.floor(y / PERIOD)) === PLAZA_CAT;
