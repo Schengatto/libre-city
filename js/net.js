@@ -201,6 +201,7 @@ function netOnJoined(m) {
   player.shirt = NET_SHIRTS[m.shirtIdx % NET_SHIRTS.length];
   if (m.minutes != null) gameMinutes = m.minutes;   // the server sets the match's pace
   net.clockLeft = m.left;
+  if (resumed && started && gameMinutes > 0) timeLeft = net.clockLeft;
   // Sync the roster without clearing ghosts that are already there (important on reconnect).
   for (const p of (m.players || [])) if (!net.players.has(p.id)) net.players.set(p.id, makeGhost(p.id, p.name, p.shirtIdx));
   if (!resumed && !net.authoritative) {
@@ -248,6 +249,9 @@ function onServerMessage(m) {
       break;
     }
     case 'end': if (started) endGame('time'); break;
+    case 'no':
+      if (m.r === 'notfound') { net.wantOpen = false; clearTimeout(net.reconnT); if (started) endGame('time'); }
+      break;
     case 'kill': netScoreKill(m.id); break;
     case 'w': netOnSnapshot(m); break;             // Phase 2: authoritative world snapshot
     case 'pong': break;
