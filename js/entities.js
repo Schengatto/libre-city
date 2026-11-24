@@ -6,7 +6,6 @@ const DIRS = [ {x:1,y:0}, {x:-1,y:0}, {x:0,y:1}, {x:0,y:-1} ];
 // "Pedestrian-friendly" tiles: where passers-by are happy to be.
 const pedFriendly = t => t === SIDEWALK || t === GRASS || t === ALLEY || t === SAND || t === QUAY;
 const tileTypeAt = (wx, wy) => tileAt(Math.floor(wx / T), Math.floor(wy / T));
-// Direction choice from standstill: prefers pavements, avoids the carriageway.
 function armyIslandDepthAt(wx, wy) {
   if (!armyZone) return -1;
   const { island } = armyZone, tx = Math.floor(wx / T), ty = Math.floor(wy / T);
@@ -17,6 +16,7 @@ function walkEntersArmyIsland(p, dir) {
   const aheadX = p.x + dir.x * 22, aheadY = p.y + dir.y * 22;
   return armyIslandDepthAt(aheadX, p.y) >= 0 || armyIslandDepthAt(p.x, aheadY) >= 0 || armyIslandDepthAt(aheadX, aheadY) >= 0;
 }
+// Direction choice from standstill: prefers pavements, avoids the carriageway.
 function pickWalkDir(p) {
   const depthHere = armyIslandDepthAt(p.x, p.y);
   const soft = [], road = [], open = [], exits = [];
