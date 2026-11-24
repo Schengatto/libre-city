@@ -211,5 +211,13 @@ ok(rivalSpider.fills.includes('#44aa66') && rivalSpider.fills.includes('#d23a3a'
 const parkedPlayerSpider = carRenderer.draw({ ...spiders, role: 'parked', driver: 'player' });
 ok(parkedPlayerSpider.fills.includes('#123456'), 'a spider the local player sits in shows the driver');
 
+const gameplaySource = readSource('gameplay.js');
+const plainCarGuard = '!c.livery && !c.isBike && !c.isTaxi';
+const spawnerLines = name => gameplaySource.split('\n').filter(line => line.includes(`${name}(c)`));
+for (const dresser of ['makeTaxi', 'makeDeliveryMoto']) {
+  const lines = spawnerLines(dresser);
+  ok(lines.length === 1 && lines[0].includes(`if (${plainCarGuard}) ${dresser}(c)`) && lines[0].includes('cars.push(c)'), `${dresser} spawner only re-dresses plain cars and still spawns the rest`);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

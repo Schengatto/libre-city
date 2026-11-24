@@ -1225,13 +1225,13 @@ function managePopulation() {
   if (frame % 40 === 0 && nTaxi < 3 * nP) {
     const centre = spawnCentre();
     const c = spawnTrafficNear(centre.x, centre.y, inMin, inMax);
-    if (c) { makeTaxi(c); cars.push(c); }
+    if (c) { if (!c.livery && !c.isBike && !c.isTaxi) makeTaxi(c); cars.push(c); }
   }
   // ...and at least a couple of delivery bikes.
   if (frame % 40 === 20 && nDeliv < 2 * nP) {
     const centre = spawnCentre();
     const c = spawnTrafficNear(centre.x, centre.y, inMin, inMax);
-    if (c) { makeDeliveryMoto(c); cars.push(c); }
+    if (c) { if (!c.livery && !c.isBike && !c.isTaxi) makeDeliveryMoto(c); cars.push(c); }
   }
   // Replaces (off-screen) the service vehicles in front of each special building.
   if (frame % 120 === 0) for (const lm of landmarks) {
