@@ -157,7 +157,7 @@ ok(!extractTopLevel(netSource, 'netApplyRemote').includes('colH: 13'), 'netApply
 
 const renderSource = readSource('render.js');
 const RENDER_DECLARATIONS = ['shade', 'roundRect', 'bodyPaint', 'drawTyres', 'drawGlassGlint', 'GLASS_COLOR', 'fillPolygon', 'tracePolygon',
-  'drawSaloonCabin', 'drawVanCabin', 'drawBusCabin', 'drawLorryCabin', 'drawSpiderCockpit', 'drawCarLights', 'BRAKE_DECELERATION', 'drawCarDents', 'drawCar'];
+  'drawSaloonCabin', 'drawVanCabin', 'drawBusCabin', 'drawLorryCabin', 'drawSpiderCockpit', 'drawCarLights', 'BRAKE_DECELERATION', 'DENT_CORNER_RADIUS', 'drawCarDents', 'drawCar'];
 function loadCarRenderer() {
   const recorder = createRecordingContext();
   const context = vm.createContext({

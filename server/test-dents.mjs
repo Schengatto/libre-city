@@ -150,7 +150,7 @@ function loadDentRenderer() {
     t: key => key, playerSirenOn: () => false, drawVehicleShadow: () => {}, drawCarFlames: () => {}, drawBike: () => {}, drawTank: () => {},
   });
   const renderNames = ['shade', 'roundRect', 'bodyPaint', 'drawTyres', 'drawGlassGlint', 'GLASS_COLOR', 'fillPolygon', 'tracePolygon',
-    'drawSaloonCabin', 'drawVanCabin', 'drawBusCabin', 'drawLorryCabin', 'drawSpiderCockpit', 'drawCarLights', 'BRAKE_DECELERATION', 'DENT_NOTCH_POINTS', 'DENT_DEPTH_PER_LEVEL', 'DENT_CORNER_RADIUS', 'drawCarDents', 'drawCar'];
+    'drawSaloonCabin', 'drawVanCabin', 'drawBusCabin', 'drawLorryCabin', 'drawSpiderCockpit', 'drawCarLights', 'BRAKE_DECELERATION', 'DENT_NOTCH_POINTS', 'DENT_DEPTH_PER_LEVEL', 'DENT_CORNER_RADIUS', 'dentNotchPoint', 'drawCarDents', 'drawCar'];
   const declarations = [
     ...['TAU', 'hashStr'].map(name => extractTopLevel(readSource('core.js'), name)),
     ...['DENT_ZONE', 'dentLevel'].map(name => extractTopLevel(gameplaySource, name)),

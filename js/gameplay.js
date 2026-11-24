@@ -954,7 +954,8 @@ function addDent(c, dmg, impactAngle) {
   const zone = dentZone(c, impactAngle);
   if (!c.dentDamage) { c.dentDamage = [0, 0, 0, 0]; c.dents = 0; }
   c.dentDamage[zone] += dmg;
-  const level = DENT_THRESHOLDS.filter(threshold => c.dentDamage[zone] >= threshold).length;
+  let level = 0;
+  while (level < DENT_THRESHOLDS.length && c.dentDamage[zone] >= DENT_THRESHOLDS[level]) level++;
   c.dents = (c.dents & ~(3 << (2 * zone))) | (level << (2 * zone));
 }
 function damageCar(c, dmg, angle, chain = 0) {

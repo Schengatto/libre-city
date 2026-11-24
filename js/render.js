@@ -2037,6 +2037,14 @@ function drawCarLights(c, hw, hh) {
 const DENT_NOTCH_POINTS = 7;
 const DENT_DEPTH_PER_LEVEL = 2;
 const DENT_CORNER_RADIUS = 6;
+function dentNotchPoint(zone, hw, hh, along, depth) {
+  switch (zone) {
+    case DENT_ZONE.front: return [hw - depth, along];
+    case DENT_ZONE.rear: return [-hw + depth, along];
+    case DENT_ZONE.left: return [along, -hh + depth];
+    default: return [along, hh - depth];
+  }
+}
 function drawCarDents(c, hw, hh) {
   if (!c.dents) return;
   const seedKey = c.netId != null ? c.netId : c.id;
@@ -2045,22 +2053,18 @@ function drawCarDents(c, hw, hh) {
   const sideOffsetFraction = (seed * 0.6180339887) % 1;
   const sideLength = hw * 2 / 3;
   const sideStart = -hw * 0.7 + sideOffsetFraction * (hw * 1.4 - sideLength);
-  const layouts = {
-    [DENT_ZONE.front]: { from: -flatHalfHeight, length: flatHalfHeight * 2, place: (along, depth) => [hw - depth, along] },
-    [DENT_ZONE.rear]: { from: -flatHalfHeight, length: flatHalfHeight * 2, place: (along, depth) => [-hw + depth, along] },
-    [DENT_ZONE.left]: { from: sideStart, length: sideLength, place: (along, depth) => [along, -hh + depth] },
-    [DENT_ZONE.right]: { from: sideStart, length: sideLength, place: (along, depth) => [along, hh - depth] },
-  };
   const fillColor = shade(c.color, -0.35), creaseColor = shade(c.color, -0.65);
-  for (const zone of Object.values(DENT_ZONE)) {
+  for (let zone = DENT_ZONE.front; zone <= DENT_ZONE.right; zone++) {
     const level = dentLevel(c.dents, zone);
     if (!level) continue;
-    const { from, length, place } = layouts[zone];
-    const edgeStart = place(from, 0), edgeEnd = place(from + length, 0);
+    const alongEnds = zone === DENT_ZONE.front || zone === DENT_ZONE.rear;
+    const from = alongEnds ? -flatHalfHeight : sideStart;
+    const length = alongEnds ? flatHalfHeight * 2 : sideLength;
+    const edgeStart = dentNotchPoint(zone, hw, hh, from, 0), edgeEnd = dentNotchPoint(zone, hw, hh, from + length, 0);
     const crease = [];
     for (let i = 1; i < DENT_NOTCH_POINTS; i++) {
       const jag = ((seed * 7 + i * 13 + zone * 5) % 5) / 4;
-      crease.push(place(from + length * i / DENT_NOTCH_POINTS, level * DENT_DEPTH_PER_LEVEL * (0.6 + 0.4 * jag)));
+      crease.push(dentNotchPoint(zone, hw, hh, from + length * i / DENT_NOTCH_POINTS, level * DENT_DEPTH_PER_LEVEL * (0.6 + 0.4 * jag)));
     }
     fillPolygon([edgeStart, ...crease, edgeEnd], fillColor);
     ctx.strokeStyle = creaseColor; ctx.lineWidth = 1;
@@ -2079,8 +2083,8 @@ function drawCar(c) {
   const hw = c.w / 2, hh = c.h / 2;
   drawTyres(hw, hh, c.livery === 'bus' || c.livery === 'lorry');
   const paint = bodyPaint(c.color, c.angle, hw, hh);
-  ctx.fillStyle = paint; roundRect(-hw, -hh, c.w, c.h, 6); ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 1.2; roundRect(-hw, -hh, c.w, c.h, 6); ctx.stroke();
+  ctx.fillStyle = paint; roundRect(-hw, -hh, c.w, c.h, DENT_CORNER_RADIUS); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 1.2; roundRect(-hw, -hh, c.w, c.h, DENT_CORNER_RADIUS); ctx.stroke();
   if (c.livery === 'bus') drawBusCabin(c, hw, hh);
   else if (c.livery === 'lorry') drawLorryCabin(c, hw, hh);
   else if (c.livery === 'spider') drawSpiderCockpit(c, hw, hh);
