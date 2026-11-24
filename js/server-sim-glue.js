@@ -332,7 +332,7 @@ var __sim = {
   _randomWalkNear(x, y, rmin, rmax) { return randomWalkNear(x, y, rmin, rmax); },
   _roadGraph() { return { nodes, edges }; },
   _cityWidth() { return MAP_W; },
-  _tileKinds() { return { ROAD, SIDEWALK, BUILDING, GRASS, TREE, WATER, ALLEY, COURT }; },
+  _tileKinds() { return { ROAD, SIDEWALK, BUILDING, GRASS, TREE, WATER, ALLEY, COURT, SAND, QUAY, PROP }; },
   _rail() { return { loopLen: RAIL_LOOP_LEN, crossings: railCrossings, pointAt: railPointAt }; },
   _train() { return train; },
   _setFrame(f) { frame = f; updateTrainKinematics(); },

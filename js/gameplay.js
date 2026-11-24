@@ -315,7 +315,7 @@ function calmWalkDir(p) {
   const soft = [], road = [];
   for (const d of DIRS) {
     const t = tileAt(Math.floor((p.x + d.x * T) / T), Math.floor((p.y + d.y * T) / T));
-    if (t === BUILDING || t === TREE || t === WATER) continue;   // wall: discard
+    if (t === BUILDING || t === TREE || t === WATER || t === PROP) continue;   // wall: discard
     (t === ROAD ? road : soft).push(d);
   }
   // Occasionally cross the road anyway, otherwise stay on the pavement.
@@ -330,7 +330,7 @@ function offRoadDir(wx, wy) {
   for (const d of DIRS) {
     for (let k = 1; k <= 5; k++) {
       const t = tileAt(cx + d.x * k, cy + d.y * k);
-      if (t === BUILDING || t === TREE || t === WATER) break;    // direction blocked
+      if (t === BUILDING || t === TREE || t === WATER || t === PROP) break;    // direction blocked
       if (t === SIDEWALK || t === GRASS || t === ALLEY) { if (k < bestK) { bestK = k; best = d; } break; }
     }
   }

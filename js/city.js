@@ -18,7 +18,7 @@ const WORLD_W = MAP_W * T, WORLD_H = MAP_H * T;
 const HALF_ROAD = 2.1 * T;    // half carriageway width (px)
 const LANE = 18;              // right-lane offset from the road centreline
 
-const ROAD = 0, SIDEWALK = 1, BUILDING = 2, GRASS = 3, TREE = 4, WATER = 5, ALLEY = 6, COURT = 7;
+const ROAD = 0, SIDEWALK = 1, BUILDING = 2, GRASS = 3, TREE = 4, WATER = 5, ALLEY = 6, COURT = 7, SAND = 8, QUAY = 9, PROP = 10;
 const grid = new Uint8Array(MAP_W * MAP_H);
 const gi = (x, y) => y * MAP_W + x;
 
@@ -306,14 +306,20 @@ function pickDistricts() {
     [ids[i], ids[j]] = [ids[j], ids[i]];
   }
   const chosen = ids.slice(0, count), spare = ids.slice(count);
+  const pending = chosen.filter(id => id !== PORT);
+  const cellCentre = b => (b + 0.5) * PERIOD;
+  const portEdgeDistance = ({ bx, by }) => [cellCentre(by), MAP_W - cellCentre(bx), MAP_H - cellCentre(by), cellCentre(bx)][portSide];
   const setUpPort = () => {
     portSide = MAP_H > MAP_W ? (districtRandom() < 0.5 ? 1 : 3) : Math.floor(districtRandom() * 4);
     portHarbourFirst = districtRandom() < 0.5;
+    for (const centre of districtCentres.filter(c => inPortBand(c.bx, c.by) || portEdgeDistance(c) < c.r)) {
+      districtCentres.splice(districtCentres.indexOf(centre), 1);
+      pending.push(centre.id);
+    }
     districtCentres.push({ id: PORT, bx: -1, by: -1, r: 0 });
   };
   if (chosen.includes(PORT)) setUpPort();
   const R = Math.round(Math.min(MAP_W, MAP_H) * DISTRICT_RADIUS_SHARE);
-  const cellCentre = b => (b + 0.5) * PERIOD;
   const island = armyZone && armyZone.island;
   const islandDistance = (x, y) => Math.hypot(Math.max(island.x0 - x, 0, x - island.x1 - 1), Math.max(island.y0 - y, 0, y - island.y1 - 1));
   const listCandidates = () => {
@@ -325,9 +331,9 @@ function pickDistricts() {
     }
     return cells;
   };
-  const clearance = ({ bx, by }) => {
-    const x = cellCentre(bx), y = cellCentre(by);
-    let nearest = portSide >= 0 ? [y, MAP_W - x, MAP_H - y, x][portSide] : Infinity;
+  const clearance = cell => {
+    const x = cellCentre(cell.bx), y = cellCentre(cell.by);
+    let nearest = portSide >= 0 ? portEdgeDistance(cell) : Infinity;
     for (const centre of districtCentres)
       if (centre.id !== PORT) nearest = Math.min(nearest, Math.hypot(x - cellCentre(centre.bx), y - cellCentre(centre.by)));
     return nearest;
@@ -339,7 +345,6 @@ function pickDistricts() {
     }
     return false;
   };
-  const pending = chosen.filter(id => id !== PORT);
   while (pending.length) {
     const id = pending.shift(), candidates = listCandidates();
     if (tryPlace(id, candidates, R, 1.5) || tryPlace(id, candidates, R, 1.0) || tryPlace(id, candidates, 0.75 * R, 1.0)) continue;
@@ -377,11 +382,31 @@ function pickDistricts() {
   }
   for (const centre of inland) districtGrid[centre.by * DISTRICT_COLS + centre.bx] = centre.id;
 }
-function genCity() { buildGraph(); pickDistricts(); bakeRoads(); bakeSidewalksAndBlocks(); bakeRailCorridor(); bakeArmyIsland(); carveAlleys(); }
+const PORT_STRIP = 5;
+const portProps = [];
+function bakePortEdge() {
+  if (portSide < 0) return;
+  const len = portSide % 2 ? MAP_H : MAP_W, harbourLen = Math.round(0.4 * len);
+  const harbourStart = portHarbourFirst ? 0 : len - harbourLen, harbourEnd = harbourStart + harbourLen;
+  const tileOf = (s, d) => [[s, d], [MAP_W - 1 - d, s], [s, MAP_H - 1 - d], [d, s]][portSide];
+  const sea = [[0, -1], [1, 0], [0, 1], [-1, 0]][portSide];
+  for (let s = 0; s < len; s++) for (let d = 0; d < PORT_STRIP; d++) {
+    const [x, y] = tileOf(s, d);
+    grid[gi(x, y)] = d <= 2 ? WATER : d === 4 || (s >= harbourStart && s < harbourEnd) ? QUAY : SAND;
+  }
+  for (let s = Math.max(6, harbourStart); s <= Math.min(len - 8, harbourEnd - 1); s++) {
+    const i = s - harbourStart, width = i % 14 === 4 ? 2 : i % 14 === 9 ? 3 : 0;
+    if (!width || s + width > harbourEnd) continue;
+    for (let k = 0; k < width; k++) for (let d = 3; d <= 4; d++) { const [x, y] = tileOf(s + k, d); grid[gi(x, y)] = PROP; }
+    const [ax, ay] = tileOf(s, 3), [bx, by] = tileOf(s + width - 1, 4);
+    portProps.push({ kind: width === 2 ? 'crane' : 'containers', x0: Math.min(ax, bx), y0: Math.min(ay, by), x1: Math.max(ax, bx), y1: Math.max(ay, by), sea });
+  }
+}
+function genCity() { buildGraph(); pickDistricts(); bakeRoads(); bakeSidewalksAndBlocks(); bakeRailCorridor(); bakeArmyIsland(); bakePortEdge(); carveAlleys(); }
 genCity();
 
 const tileAt = (tx, ty) => (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) ? BUILDING : grid[gi(tx, ty)];
-const solidTile = (tx, ty) => { const t = tileAt(tx, ty); return t === BUILDING || t === TREE || t === WATER; };
+const solidTile = (tx, ty) => { const t = tileAt(tx, ty); return t === BUILDING || t === TREE || t === WATER || t === PROP; };
 
 // ---------- Special buildings: police, hospital, fire station, bank, market ----------
 const landmarks = [];                                  // { type, x0, y0, x1, y1, cx, cy, door }
@@ -689,4 +714,4 @@ function randomTileNear(cx, cy, rmin, rmax, ok) {
 }
 const randomRoadNear = (cx, cy, rmin, rmax) => randomTileNear(cx, cy, rmin, rmax, (tx, ty) => tileAt(tx, ty) === ROAD);
 const randomWalkNear = (cx, cy, rmin, rmax) => randomTileNear(cx, cy, rmin, rmax,
-  (tx, ty) => { const t = tileAt(tx, ty); return (t === SIDEWALK || t === GRASS || t === ROAD || t === ALLEY) && !inArmyZone(tx, ty); });
+  (tx, ty) => { const t = tileAt(tx, ty); return (t === SIDEWALK || t === GRASS || t === ROAD || t === ALLEY || t === SAND || t === QUAY) && !inArmyZone(tx, ty); });
