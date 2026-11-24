@@ -212,6 +212,9 @@ function broadcast(room, msg, exceptId) {
 function sendRaw(ws, msg) {
   if (ws && ws.readyState === 1) { try { ws.send(JSON.stringify(msg)); } catch {} }
 }
+function pongFor(ping) {
+  return Number.isFinite(ping.c) ? { t: 'pong', c: ping.c } : { t: 'pong' };
+}
 // When the minutes run out the server notifies EVERYONE: nobody is left behind.
 function scheduleEnd(room) {
   clearTimeout(room.endTimer);
@@ -731,7 +734,7 @@ function onGameMessage(ws, m) {
       break;
     }
     case 'ping':
-      sendRaw(ws, { t: 'pong' });
+      sendRaw(ws, pongFor(m));
       break;
   }
 }
@@ -880,7 +883,7 @@ wss.on('connection', ws => {
     let m;
     try { m = JSON.parse(data); } catch { return; }
     if (!m || typeof m !== 'object') return;
-    if (m.t === 'ping') { sendRaw(ws, { t: 'pong' }); return; }   // application-level keepalive
+    if (m.t === 'ping') { sendRaw(ws, pongFor(m)); return; }   // application-level keepalive
     if (!ws._pid) {                                // not in a room yet: only create/join/leave-queue
       if (m.t === 'create') handleCreate(ws, m);
       else if (m.t === 'join') handleJoin(ws, m);
