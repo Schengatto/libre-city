@@ -157,7 +157,7 @@ ok(!extractTopLevel(netSource, 'netApplyRemote').includes('colH: 13'), 'netApply
 
 const renderSource = readSource('render.js');
 const RENDER_DECLARATIONS = ['shade', 'roundRect', 'bodyPaint', 'drawTyres', 'drawGlassGlint', 'GLASS_COLOR', 'fillPolygon', 'tracePolygon',
-  'drawSaloonCabin', 'drawVanCabin', 'drawBusCabin', 'drawLorryCabin', 'drawSpiderCockpit', 'drawCarLights', 'BRAKE_DECELERATION', 'drawCar'];
+  'drawSaloonCabin', 'drawVanCabin', 'drawBusCabin', 'drawLorryCabin', 'drawSpiderCockpit', 'drawCarLights', 'BRAKE_DECELERATION', 'drawCarDents', 'drawCar'];
 function loadCarRenderer() {
   const recorder = createRecordingContext();
   const context = vm.createContext({
@@ -201,6 +201,9 @@ const parkedSpider = carRenderer.draw({ ...spiders, role: 'parked', driver: null
 ok(!parkedSpider.fills.includes('#44aa66') && !parkedSpider.fills.includes('#d23a3a'), 'parked empty spider shows no driver');
 const playerSpider = carRenderer.draw({ ...spiders, role: 'player', driver: 'player' });
 ok(playerSpider.fills.includes('#123456') && !playerSpider.fills.includes('#44aa66') && playerSpider.fills.includes('#d23a3a'), 'player-driven spider uses the player shirt');
+
+const remoteSpider = carRenderer.draw({ ...spiders, role: 'traffic', driver: 'net', riderShirt: undefined });
+ok(remoteSpider.fills.includes('#3a72d2'), 'remote-player spider torso uses the fallback shirt');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

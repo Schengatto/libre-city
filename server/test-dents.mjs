@@ -3,7 +3,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import runtime from './sim-runtime.js';
 import stubs from '../js/sim-stubs.js';
-import { readSource, extractTopLevel } from './render-test-kit.mjs';
+import { readSource, extractTopLevel, createRecordingContext } from './render-test-kit.mjs';
 const { BUNDLE } = runtime;
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ', msg); } else { fail++; console.log('  XX FAIL:', msg); } };
@@ -140,6 +140,70 @@ for (const file of callFiles) {
   }
 }
 ok(callCount >= 9 && undirectedCalls.length === 0, `every damageCar call passes a direction (${callCount} calls) ${undirectedCalls.join(' | ')}`);
+
+const renderSource = readSource('render.js');
+const gameplaySource = readSource('gameplay.js');
+function loadDentRenderer() {
+  const recorder = createRecordingContext();
+  const context = vm.createContext({
+    ctx: recorder.context, camX: 0, camY: 0, frame: 0, player: { shirt: '#123456' }, Math,
+    t: key => key, playerSirenOn: () => false, drawVehicleShadow: () => {}, drawCarFlames: () => {}, drawBike: () => {}, drawTank: () => {},
+  });
+  const renderNames = ['shade', 'roundRect', 'bodyPaint', 'drawTyres', 'drawGlassGlint', 'GLASS_COLOR', 'fillPolygon', 'tracePolygon',
+    'drawSaloonCabin', 'drawVanCabin', 'drawBusCabin', 'drawLorryCabin', 'drawSpiderCockpit', 'drawCarLights', 'BRAKE_DECELERATION', 'drawCarDents', 'drawCar'];
+  const declarations = [
+    extractTopLevel(readSource('core.js'), 'TAU'),
+    ...['DENT_ZONE', 'dentLevel'].map(name => extractTopLevel(gameplaySource, name)),
+    ...renderNames.map(name => extractTopLevel(renderSource, name)),
+  ];
+  const wrapper = '{ const original = drawCarDents; drawCarDents = function (...args) { dentRuns++; return original(...args); }; }';
+  vm.runInContext(['var dentRuns = 0;', ...declarations, wrapper].join('\n'), context);
+  const record = expression => {
+    recorder.calls.length = 0;
+    vm.runInContext('dentRuns = 0', context);
+    vm.runInContext(expression, context);
+    return { calls: recorder.calls.map(([name, args]) => [name, args]), dentRuns: vm.runInContext('dentRuns', context) };
+  };
+  return {
+    dents: (car, hw = 23, hh = 12) => { context.car = car; return record(`drawCarDents(car, ${hw}, ${hh})`); },
+    drawCar: car => { context.car = car; return record('drawCar(car)'); },
+  };
+}
+const dentRenderer = loadDentRenderer();
+const HALF_WIDTH = 23, HALF_HEIGHT = 12, DEPTH_BOUND = 3 * 2.5;
+const dentSaloon = (zoneLevels, extra = {}) => ({
+  id: 3, x: 0, y: 0, angle: 0, speed: 0, role: 'parked', driver: null, color: '#2f7bd6', livery: null, w: 46, h: 24,
+  dents: zoneLevels.reduce((packed, [zone, level]) => packed | (level << (2 * zone)), 0), ...extra,
+});
+const pathPoints = calls => calls.filter(([name]) => name === 'moveTo' || name === 'lineTo').map(([, args]) => args);
+const countCalls = (calls, wanted) => calls.filter(([name]) => name === wanted).length;
+
+const undamaged = dentRenderer.dents(dentSaloon([]));
+ok(undamaged.calls.length === 0, 'no dent artwork when undamaged');
+const frontOne = dentRenderer.dents(dentSaloon([[FRONT, 1]]));
+const frontOnePoints = pathPoints(frontOne.calls);
+ok(countCalls(frontOne.calls, 'fill') >= 1 && frontOnePoints.length > 0 && frontOnePoints.every(([x]) => x >= HALF_WIDTH - DEPTH_BOUND),
+  'front level 1 fills one notch on the front edge');
+const rightThree = dentRenderer.dents(dentSaloon([[RIGHT, 3]]));
+const rightThreePoints = pathPoints(rightThree.calls);
+ok(countCalls(rightThree.calls, 'fill') >= 1 && rightThreePoints.every(([, y]) => y >= HALF_HEIGHT - DEPTH_BOUND), 'right level 3 fills one notch on the right edge');
+const everyZone = dentRenderer.dents(dentSaloon([[FRONT, 1], [REAR, 2], [LEFT, 3], [RIGHT, 1]]));
+ok(countCalls(everyZone.calls, 'fill') === 4, 'one notch per dented zone');
+const innermostFront = calls => Math.min(...pathPoints(calls).map(([x]) => x));
+ok(innermostFront(dentRenderer.dents(dentSaloon([[FRONT, 3]])).calls) < innermostFront(frontOne.calls), 'a higher level cuts deeper');
+ok(JSON.stringify(dentRenderer.dents(dentSaloon([[LEFT, 2]])).calls) === JSON.stringify(dentRenderer.dents(dentSaloon([[LEFT, 2]])).calls), 'the same car records the same dent shape');
+const sideNotchX = id => pathPoints(dentRenderer.dents(dentSaloon([[LEFT, 2]], { id })).calls).map(([x]) => x);
+ok(JSON.stringify(sideNotchX(1)) !== JSON.stringify(sideNotchX(2)), 'side notches sit at a different offset on different cars');
+
+const bodies = {
+  bus: { livery: 'bus', w: 88, h: 28 }, lorry: { livery: 'lorry', w: 76, h: 28, cargo: '#e6e2d8' },
+  spider: { livery: 'spider', w: 42, h: 22 }, ambulance: { livery: 'ambulance', w: 50, h: 25 },
+};
+for (const [name, body] of Object.entries(bodies)) {
+  const dented = dentRenderer.drawCar(dentSaloon([[FRONT, 2], [LEFT, 1]], body));
+  const clean = dentRenderer.drawCar(dentSaloon([], body));
+  ok(dented.dentRuns === 1 && countCalls(dented.calls, 'fill') > countCalls(clean.calls, 'fill'), `drawCar draws dents on a ${name}`);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

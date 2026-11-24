@@ -2033,6 +2033,38 @@ function drawCarLights(c, hw, hh) {
   ctx.fillStyle = braking ? '#ff4a3a' : '#9a1a1e';
   ctx.fillRect(-hw + 0.5, -hh + 2.5, 2.5, 5); ctx.fillRect(-hw + 0.5, hh - 7.5, 2.5, 5);
 }
+function drawCarDents(c, hw, hh) {
+  if (!c.dents) return;
+  const NOTCH_POINTS = 7;
+  const DEPTH_PER_LEVEL = 2;
+  const seed = c.id | 0;
+  const sideOffsetFraction = (seed * 0.6180339887) % 1;
+  const sideLength = hw * 2 / 3;
+  const sideStart = -hw * 0.7 + sideOffsetFraction * (hw * 1.4 - sideLength);
+  const layouts = {
+    [DENT_ZONE.front]: { from: -hh * 0.8, length: hh * 1.6, place: (along, depth) => [hw - depth, along] },
+    [DENT_ZONE.rear]: { from: -hh * 0.8, length: hh * 1.6, place: (along, depth) => [-hw + depth, along] },
+    [DENT_ZONE.left]: { from: sideStart, length: sideLength, place: (along, depth) => [along, -hh + depth] },
+    [DENT_ZONE.right]: { from: sideStart, length: sideLength, place: (along, depth) => [along, hh - depth] },
+  };
+  const fillColor = shade(c.color, -0.35), creaseColor = shade(c.color, -0.65);
+  for (const zone of Object.values(DENT_ZONE)) {
+    const level = dentLevel(c.dents, zone);
+    if (!level) continue;
+    const { from, length, place } = layouts[zone];
+    const edgeStart = place(from, 0), edgeEnd = place(from + length, 0);
+    const crease = [];
+    for (let i = 1; i < NOTCH_POINTS; i++) {
+      const jag = ((seed * 7 + i * 13 + zone * 5) % 5) / 4;
+      crease.push(place(from + length * i / NOTCH_POINTS, level * DEPTH_PER_LEVEL * (0.6 + 0.4 * jag)));
+    }
+    fillPolygon([edgeStart, ...crease, edgeEnd], fillColor);
+    ctx.strokeStyle = creaseColor; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(crease[0][0], crease[0][1]);
+    for (let i = 1; i < crease.length; i++) ctx.lineTo(crease[i][0], crease[i][1]);
+    ctx.stroke();
+  }
+}
 function drawCar(c) {
   if (c.isBike) { drawBike(c); return; }
   if (c.isTank) { drawTank(c); return; }
@@ -2051,7 +2083,7 @@ function drawCar(c) {
   else if (c.livery && c.livery !== 'army') drawVanCabin(c, hw, hh);
   else drawSaloonCabin(c, hw, hh, (c.role === 'police' || c.wasPolice) ? '#20407a' : paint);
   drawCarLights(c, hw, hh);
-  if (c.isTaxi) {                                    // taxi livery: chequers + roof sign
+  if (c.isTaxi) {                                   // taxi livery: chequers + roof sign
     for (let i = 0; i < 5; i++) {
       const sx = -hw + 7 + i * 7;
       ctx.fillStyle = i & 1 ? '#f4f4f4' : '#1a1a1e';
@@ -2092,6 +2124,7 @@ function drawCar(c) {
     ctx.fillStyle = '#e8e4c8'; ctx.font = 'bold 10px Trebuchet MS'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('★', -1, 0.5); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   }
+  drawCarDents(c, hw, hh);
   // Flashing lights: patrol cars mid-chase, or the player's patrol car/ambulance with the
   // siren on.
   if (c.role === 'police' || playerSirenOn(c)) {
