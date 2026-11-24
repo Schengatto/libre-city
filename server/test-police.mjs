@@ -9,6 +9,14 @@ const PISTOL_INDEX = 1;
 const SHOOT_EVERY_TICKS = 25;
 const SHOOTING_TICKS = 300;
 const TOTAL_TICKS = 500;
+const CLEAR_LINE_OF_FIRE_RADIUS = 150;
+
+function removeUndrivenCarsNear(sim, x, y, radius) {
+  const cars = sim._cars();
+  for (let i = cars.length - 1; i >= 0; i--) {
+    if (!cars[i].driver && Math.hypot(cars[i].x - x, cars[i].y - y) < radius) cars.splice(i, 1);
+  }
+}
 
 function runPoliceScenario(roomCode, playerCount, criminalIndex, police = true) {
   const sim = createRoomSim(roomCode);
@@ -19,6 +27,7 @@ function runPoliceScenario(roomCode, playerCount, criminalIndex, police = true) 
   const criminal = sim._player(criminalId);
   playerIds.forEach((id, k) => { if (k !== criminalIndex) sim._player(id).x += 3000 * (k + 1); });
   criminal.owned[PISTOL_INDEX] = true; criminal.weaponIdx = PISTOL_INDEX;
+  removeUndrivenCarsNear(sim, criminal.x, criminal.y, CLEAR_LINE_OF_FIRE_RADIUS);
   for (let i = 0; i < 30; i++) sim.tick();
   const result = { maxWanted: 0, maxSnapshotCops: 0, maxSnapshotPoliceCars: 0, innocentMaxWanted: 0 };
   for (let i = 0; i < TOTAL_TICKS; i++) {
@@ -92,7 +101,7 @@ console.log('population reaches a far second player');
   const host = sim._player(hostId), guest = sim._player(guestId);
   const tileSize = 32, cityEdgeX = sim._cityWidth() * tileSize;
   let farSpot;
-  do farSpot = sim._randomWalkNear(host.x, host.y, 3500, 4500); while (farSpot.x >= cityEdgeX);
+  do farSpot = sim._randomWalkNear(host.x, host.y, 3500, 4500); while (!farSpot || farSpot.x >= cityEdgeX);
   guest.x = farSpot.x; guest.y = farSpot.y;
   const nearGuest = e => Math.hypot(e.x - guest.x, e.y - guest.y) < 900;
   let civiliansNearGuest = 0, trafficNearGuest = 0;
