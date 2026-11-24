@@ -68,7 +68,7 @@ Client-only functions (`net.js`, `render.js`) are loaded into the same context w
 **Interfaces:**
 - Produces:
   - `const VEHICLE_MAX_W = 88, VEHICLE_MAX_H = 30;` (entities.js, top of the factories section)
-  - `vehicleColH(isBike: boolean, h: number): number` — `8` for bikes, else `Math.round(h / 2) + 1`
+  - `vehicleColH(isBike: boolean, h: number): number` — `8` for bikes, else `Math.floor(h / 2) + 1`
   - `makeBus(c) → c`, `makeLorry(c) → c`, `makeSpider(c) → c` — mutate and return the car
   - `dressTrafficCar(c) → c` — applies at most one of bus/lorry/spider/taxi/bike
   - `CAR_REACH = Math.ceil(Math.hypot(VEHICLE_MAX_W, VEHICLE_MAX_H))` (= 93)

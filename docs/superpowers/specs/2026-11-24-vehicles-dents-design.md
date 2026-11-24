@@ -84,7 +84,7 @@ Type modifiers in the `makeMoto` pattern, applied to a car built by `makeCar`:
 
 - Colours: bus from a short palette of transit colours, lorry cab from `CAR_COLORS` with a light cargo box, spider from a bright racing palette.
 - The spider driver wears a racing helmet: `c.helmet` (travels as `hel`). `c.riderShirt` is set for the driver's torso.
-- `vehicleColH(isBike, h)` returns `8` for bikes, otherwise `Math.round(h / 2) + 1`. It reproduces every existing value (saloon 13, fire 14, tank 16) and gives bus/lorry 15, spider 12. The factories set `colH` from it, and the client uses it instead of hard-coded values.
+- `vehicleColH(isBike, h)` returns `8` for bikes, otherwise `Math.floor(h / 2) + 1`. It reproduces every existing value (saloon 13, fire 14, tank 16, army jeep 13) and gives bus/lorry 15, spider 12. The factories set `colH` from it, and the client uses it instead of hard-coded values.
 - `VEHICLE_MAX_W = 88`, `VEHICLE_MAX_H = 30` (bus length, tank width).
 
 ### Traffic mix
