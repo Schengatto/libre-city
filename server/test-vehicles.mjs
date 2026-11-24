@@ -1,6 +1,7 @@
 import vm from 'node:vm';
 import runtime from './sim-runtime.js';
 import stubs from '../js/sim-stubs.js';
+import { readSource, extractTopLevel } from './render-test-kit.mjs';
 const { BUNDLE } = runtime;
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ', msg); } else { fail++; console.log('  XX FAIL:', msg); } };
@@ -99,6 +100,34 @@ const spacing = loadSim('PVEH02').run(`(() => {
 })()`);
 ok(spacing.count >= 20, `spacing test spawned buses (${spacing.count})`);
 ok(spacing.tooClose === 0, `spawn spacing respects length (${spacing.tooClose} close pairs)`);
+
+const netSource = readSource('net.js');
+const clientDecoder = loadSim('PVEH03');
+vm.runInContext(['function interpFeed() {}', extractTopLevel(netSource, 'netApplyCar'), extractTopLevel(netSource, 'netMakeWorldCar')].join('\n'), clientDecoder.context);
+const decoded = clientDecoder.run(`(() => {
+  const roundTrip = car => netMakeWorldCar(JSON.parse(JSON.stringify(carPayload(car))));
+  const build = {
+    saloon: () => makeCar(0, 0, 'traffic'),
+    bike: () => makeMoto(makeCar(0, 0, 'traffic')),
+    bus: () => makeBus(makeCar(0, 0, 'traffic')),
+    lorry: () => makeLorry(makeCar(0, 0, 'traffic')),
+    spider: () => makeSpider(makeCar(0, 0, 'traffic')),
+    tank: () => makeServiceCar('army', { x: 0, y: 0, angle: 0 }),
+  };
+  return Object.fromEntries(Object.entries(build).map(([kind, make]) => {
+    const car = make(), worldCar = roundTrip(car);
+    return [kind, { colH: car.colH, worldColH: worldCar.colH, w: car.w, worldW: worldCar.w, h: car.h, worldH: worldCar.h, livery: car.livery || null, worldLivery: worldCar.livery }];
+  }));
+})()`);
+for (const [kind, d] of Object.entries(decoded)) {
+  ok(d.worldColH === d.colH && d.worldW === d.w && d.worldH === d.h && d.worldLivery === d.livery, `world car colH from h: ${kind} (${d.worldColH})`);
+}
+ok(decoded.saloon.worldColH === 13 && decoded.bike.worldColH === 8, 'world car colH keeps saloon 13 and bike 8');
+
+const colHDerivedBodies = ['netParkCar', 'netApplyRemote'].map(name => [name, extractTopLevel(netSource, name)]);
+for (const [name, body] of colHDerivedBodies) {
+  ok(body.includes('vehicleColH(') && !body.includes('colH: 13'), `colH derived in ${name}`);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

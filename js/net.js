@@ -383,7 +383,7 @@ function netApplyRemote(id, m) {
     g.gun = !!m.g; g.hp = m.hp; g.down = !!m.dn;
     if (m.st) g.stats = m.st;
     if (m.c) {
-      if (!g.car) g.car = { role: 'traffic', driver: 'net', colH: 13, speed: 0, gear: 1,
+      if (!g.car) g.car = { role: 'traffic', driver: 'net', colH: vehicleColH(m.c.bike, m.c.h), speed: 0, gear: 1,
                             kvx: 0, kvy: 0, lightPhase: 0, x: m.c.x, y: m.c.y, angle: m.c.an, tx: null };
       const c = g.car;
       if (c.tx == null || dist(c.x, c.y, m.c.x, m.c.y) > 280) { c.x = m.c.x; c.y = m.c.y; c.angle = m.c.an; }  // teleport
@@ -409,7 +409,7 @@ function netApplyRemote(id, m) {
 function netParkCar(owner, p) {
   if (!p || p.cid == null) return;
   let c = net.looseCars.get(p.cid);
-  if (!c) { c = { netId: p.cid, role: 'parked', driver: null, colH: 13, speed: 0, gear: 1, lightPhase: 0, kvx: 0, kvy: 0 }; net.looseCars.set(p.cid, c); }
+  if (!c) { c = { netId: p.cid, role: 'parked', driver: null, colH: vehicleColH(p.bike, p.h), speed: 0, gear: 1, lightPhase: 0, kvx: 0, kvy: 0 }; net.looseCars.set(p.cid, c); }
   c.owner = owner;
   c.x = p.x; c.y = p.y; c.angle = p.an; c.speed = p.sp || 0;
   c.w = p.w; c.h = p.h; c.color = p.col;
@@ -624,7 +624,7 @@ function netApplyCar(c, cp) {
   c.sirenOn = cp.siren; c.lightPhase = cp.lp || 0; c.burning = cp.burn; c.smoking = cp.smk;
 }
 function netMakeWorldCar(cp) {
-  const c = { netId: cp.id, driver: 'net', colH: cp.tank ? 16 : cp.bike ? 8 : 13, gear: 1,
+  const c = { netId: cp.id, driver: 'net', colH: vehicleColH(cp.bike, cp.h), gear: 1,
               kvx: 0, kvy: 0, x: cp.x, y: cp.y, angle: cp.an };
   netApplyCar(c, cp); interpFeed(c, cp.x, cp.y, cp.an);
   return c;
