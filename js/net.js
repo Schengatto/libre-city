@@ -275,7 +275,7 @@ function onServerMessage(m) {
       break;
     case 'kill': netScoreKill(m.id); break;
     case 'w': netOnSnapshot(m); break;             // Phase 2: authoritative world snapshot
-    case 'pong': break;
+    case 'pong': netStatsOnPong(net.stats, m.c, performance.now()); break;
     default: if (m.id && m.id !== net.myId) netApplyRemote(m.id, m);
   }
 }
@@ -293,6 +293,7 @@ function netShutdown() {
   net.players.clear(); net.looseCars.clear(); net.remoteCops.clear();
   net.mode = null; net.myId = null; net.token = null; net.clockLeft = null;
   net.trainTick = null;
+  net.stats = createNetStats();
   net.score = 0; net.streak = 0; net.bounty = 0; updateBountyHud(0);
   policeOn = true;
   document.body.classList.remove('mp');
@@ -580,12 +581,26 @@ function netTick() {
 // vehicles and pedestrians "dance" at every correction). To cut the delay, raise the
 // snapshot RATE (server side) rather than extrapolate. The local player does NOT come
 // through here: they are predicted (updateNetClient) to stay responsive.
-// Render delay = ~1.5 snapshot intervals: renderT ALWAYS falls between two real samples →
+// Render delay = measured mean snapshot interval + 2 × jitter (~1.5 intervals on a steady
+// stream): renderT ALWAYS falls between two real samples →
 // pure interpolation (smooth, no extrapolation or jumps). The rival's "position in the past"
 // lag drops by raising the server-side snapshot RATE (SNAP_EVERY): at 30/s (33ms) a 50ms
 // delay is enough, half the 100ms needed at 15/s — same smoothness, half the lag.
-const INTERP_MS = 50;                     // render delay (~1.5 snapshot intervals @30Hz)
-const INTERP_KEEP = 6;                    // states kept per entity (~200ms of history = jitter margin)
+const INTERP_MS = 50;                     // default render delay until enough intervals are measured (~1.5 snapshot intervals @30Hz)
+const INTERP_KEEP = 8;                    // states kept per entity (~230ms of history @30Hz = max delay + one interval)
+const INTERP_MIN_MS = 35;
+const INTERP_MAX_MS = 150;
+const INTERP_MARGIN_MS = 8;
+const INTERP_MIN_INTERVALS = 10;
+const INTERP_STEP_MS = 0.5;
+function netInterpDelayTarget(snapshotWindow) {
+  if (!snapshotWindow || snapshotWindow.intervalCount < INTERP_MIN_INTERVALS) return INTERP_MS;
+  const target = snapshotWindow.meanInterval + 2 * snapshotWindow.jitter + INTERP_MARGIN_MS;
+  return Math.min(INTERP_MAX_MS, Math.max(INTERP_MIN_MS, target));
+}
+function netInterpDelayStep(current, target) {
+  return current + Math.max(-INTERP_STEP_MS, Math.min(INTERP_STEP_MS, target - current));
+}
 function interpFeed(e, x, y, a) {
   const t = performance.now();
   const buf = e.ib || (e.ib = []);
@@ -612,6 +627,125 @@ function interpSample(e, renderT) {
     }
   }
 }
+
+const NET_STATS_SMOOTHING = 0.2;
+const NET_STATS_WINDOW_MS = 5000;
+const NET_STATS_HOST_HZ_MIN_SPAN_MS = 1000;
+const NET_STATS_PENDING_INPUTS = 64;
+const NET_STATS_PING_MS = 1000;
+const NET_STATS_OVERLAY_REFRESH_MS = 500;
+function createNetStats() {
+  return {
+    rtt: null, rttLast: null,
+    inputRtt: null, inputRttLast: null, pendingInputs: [],
+    snapshotTimes: [], snapshotWindow: null,
+    hostHz: null, tickSamples: [],
+    interpDelay: INTERP_MS,
+  };
+}
+function netStatsSmooth(previous, sample) {
+  return previous === null ? sample : previous + (sample - previous) * NET_STATS_SMOOTHING;
+}
+function netStatsOnPong(stats, clientTime, now) {
+  if (!Number.isFinite(clientTime) || clientTime > now) return;
+  stats.rttLast = now - clientTime;
+  stats.rtt = netStatsSmooth(stats.rtt, stats.rttLast);
+}
+function netStatsOnInputSent(stats, seq, now) {
+  stats.pendingInputs.push({ seq, sentAt: now });
+  if (stats.pendingInputs.length > NET_STATS_PENDING_INPUTS) stats.pendingInputs.shift();
+}
+function netStatsOnAck(stats, ack, now) {
+  if (!Number.isFinite(ack)) return;
+  const pending = stats.pendingInputs;
+  let ackedCount = 0;
+  while (ackedCount < pending.length && pending[ackedCount].seq <= ack) ackedCount++;
+  if (ackedCount === 0) return;
+  stats.inputRttLast = now - pending[ackedCount - 1].sentAt;
+  stats.inputRtt = netStatsSmooth(stats.inputRtt, stats.inputRttLast);
+  pending.splice(0, ackedCount);
+}
+function netStatsOnTick(stats, tick, now) {
+  if (!Number.isFinite(tick)) return;
+  const samples = stats.tickSamples;
+  if (samples.length && tick < samples[samples.length - 1].tick) samples.length = 0;
+  samples.push({ tick, at: now });
+  while (samples[0].at < now - NET_STATS_WINDOW_MS) samples.shift();
+  const oldest = samples[0], span = now - oldest.at;
+  stats.hostHz = span >= NET_STATS_HOST_HZ_MIN_SPAN_MS ? (tick - oldest.tick) * 1000 / span : null;
+}
+function netStatsSnapshotWindow(times, now) {
+  let first = 0;
+  while (first < times.length && times[first] < now - NET_STATS_WINDOW_MS) first++;
+  const intervalCount = Math.max(0, times.length - first - 1);
+  if (times.length === first) return { rate: 0, meanInterval: null, jitter: null, maxGap: null, intervalCount };
+  let intervalSum = 0;
+  for (let i = first + 1; i < times.length; i++) intervalSum += times[i] - times[i - 1];
+  const meanInterval = intervalCount ? intervalSum / intervalCount : null;
+  let deviationSum = 0, maxGap = now - times[times.length - 1];
+  for (let i = first + 1; i < times.length; i++) {
+    const interval = times[i] - times[i - 1];
+    deviationSum += Math.abs(interval - meanInterval);
+    if (interval > maxGap) maxGap = interval;
+  }
+  const span = now - times[first];
+  return {
+    rate: span > 0 ? intervalCount * 1000 / span : 0,
+    meanInterval,
+    jitter: intervalCount ? deviationSum / intervalCount : null,
+    maxGap,
+    intervalCount,
+  };
+}
+function netStatsOnSnapshot(stats, snapshot, now) {
+  const times = stats.snapshotTimes;
+  times.push(now);
+  while (times[0] < now - NET_STATS_WINDOW_MS) times.shift();
+  stats.snapshotWindow = netStatsSnapshotWindow(times, now);
+  netStatsOnAck(stats, snapshot.ack, now);
+  netStatsOnTick(stats, snapshot.tick, now);
+}
+function netStatsLines(stats, interpDelay, now) {
+  const snapshotWindow = netStatsSnapshotWindow(stats.snapshotTimes, now);
+  const ms = (value, digits = 0) => value === null ? '-' : value.toFixed(digits) + ' ms';
+  const withLast = (smoothed, last) => last === null ? ms(smoothed) : ms(smoothed) + ' (last ' + ms(last) + ')';
+  return [
+    ['RTT', withLast(stats.rtt, stats.rttLast)],
+    ['input RTT', withLast(stats.inputRtt, stats.inputRttLast)],
+    ['snap/s', snapshotWindow.rate.toFixed(1)],
+    ['interval', ms(snapshotWindow.meanInterval, 1)],
+    ['jitter', ms(snapshotWindow.jitter, 1)],
+    ['max gap 5s', ms(snapshotWindow.maxGap)],
+    ['host Hz', stats.hostHz === null ? '-' : stats.hostHz.toFixed(1)],
+    ['interp delay', ms(interpDelay, 1)],
+  ].map(([label, value]) => label.padEnd(13) + value).join('\n');
+}
+net.stats = createNetStats();
+
+let netStatsOverlayOn = new URLSearchParams(location.search).has('netstats');
+let netStatsOverlayEl = null;
+function netRenderStatsOverlay() {
+  const visible = netStatsOverlayOn && netActive() && net.myId !== null;
+  if (!visible) { if (netStatsOverlayEl) netStatsOverlayEl.classList.remove('show'); return; }
+  if (!netStatsOverlayEl) {
+    netStatsOverlayEl = document.createElement('pre');
+    netStatsOverlayEl.id = 'netStats';
+    document.body.appendChild(netStatsOverlayEl);
+  }
+  netStatsOverlayEl.textContent = netStatsLines(net.stats, net.stats.interpDelay, performance.now());
+  netStatsOverlayEl.classList.add('show');
+}
+function netSendPing() {
+  if (netActive()) netSend({ t: 'ping', c: performance.now() });
+}
+addEventListener('keydown', e => {
+  if (e.code !== 'F3') return;
+  e.preventDefault();
+  netStatsOverlayOn = !netStatsOverlayOn;
+  netRenderStatsOverlay();
+});
+setInterval(netSendPing, NET_STATS_PING_MS);
+setInterval(netRenderStatsOverlay, NET_STATS_OVERLAY_REFRESH_MS);
 
 // Applies a car's NON-positional fields from the snapshot (appearance/state); the position
 // goes into the separate interpolation buffer (interpFeed).
@@ -649,6 +783,7 @@ function netTrainClock() {
 function netOnSnapshot(m) {
   net.snap = m;
   netNoteTrainTick(m);
+  netStatsOnSnapshot(net.stats, m, performance.now());
   // --- World cars (traffic/police/parked/abandoned) ---
   const seen = new Set();
   for (const cp of m.cars) {
@@ -714,7 +849,9 @@ function netApplyFx(e) {
 // Samples the world at the render instant (in the past) from the interpolation buffer, and
 // extrapolates the bullets. Smooth and at the correct speed at any frame rate.
 function netInterpWorld() {
-  const renderT = performance.now() - INTERP_MS;
+  const stats = net.stats;
+  stats.interpDelay = netInterpDelayStep(stats.interpDelay, netInterpDelayTarget(stats.snapshotWindow));
+  const renderT = performance.now() - stats.interpDelay;
   for (const c of net.wcars.values()) interpSample(c, renderT);
   for (const p of net.wpeds.values()) interpSample(p, renderT);
   for (const g of net.players.values()) {
@@ -804,6 +941,7 @@ function netSendInput() {
   // (orientation/resize); it is idempotent server-side.
   const vr = Math.round(Math.max(vw, vh) * 0.5 + 250);
   if (vr !== net.lastVR) { cmd.vr = vr; net.lastVR = vr; }
+  netStatsOnInputSent(net.stats, cmd.seq, performance.now());
   if (simHostActive()) simHostSendInput(cmd);
   else netSend(cmd);
 }
