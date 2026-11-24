@@ -1148,7 +1148,7 @@ function respawnPlayer() {
   const type = downKind === 'busted' ? 'police' : 'hospital';
   let best = null, bd = Infinity;
   for (const l of landmarks) if (l.type === type) { const d = dist(l.cx, l.cy, player.x, player.y); if (d < bd) { bd = d; best = l; } }
-  const p = best ? best.door : (randomRoadNear(player.x, player.y, 500, 1100) || nodes[Math.floor(nodes.length / 2)]);
+  const p = best ? best.door : (randomPublicRoadNear(player.x, player.y, 500, 1100) || nodes[Math.floor(nodes.length / 2)]);
   player.x = p.x; player.y = p.y;
   const el = $('#bigMsg'); if (el) el.classList.add('hidden');
   toast(t(downKind === 'busted' ? 'respawn.busted' : 'respawn.dead'));

@@ -9,7 +9,7 @@ const taxi = { phase: 'idle', fare: null, dest: null, pay: 0, timer: 0, waitCd: 
 const taxiActive = () => taxi.phase !== 'idle';
 const taxiTarget = () => taxi.phase === 'pickup' ? taxi.fare : taxi.dest;
 function spawnFare() {
-  const p = randomTileNear(player.x, player.y, 500, 1600, (tx, ty) => tileAt(tx, ty) === SIDEWALK);
+  const p = randomPublicSidewalkNear(player.x, player.y, 500, 1600);
   if (!p) { taxi.waitCd = 60; return; }
   const f = makePed(p.x, p.y, 'fare');
   f.speed = 0; f.dir = { x: 0, y: 0 };
@@ -20,7 +20,7 @@ function spawnFare() {
 function startRide() {
   const f = taxi.fare;
   let d = null;                                       // destination: a distant point on a road
-  for (let r = 2400; r >= 800 && !d; r -= 400) d = randomRoadNear(f.x, f.y, r * 0.6, r);
+  for (let r = 2400; r >= 800 && !d; r -= 400) d = randomPublicRoadNear(f.x, f.y, r * 0.6, r);
   if (!d) { cancelTaxi(); taxi.waitCd = 120; return; }
   const i = peds.indexOf(f); if (i >= 0) peds.splice(i, 1);       // the fare gets in
   taxi.fare = null; taxi.phase = 'ride'; taxi.dest = { x: d.x, y: d.y };
@@ -75,7 +75,7 @@ function spawnOrder() {
   }
   if (!shop) { pizza.waitCd = 300; return; }
   // The hungry customer waits on a pavement not too close to the shop.
-  const p = randomTileNear(shop.door.x, shop.door.y, 600, 1800, (tx, ty) => tileAt(tx, ty) === SIDEWALK);
+  const p = randomPublicSidewalkNear(shop.door.x, shop.door.y, 600, 1800);
   if (!p) { pizza.waitCd = 60; return; }
   const cl = makePed(p.x, p.y, 'hungry');
   cl.speed = 0; cl.dir = { x: 0, y: 0 };
@@ -130,7 +130,7 @@ const rescue = { phase: 'idle', patient: null, hosp: null, pay: 0, timer: 0, wai
 const rescueActive = () => rescue.phase !== 'idle';
 const rescueTarget = () => rescue.phase === 'pickup' ? rescue.patient : (rescue.hosp && rescue.hosp.door);
 function spawnEmergency() {
-  const p = randomTileNear(player.x, player.y, 600, 1800, (tx, ty) => tileAt(tx, ty) === SIDEWALK);
+  const p = randomPublicSidewalkNear(player.x, player.y, 600, 1800);
   if (!p) { rescue.waitCd = 60; return; }
   const inj = makePed(p.x, p.y, 'injured');
   inj.speed = 0; inj.dir = { x: 0, y: 0 };
@@ -195,7 +195,7 @@ function spawnCrime() {
     dist(l.door.x, l.door.y, player.x, player.y) < 2400);
   const lm = spots.length ? pick(spots) : null;
   const cx = lm ? lm.door.x : player.x, cy = lm ? lm.door.y : player.y;
-  const p = randomTileNear(cx, cy, lm ? 60 : 600, lm ? 260 : 1600, (tx, ty) => tileAt(tx, ty) === SIDEWALK);
+  const p = randomPublicSidewalkNear(cx, cy, lm ? 60 : 600, lm ? 260 : 1600);
   if (!p) { patrol.waitCd = 60; return; }
   const r = makePed(p.x, p.y, 'robber');
   r.shirt = '#2e2e34'; r.hair = '#1a1a1e';            // dressed in dark colours, a proper crook
@@ -242,7 +242,7 @@ function updatePatrol() {
 const firejob = { phase: 'idle', site: null, pay: 0, timer: 0, timer0: 1, waitCd: 0, jobs: 0 };
 const firejobActive = () => firejob.phase !== 'idle';
 function spawnFire() {
-  const p = randomTileNear(player.x, player.y, 600, 1800, (tx, ty) => tileAt(tx, ty) === SIDEWALK);
+  const p = randomPublicSidewalkNear(player.x, player.y, 600, 1800);
   if (!p) { firejob.waitCd = 60; return; }
   const site = { x: p.x, y: p.y, r: 26, hp: 140, seed: rnd(0, TAU) };
   fires.push(site);

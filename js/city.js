@@ -202,6 +202,7 @@ function carveAlleys() {
 const ARMY_W = 26, ARMY_H = 20, ISLAND_BANKS = 5;
 let armyZone = null;
 const inArmyZone = (tx, ty) => !!armyZone && tx >= armyZone.x0 && tx <= armyZone.x1 && ty >= armyZone.y0 && ty <= armyZone.y1;
+const inArmyIsland = (tx, ty) => !!armyZone && tx >= armyZone.island.x0 && tx <= armyZone.island.x1 && ty >= armyZone.island.y0 && ty <= armyZone.island.y1;
 function pickArmyIsland() {
   const clearance = HALF_ROAD + T;
   const span = (lines, k) => (lines[k + 1] - lines[k - 1] - 2 * clearance) / T;
@@ -750,4 +751,6 @@ function randomTileNear(cx, cy, rmin, rmax, ok) {
 }
 const randomRoadNear = (cx, cy, rmin, rmax) => randomTileNear(cx, cy, rmin, rmax, (tx, ty) => tileAt(tx, ty) === ROAD);
 const randomWalkNear = (cx, cy, rmin, rmax) => randomTileNear(cx, cy, rmin, rmax,
-  (tx, ty) => { const t = tileAt(tx, ty); return (t === SIDEWALK || t === GRASS || t === ROAD || t === ALLEY || t === SAND || t === QUAY) && !inArmyZone(tx, ty); });
+  (tx, ty) => { const t = tileAt(tx, ty); return (t === SIDEWALK || t === GRASS || t === ROAD || t === ALLEY || t === SAND || t === QUAY) && !inArmyIsland(tx, ty); });
+const randomPublicRoadNear = (cx, cy, rmin, rmax) => randomTileNear(cx, cy, rmin, rmax, (tx, ty) => tileAt(tx, ty) === ROAD && !inArmyIsland(tx, ty));
+const randomPublicSidewalkNear = (cx, cy, rmin, rmax) => randomTileNear(cx, cy, rmin, rmax, (tx, ty) => tileAt(tx, ty) === SIDEWALK && !inArmyIsland(tx, ty));
