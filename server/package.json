@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node --watch index.js",
-    "test": "node test.mjs && node test-i18n.mjs && node test-traffic.mjs && node test-hot-paths.mjs && node test-sim-clock.mjs && node test-sim-stubs.mjs && node test-sim-restore.mjs && node test-sim-worker.mjs && node test-sim-host.mjs && node test-queue.mjs && node test-host-mode.mjs && node test-leaderboard.mjs && node test-music.mjs && node test-police.mjs && node test-roads.mjs && node test-rail.mjs && node test-save.mjs && node test-districts.mjs && node test-army-spawns.mjs && node test-net-stats.mjs && node test-vehicles.mjs && node test-dents.mjs"
+    "test": "node test.mjs && node test-i18n.mjs && node test-traffic.mjs && node test-hot-paths.mjs && node test-sim-clock.mjs && node test-sim-stubs.mjs && node test-sim-restore.mjs && node test-sim-worker.mjs && node test-sim-host.mjs && node test-queue.mjs && node test-host-mode.mjs && node test-leaderboard.mjs && node test-music.mjs && node test-police.mjs && node test-roads.mjs && node test-rail.mjs && node test-save.mjs && node test-districts.mjs && node test-army-spawns.mjs && node test-net-stats.mjs && node test-vehicles.mjs && node test-dents.mjs && node test-robber.mjs"
   },
   "dependencies": {
     "ws": "^8.18.0"

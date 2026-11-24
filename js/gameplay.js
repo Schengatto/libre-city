@@ -446,8 +446,10 @@ function updateRobber(p) {
   }
   p.speed = 2.15;
   moveBox(p, p.dir.x * p.speed, p.dir.y * p.speed, p.r, p.r);
-  if (p.hitX) { p.dir.x *= -1; p.thinkCd = Math.min(p.thinkCd, 10); }
-  if (p.hitY) { p.dir.y *= -1; p.thinkCd = Math.min(p.thinkCd, 10); }
+  if (p.hitX || p.hitY) {
+    p.dir = { x: p.hitX ? -p.dir.x : p.dir.x, y: p.hitY ? -p.dir.y : p.dir.y };
+    p.thinkCd = Math.min(p.thinkCd, 10);
+  }
   p.walk += 0.3; p.facing = Math.atan2(p.dir.y, p.dir.x);
   // Now and then they taunt you as they run.
   if (Math.random() < 0.006) pedSay(p, SAY_ROBBER, '#c22822');
