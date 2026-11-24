@@ -4,14 +4,14 @@
 // ---------- State ----------
 const DIRS = [ {x:1,y:0}, {x:-1,y:0}, {x:0,y:1}, {x:0,y:-1} ];
 // "Pedestrian-friendly" tiles: where passers-by are happy to be.
-const pedFriendly = t => t === SIDEWALK || t === GRASS || t === ALLEY;
+const pedFriendly = t => t === SIDEWALK || t === GRASS || t === ALLEY || t === SAND || t === QUAY;
 const tileTypeAt = (wx, wy) => tileAt(Math.floor(wx / T), Math.floor(wy / T));
 // Direction choice from standstill: prefers pavements, avoids the carriageway.
 function pickWalkDir(p) {
   const soft = [], road = [];
   for (const d of DIRS) {
     const t = tileTypeAt(p.x + d.x * 22, p.y + d.y * 22);
-    if (t === BUILDING || t === TREE || t === WATER) continue;   // obstacles: discarded
+    if (t === BUILDING || t === TREE || t === WATER || t === PROP) continue;   // obstacles: discarded
     (t === ROAD ? road : soft).push(d);
   }
   if (soft.length && (road.length === 0 || Math.random() < 0.9)) return pick(soft);

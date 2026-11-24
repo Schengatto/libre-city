@@ -18,7 +18,7 @@ const WORLD_W = MAP_W * T, WORLD_H = MAP_H * T;
 const HALF_ROAD = 2.1 * T;    // half carriageway width (px)
 const LANE = 18;              // right-lane offset from the road centreline
 
-const ROAD = 0, SIDEWALK = 1, BUILDING = 2, GRASS = 3, TREE = 4, WATER = 5, ALLEY = 6, COURT = 7;
+const ROAD = 0, SIDEWALK = 1, BUILDING = 2, GRASS = 3, TREE = 4, WATER = 5, ALLEY = 6, COURT = 7, SAND = 8, QUAY = 9, PROP = 10;
 const grid = new Uint8Array(MAP_W * MAP_H);
 const gi = (x, y) => y * MAP_W + x;
 
@@ -26,11 +26,25 @@ const gi = (x, y) => y * MAP_W + x;
 const RES_COLORS = ['#7d5b46','#8a6d52','#89746a','#9a8466','#8f6f5a','#96826f','#7a5a5a','#847b6a'];
 const OFF_COLORS = ['#5d6b78','#6b6f7a','#4f5a68','#556170','#5f7a72','#7a6a86','#665a72','#5a6d6b'];
 const IND_COLORS = ['#5f6b5a','#736256','#6d5f6b','#82755a','#6a7d6a','#8a8478'];
+const CHINA_COLORS = ['#9e2b25', '#b8352c', '#2f7d62', '#3a8f70', '#c9a23a', '#8c2a2a'];
 const hash2 = (a, b) => (((a | 0) * 73856093) ^ ((b | 0) * 19349663)) >>> 0;
-const RES_KIND = 0, OFF_KIND = 1, IND_KIND = 2;
-const blockKind = (bx, by) => hash2(bx + 13, by + 29) % 3;
+const RES_KIND = 0, OFF_KIND = 1, IND_KIND = 2, CHINA_KIND = 3;
+const MIXED = 0, RESIDENTIAL = 1, INDUSTRIAL = 2, CHINATOWN = 3, PORT = 4;
+const DISTRICT_KINDS = [-1, RES_KIND, IND_KIND, CHINA_KIND, IND_KIND];
+const DISTRICT_COUNTS = { P: 2, M: 3, G: 4 };
+const DISTRICT_RADIUS_SHARE = 0.22;
+const DISTRICT_COLS = Math.ceil(MAP_W / PERIOD), DISTRICT_ROWS = Math.ceil(MAP_H / PERIOD);
+const districtGrid = new Uint8Array(DISTRICT_COLS * DISTRICT_ROWS);
+const districtAt = (bx, by) => bx >= 0 && by >= 0 && bx < DISTRICT_COLS && by < DISTRICT_ROWS ? districtGrid[by * DISTRICT_COLS + bx] : MIXED;
+const districtCentres = [];
+let portSide = -1, portHarbourFirst = false;
+const districtRandom = mulberry32(hashStr(ROOM_CODE + ':DISTRICTS'));
+const blockKind = (bx, by) => {
+  const district = districtAt(bx, by);
+  return district === MIXED ? hash2(bx + 13, by + 29) % 3 : DISTRICT_KINDS[district];
+};
 const blockColor = (bx, by) => {
-  const pal = [RES_COLORS, OFF_COLORS, IND_COLORS][blockKind(bx, by)];
+  const pal = [RES_COLORS, OFF_COLORS, IND_COLORS, CHINA_COLORS][blockKind(bx, by)];
   return pal[hash2(bx, by) % pal.length];
 };
 // Building lots: they split blocks into a regular grid of rectangles, and
@@ -52,9 +66,9 @@ const AWNING_COLS = ['#c0392b', '#2e86c0', '#27ae60', '#d68910'];
 // Block category: park, plaza or buildings (for a more varied city).
 const BUILD_CAT = 0, PARK_CAT = 1, PLAZA_CAT = 2;
 function blockCat(bx, by) {
-  const h = hash2(bx + 7, by + 3) % 9;
-  if (h === 0 || h === 6) return PARK_CAT;      // ~2/9 parks
-  if (h === 3) return PLAZA_CAT;                // ~1/9 plazas
+  const h = hash2(bx + 7, by + 3) % 9, district = cellTouchesRail(bx, by) ? MIXED : districtAt(bx, by);
+  if (h === 0 || h === 6 || (h === 8 && district === RESIDENTIAL)) return PARK_CAT;
+  if (h === 3 && district !== INDUSTRIAL && district !== PORT) return PLAZA_CAT;
   return BUILD_CAT;
 }
 const blockHasPond  = (bx, by) => hash2(bx + 1, by + 8) % 3 === 0;   // park with a pond
@@ -278,11 +292,153 @@ function bakeRailCorridor() {
     railCrossings.push({ s, x: p.x, y: p.y });
   }
 }
-function genCity() { buildGraph(); bakeRoads(); bakeSidewalksAndBlocks(); bakeRailCorridor(); bakeArmyIsland(); carveAlleys(); }
+function cellTouchesRail(bx, by) {
+  return railCentrelineDistance((bx + 0.5) * PERIOD * T, (by + 0.5) * PERIOD * T) <= 1.5 * T + PERIOD * T * Math.SQRT1_2;
+}
+function inPortBand(bx, by) {
+  const x = (bx + 0.5) * PERIOD * T, y = (by + 0.5) * PERIOD * T;
+  return [y < rowY[1], x > colX[NX - 2], y > rowY[NY - 2], x < colX[1]][portSide] === true;
+}
+function pickDistricts() {
+  const count = DISTRICT_COUNTS[String(ROOM_CODE).charAt(0)] ?? 2;
+  const ids = [RESIDENTIAL, INDUSTRIAL, CHINATOWN, PORT];
+  for (let i = ids.length - 1; i > 0; i--) {
+    const j = Math.floor(districtRandom() * (i + 1));
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+  }
+  const chosen = ids.slice(0, count), spare = ids.slice(count);
+  const pending = chosen.filter(id => id !== PORT);
+  const cellCentre = b => (b + 0.5) * PERIOD;
+  const portEdgeDistance = ({ bx, by }) => [cellCentre(by), MAP_W - cellCentre(bx), MAP_H - cellCentre(by), cellCentre(bx)][portSide];
+  const setUpPort = () => {
+    portSide = MAP_H > MAP_W ? (districtRandom() < 0.5 ? 1 : 3) : Math.floor(districtRandom() * 4);
+    portHarbourFirst = districtRandom() < 0.5;
+    for (const centre of districtCentres.filter(c => inPortBand(c.bx, c.by) || portEdgeDistance(c) < c.r)) {
+      districtCentres.splice(districtCentres.indexOf(centre), 1);
+      pending.push(centre.id);
+    }
+    districtCentres.push({ id: PORT, bx: -1, by: -1, r: 0 });
+  };
+  if (chosen.includes(PORT)) setUpPort();
+  const R = Math.round(Math.min(MAP_W, MAP_H) * DISTRICT_RADIUS_SHARE);
+  const island = armyZone && armyZone.island;
+  const islandDistance = (x, y) => Math.hypot(Math.max(island.x0 - x, 0, x - island.x1 - 1), Math.max(island.y0 - y, 0, y - island.y1 - 1));
+  const listCandidates = () => {
+    const cells = [];
+    for (let by = 0; by < DISTRICT_ROWS; by++) for (let bx = 0; bx < DISTRICT_COLS; bx++) {
+      const x = cellCentre(bx), y = cellCentre(by);
+      const insideRing = x > MARGIN && x < MAP_W - MARGIN && y > MARGIN && y < MAP_H - MARGIN;
+      if (insideRing && (!island || islandDistance(x, y) >= PERIOD) && !inPortBand(bx, by)) cells.push({ bx, by });
+    }
+    return cells;
+  };
+  const clearance = cell => {
+    const x = cellCentre(cell.bx), y = cellCentre(cell.by);
+    let nearest = portSide >= 0 ? portEdgeDistance(cell) : Infinity;
+    for (const centre of districtCentres)
+      if (centre.id !== PORT) nearest = Math.min(nearest, Math.hypot(x - cellCentre(centre.bx), y - cellCentre(centre.by)));
+    return nearest;
+  };
+  const tryPlace = (id, candidates, r, factor) => {
+    for (let attempt = 0; attempt < 200 && candidates.length; attempt++) {
+      const cell = candidates[Math.floor(districtRandom() * candidates.length)];
+      if (clearance(cell) >= factor * r) { districtCentres.push({ id, bx: cell.bx, by: cell.by, r }); return true; }
+    }
+    return false;
+  };
+  while (pending.length) {
+    const id = pending.shift(), candidates = listCandidates();
+    if (tryPlace(id, candidates, R, 1.5) || tryPlace(id, candidates, R, 1.0) || tryPlace(id, candidates, 0.75 * R, 1.0)) continue;
+    if (spare.length) {
+      const replacement = spare.shift();
+      if (replacement === PORT) setUpPort(); else pending.unshift(replacement);
+      continue;
+    }
+    const widest = candidates.reduce((best, cell) => !best || clearance(cell) > clearance(best) ? cell : best, null);
+    if (widest) districtCentres.push({ id, bx: widest.bx, by: widest.by, r: 0.75 * R });
+  }
+  const inland = districtCentres.filter(centre => centre.id !== PORT);
+  for (let by = 0; by < DISTRICT_ROWS; by++) for (let bx = 0; bx < DISTRICT_COLS; bx++) {
+    let district = MIXED, nearest = Infinity;
+    if (inPortBand(bx, by)) district = PORT;
+    else for (const centre of inland) {
+      const distance = Math.hypot((bx - centre.bx) * PERIOD, (by - centre.by) * PERIOD);
+      if (distance <= centre.r && distance < nearest) { nearest = distance; district = centre.id; }
+    }
+    const onIsland = island && bx * PERIOD <= island.x1 && bx * PERIOD + PERIOD - 1 >= island.x0 && by * PERIOD <= island.y1 && by * PERIOD + PERIOD - 1 >= island.y0;
+    districtGrid[by * DISTRICT_COLS + bx] = onIsland ? MIXED : district;
+  }
+  for (const centre of inland) {
+    const reached = new Uint8Array(districtGrid.length), stack = [centre.by * DISTRICT_COLS + centre.bx];
+    while (stack.length) {
+      const cell = stack.pop(), bx = cell % DISTRICT_COLS, by = (cell - bx) / DISTRICT_COLS;
+      if (reached[cell] || districtGrid[cell] !== centre.id) continue;
+      reached[cell] = 1;
+      if (bx > 0) stack.push(cell - 1);
+      if (bx < DISTRICT_COLS - 1) stack.push(cell + 1);
+      if (by > 0) stack.push(cell - DISTRICT_COLS);
+      if (by < DISTRICT_ROWS - 1) stack.push(cell + DISTRICT_COLS);
+    }
+    for (let cell = 0; cell < districtGrid.length; cell++) if (districtGrid[cell] === centre.id && !reached[cell]) districtGrid[cell] = MIXED;
+  }
+  for (const centre of inland) districtGrid[centre.by * DISTRICT_COLS + centre.bx] = centre.id;
+}
+const PORT_STRIP = 5;
+const portProps = [];
+function bakePortEdge() {
+  if (portSide < 0) return;
+  const len = portSide % 2 ? MAP_H : MAP_W, harbourLen = Math.round(0.4 * len);
+  const harbourStart = portHarbourFirst ? 0 : len - harbourLen, harbourEnd = harbourStart + harbourLen;
+  const tileOf = (s, d) => [[s, d], [MAP_W - 1 - d, s], [s, MAP_H - 1 - d], [d, s]][portSide];
+  const sea = [[0, -1], [1, 0], [0, 1], [-1, 0]][portSide];
+  for (let s = 0; s < len; s++) for (let d = 0; d < PORT_STRIP; d++) {
+    const [x, y] = tileOf(s, d);
+    grid[gi(x, y)] = d <= 2 ? WATER : d === 4 || (s >= harbourStart && s < harbourEnd) ? QUAY : SAND;
+  }
+  for (let s = Math.max(6, harbourStart); s <= Math.min(len - 8, harbourEnd - 1); s++) {
+    const i = s - harbourStart, width = i % 14 === 4 ? 2 : i % 14 === 9 ? 3 : 0;
+    if (!width || s + width > harbourEnd) continue;
+    for (let k = 0; k < width; k++) for (let d = 3; d <= 4; d++) { const [x, y] = tileOf(s + k, d); grid[gi(x, y)] = PROP; }
+    const [ax, ay] = tileOf(s, 3), [bx, by] = tileOf(s + width - 1, 4);
+    portProps.push({ kind: width === 2 ? 'crane' : 'containers', x0: Math.min(ax, bx), y0: Math.min(ay, by), x1: Math.max(ax, bx), y1: Math.max(ay, by), sea });
+  }
+}
+function genCity() { buildGraph(); pickDistricts(); bakeRoads(); bakeSidewalksAndBlocks(); bakeRailCorridor(); bakeArmyIsland(); bakePortEdge(); carveAlleys(); }
 genCity();
 
 const tileAt = (tx, ty) => (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) ? BUILDING : grid[gi(tx, ty)];
-const solidTile = (tx, ty) => { const t = tileAt(tx, ty); return t === BUILDING || t === TREE || t === WATER; };
+const solidTile = (tx, ty) => { const t = tileAt(tx, ty); return t === BUILDING || t === TREE || t === WATER || t === PROP; };
+
+function pickChinaGate() {
+  const mapCentre = { x: WORLD_W / 2, y: WORLD_H / 2 };
+  const distanceToCentre = point => Math.hypot(point.x - mapCentre.x, point.y - mapCentre.y);
+  const tileOfPoint = point => tileAt(Math.floor(point.x / T), Math.floor(point.y / T));
+  const inChinatown = node => districtAt(Math.floor(node.x / T / PERIOD), Math.floor(node.y / T / PERIOD)) === CHINATOWN;
+  const findPillar = (centre, direction) => {
+    for (let step = 1; step <= 24; step++) {
+      const point = { x: centre.x + direction.x * step * T / 4, y: centre.y + direction.y * step * T / 4 };
+      if (tileOfPoint(point) !== SIDEWALK) continue;
+      const further = { x: point.x + direction.x * T / 4, y: point.y + direction.y * T / 4 };
+      return tileOfPoint(further) === SIDEWALK ? further : point;
+    }
+    return null;
+  };
+  const junctions = nodes.filter(node => node.live && node.edges.length >= 3 && inChinatown(node))
+    .sort((a, b) => distanceToCentre(a) - distanceToCentre(b));
+  for (const junction of junctions) {
+    const otherEnds = junction.edges.map(index => edges[index]).map(edge => nodes[nodes[edge.a] === junction ? edge.b : edge.a]);
+    const towardsCentre = otherEnds.reduce((best, end) => distanceToCentre(end) < distanceToCentre(best) ? end : best);
+    const length = Math.hypot(towardsCentre.x - junction.x, towardsCentre.y - junction.y);
+    const direction = { x: (towardsCentre.x - junction.x) / length, y: (towardsCentre.y - junction.y) / length };
+    const centre = { x: junction.x + direction.x * 4.5 * T, y: junction.y + direction.y * 4.5 * T };
+    if (tileOfPoint(centre) !== ROAD) continue;
+    const left = findPillar(centre, { x: direction.y, y: -direction.x });
+    const right = findPillar(centre, { x: -direction.y, y: direction.x });
+    if (left && right) return { x: centre.x, y: centre.y, angle: Math.atan2(direction.y, direction.x), left, right };
+  }
+  return null;
+}
+const chinaGate = pickChinaGate();
 
 // ---------- Special buildings: police, hospital, fire station, bank, market ----------
 const landmarks = [];                                  // { type, x0, y0, x1, y1, cx, cy, door }
@@ -458,23 +614,27 @@ function bakeBuildings() {
     // Buildable tiles left outside the building become courtyard (or private greenery).
     for (let y = ya; y <= yb; y++) for (let x = xa; x <= xb; x++) {
       if (!isB(x, y) || bldgIdx[gi(x, y)] !== 65535) continue;
-      const k = blockKind(Math.floor(x / PERIOD), Math.floor(y / PERIOD)), hh = hash2(x + 21, y + 33);
-      grid[gi(x, y)] = (k === RES_KIND && hh % 7 === 0) || (k === OFF_KIND && hh % 23 === 0) ? TREE : COURT;
+      const cellX = Math.floor(x / PERIOD), cellY = Math.floor(y / PERIOD);
+      const k = blockKind(cellX, cellY), hh = hash2(x + 21, y + 33);
+      const residentialTreeStep = districtAt(cellX, cellY) === RESIDENTIAL ? 4 : 7;
+      grid[gi(x, y)] = (k === RES_KIND && hh % residentialTreeStep === 0) || (k === OFF_KIND && hh % 23 === 0) ? TREE : COURT;
     }
   }
   // Second pass (courtyards now carved): style, height and the side facing the street.
   for (const b of bldgs) {
     const w = b.x1 - b.x0 + 1, h = b.y1 - b.y0 + 1, area = w * h;
     const midx = (b.x0 + b.x1) >> 1, midy = (b.y0 + b.y1) >> 1;
+    b.district = districtAt(Math.floor(midx / PERIOD), Math.floor(midy / PERIOD));
     b.kind = blockKind(Math.floor(midx / PERIOD), Math.floor(midy / PERIOD));
     b.face = walkableTile(tileAt(midx, b.y1 + 1)) ? 0 : walkableTile(tileAt(b.x1 + 1, midy)) ? 1
            : walkableTile(tileAt(b.x0 - 1, midy)) ? 2 : walkableTile(tileAt(midx, b.y0 - 1)) ? 3 : -1;
-    if (b.kind === RES_KIND) b.style = area <= 18 ? 'house' : 'apartment';
+    if (b.kind === RES_KIND) b.style = area <= (b.district === RESIDENTIAL ? 24 : 18) ? 'house' : 'apartment';
     else if (b.kind === OFF_KIND) b.style = area >= 20 ? 'tower' : 'shop';
+    else if (b.kind === CHINA_KIND) b.style = area >= 20 ? 'pagoda' : 'chinashop';
     else b.style = area >= 20 ? 'warehouse' : 'workshop';
-    const storeyVariation = b.style === 'apartment' || b.style === 'tower' ? (b.h >> 4) % 3 * 4 : 0;
-    b.lift = { house: 7, apartment: 11, shop: 9, tower: 16, warehouse: 9, workshop: 8 }[b.style] + storeyVariation;
-    const pal = [RES_COLORS, OFF_COLORS, IND_COLORS][b.kind];
+    const storeyVariation = b.district !== RESIDENTIAL && (b.style === 'apartment' || b.style === 'tower') ? (b.h >> 4) % 3 * 4 : 0;
+    b.lift = { house: 7, apartment: 11, shop: 9, tower: 16, warehouse: 9, workshop: 8, pagoda: 10, chinashop: 9 }[b.style] + storeyVariation;
+    const pal = [RES_COLORS, OFF_COLORS, IND_COLORS, CHINA_COLORS][b.kind];
     b.col = pal[b.h % pal.length];
   }
 }
@@ -590,4 +750,4 @@ function randomTileNear(cx, cy, rmin, rmax, ok) {
 }
 const randomRoadNear = (cx, cy, rmin, rmax) => randomTileNear(cx, cy, rmin, rmax, (tx, ty) => tileAt(tx, ty) === ROAD);
 const randomWalkNear = (cx, cy, rmin, rmax) => randomTileNear(cx, cy, rmin, rmax,
-  (tx, ty) => { const t = tileAt(tx, ty); return (t === SIDEWALK || t === GRASS || t === ROAD || t === ALLEY) && !inArmyZone(tx, ty); });
+  (tx, ty) => { const t = tileAt(tx, ty); return (t === SIDEWALK || t === GRASS || t === ROAD || t === ALLEY || t === SAND || t === QUAY) && !inArmyZone(tx, ty); });

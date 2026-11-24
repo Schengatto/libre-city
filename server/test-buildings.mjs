@@ -10,7 +10,7 @@ const DECLARATIONS = [
   ['render', 'tracePolygon'], ['render', 'fillPolygon'], ['render', 'buildingShadowPolygon'], ['render', 'hipRoofPlanes'],
   ['render', 'drawBuildingShadows'], ['render', 'windowTone'], ['render', 'drawBuildingWalls'],
   ['render', 'pitchedRoofPlanes'], ['render', 'drawHouseRoof'], ['render', 'southRoofZone'], ['render', 'buildingRoofColor'], ['render', 'drawBuildings'],
-  ['render', 'drawFacade'],
+  ['render', 'drawFacade'], ['render', 'drawPagodaRoof'], ['render', 'drawChinaSigns'], ['render', 'drawChinaGatePillars'], ['render', 'drawChinaGateBeam'],
   ['render', 'tileRandom'], ['render', 'buildingRandom'], ['render', 'rectsOverlap'], ['render', 'MATERIAL_TILE'],
   ['render', 'materialPatterns'], ['render', 'MATERIAL_PAINTERS'], ['render', 'materialPattern'], ['render', 'drawRoofSurface'],
   ['render', 'planRoofProps'], ['render', 'drawPropBox'], ['render', 'drawRoundPropShadow'], ['render', 'drawRoofProp'],
@@ -19,12 +19,13 @@ const DECLARATIONS = [
   ['render', 'WORLD_CHUNK'], ['render', 'transposedPainter'], ['render', 'planRoofShape'], ['render', 'sawtoothTeeth'],
   ['render', 'drawSawtoothRoof'], ['render', 'ROOF_PLANE_TONES'], ['render', 'gableRoofPlanes'], ['render', 'axisFiller'],
   ['render', 'drawRoofEdge'], ['render', 'drawMetalRoof'], ['render', 'FACADE_MATERIALS'],
+  ['city', 'MIXED'],
 ];
 const moduleSource = DECLARATIONS.map(([file, name]) => extractTopLevel(SOURCES[file], name)).join('\n');
 
 const loadRenderer = new Function('ctx', 'bldgs', 'camX', 'camY', 'vw', 'vh', 'frame', 'document',
   `${moduleSource}\nreturn { buildingShadowPolygon, hipRoofPlanes, drawBuildings, drawBuildingShadows, buildingRandom, rectsOverlap,
-    MATERIAL_TILE, WORLD_CHUNK, materialPattern, planRoofProps, planBuilding, volumeRoof, STYLE_ROOF, sawtoothTeeth, gableRoofPlanes, drawBuildingWalls, FACADE_MATERIALS };`);
+    MATERIAL_TILE, WORLD_CHUNK, materialPattern, planRoofProps, planBuilding, volumeRoof, STYLE_ROOF, sawtoothTeeth, gableRoofPlanes, drawBuildingWalls, FACADE_MATERIALS, drawRoofProp, INDUSTRIAL, drawFacade, drawPagodaRoof, drawChinaSigns, drawChinaGatePillars, drawChinaGateBeam };`);
 const createdCanvases = [];
 const documentStub = {
   createElement: tag => {
@@ -41,7 +42,7 @@ const polygonArea = points => Math.abs(points.reduce((sum, [x, y], i) => {
   return sum + x * ny - nx * y;
 }, 0)) / 2;
 
-const STYLE_LIFTS = { house: 7, apartment: 15, shop: 9, tower: 24, warehouse: 9, workshop: 8 };
+const STYLE_LIFTS = { house: 7, apartment: 15, shop: 9, tower: 24, warehouse: 9, workshop: 8, pagoda: 10, chinashop: 9 };
 const SIZES = [[0, 0], [1, 0], [0, 2], [3, 2], [5, 4], [2, 6]];
 const buildings = [];
 let seed = 1;
@@ -191,6 +192,20 @@ ok(chimneyCounts.every(count => count >= 1 && count <= 2), `${housePlans.length}
 ok(housePlans.some(plan => plan.props.some(prop => prop.type === 'dormer')) && housePlans.some(plan => plan.props.some(prop => prop.type === 'solar')),
   'house: abbaini e pannelli solari sulla falda sud');
 
+console.log('5b) comignolo solo nel distretto industriale');
+{
+  const smokestacksOf = b => renderer.planBuilding(b, (b.x1 + 1) * 32, (b.y1 + 1) * 32).props.filter(prop => prop.type === 'smokestack').length;
+  const bigRoofSamples = plannerSamples.filter(b => (b.style === 'warehouse' || b.style === 'workshop') && (b.x1 + 1) * 32 - b.lift >= 64 && (b.y1 + 1) * 32 - b.lift >= 64);
+  const wrongIndustrial = bigRoofSamples.filter(b => smokestacksOf({ ...b, district: renderer.INDUSTRIAL }) !== 1);
+  ok(bigRoofSamples.length > 0 && wrongIndustrial.length === 0, `${bigRoofSamples.length} industriali con tetto >= 64x64: un solo smokestack` + (wrongIndustrial.length ? ` (${wrongIndustrial.length} sbagliati)` : ''));
+  ok(plannerSamples.every(b => smokestacksOf(b) === 0), 'senza distretto nessuno smokestack');
+  const stackRecorder = createRecordingContext();
+  const stackRenderer = loadRenderer(stackRecorder.context, [], 0, 0, 100000, 100000, 0, documentStub);
+  stackRenderer.drawRoofProp({ type: 'smokestack', x: 4, y: 4, w: 15, h: 15, height: 24 }, 10, 10);
+  ok(stackRecorder.calls.some(([name]) => name === 'createRadialGradient') && !stackRecorder.calls.some(([, args]) => args.some(arg => typeof arg === 'number' && !Number.isFinite(arg))),
+    'smokestack disegnato con gradiente e soli numeri finiti');
+}
+
 console.log('6) dente di sega');
 for (const [w, h] of [[100, 40], [40, 100], [26, 26], [57, 25], [120, 33]]) {
   const teeth = renderer.sawtoothTeeth(w, h), across = Math.min(w, h);
@@ -211,6 +226,48 @@ for (const [style, lift] of Object.entries(STYLE_LIFTS)) {
   const usesPatterns = patternFills.every(pattern => facadeCalls.some(([name, args]) => name === 'set:fillStyle' && args[0] === pattern));
   const finite = facadeCalls.every(([, args]) => args.every(arg => typeof arg !== 'number' || Number.isFinite(arg)));
   ok(usesPatterns && finite, `${style}: facciate sud ed est con pattern ${renderer.FACADE_MATERIALS[style].join('/')}, nessun NaN`);
+}
+
+console.log('8) chinatown');
+const finiteCalls = calls => !calls.some(([, args]) => args.some(arg => typeof arg === 'number' && !Number.isFinite(arg)));
+const loadStandalone = (context, viewWidth = 100000, viewHeight = 100000) => loadRenderer(context, [], 0, 0, viewWidth, viewHeight, 0, documentStub);
+{
+  const pagoda = { x0: 0, y0: 0, x1: 4, y1: 3, style: 'pagoda', lift: 10, face: 0, col: '#9e2b25', h: 777 };
+  const plan = renderer.planBuilding(pagoda, 160, 128);
+  ok(plan.roofShape === 'pagoda' && plan.props.length === 0, 'pagoda roof: shape pagoda, no props');
+  const roofRecorder = createRecordingContext();
+  loadStandalone(roofRecorder.context).drawPagodaRoof(10, 10, 96, 64, '#a3322a');
+  ok(roofRecorder.calls.some(([name]) => name === 'quadraticCurveTo') && roofRecorder.calls.some(([name, args]) => name === 'set:strokeStyle' && args[0] === '#d4af37'),
+    'pagoda roof: curved eaves and gold ridge');
+  const pathPoints = roofRecorder.calls.filter(([name]) => ['moveTo', 'lineTo', 'quadraticCurveTo'].includes(name)).flatMap(([, args]) => args);
+  ok(pathPoints.every((value, k) => k % 2 === 0 ? value >= 6 && value <= 110 : value >= 6 && value <= 78), 'pagoda roof: every path point within the footprint plus the eaves');
+}
+for (const face of [0, 1, 2, 3]) {
+  const signRecorder = createRecordingContext();
+  const [px, py, W, H] = [40, 40, 96, 64];
+  loadStandalone(signRecorder.context).drawFacade({ x0: 0, y0: 0, x1: 2, y1: 1, style: 'chinashop', lift: 9, face, col: '#9e2b25', h: 5 }, px, py, W, H, 9);
+  const rects = signRecorder.calls.filter(([name]) => name === 'fillRect').map(([, args]) => args);
+  ok(signRecorder.calls.some(([name, args]) => name === 'set:fillStyle' && args[0] === '#b3261e')
+    && rects.every(([x, y, w, h]) => x >= px - 2 && x + w <= px + W + 2 && y >= py - 2 && y + h <= py + H + 2) && finiteCalls(signRecorder.calls),
+  `chinashop face ${face}: red sign boards inside the footprint`);
+}
+{
+  const hiddenRecorder = createRecordingContext();
+  loadStandalone(hiddenRecorder.context).drawFacade({ x0: 0, y0: 0, x1: 2, y1: 1, style: 'chinashop', lift: 9, face: -1, col: '#9e2b25', h: 5 }, 40, 40, 96, 64, 9);
+  ok(hiddenRecorder.calls.length === 0, 'chinashop without a street face: no boards');
+}
+{
+  const beamAt = x => {
+    const beamRecorder = createRecordingContext();
+    loadStandalone(beamRecorder.context, 800, 600).drawChinaGateBeam({ x, y: 300, angle: 0, left: { x, y: 250 }, right: { x, y: 350 } });
+    return beamRecorder.calls;
+  };
+  ok(beamAt(5000).length === 0, 'paifang beam: culled off screen');
+  const visibleCalls = beamAt(400);
+  ok(visibleCalls.some(([name, args]) => name === 'set:strokeStyle' && args[0] === '#b3261e') && finiteCalls(visibleCalls), 'paifang beam: drawn on screen');
+  const pillarRecorder = createRecordingContext();
+  loadStandalone(pillarRecorder.context, 800, 600).drawChinaGatePillars({ x: 400, y: 300, angle: 0, left: { x: 400, y: 250 }, right: { x: 400, y: 350 } });
+  ok(pillarRecorder.calls.filter(([name, args]) => name === 'set:fillStyle' && args[0] === '#b3261e').length === 2 && finiteCalls(pillarRecorder.calls), 'paifang pillars: one red pillar per side');
 }
 
 console.log(`\n${pass} ok, ${fail} falliti`);

@@ -14,12 +14,19 @@ const DECLARATIONS = [
   ['render', 'GLASS_COLOR'], ['render', 'BRAKE_DECELERATION'], ['render', 'drawVehicleShadow'], ['render', 'bodyPaint'],
   ['render', 'drawTyres'], ['render', 'drawGlassGlint'], ['render', 'drawSaloonCabin'], ['render', 'drawVanCabin'],
   ['render', 'drawCarLights'], ['city', 'solidTile'], ['render', 'clipOutTiles'],
+  ['city', 'MIXED'], ['city', 'walkableTile'], ['render', 'CONTAINER_COLS'], ['render', 'drawDistrictCourtDetail'],
+  ['render', 'drawTile'], ['city', 'AWNING_COLS'], ['render', 'drawSandTile'], ['render', 'drawQuayTile'],
+  ['render', 'drawPortCrane'], ['render', 'drawContainerStack'], ['render', 'drawBollard'], ['render', 'drawBeachUmbrella'],
+  ['render', 'drawBeachTowel'], ['render', 'drawPortProps'],
 ];
 const moduleSource = DECLARATIONS.map(([file, name]) => extractTopLevel(SOURCES[file], name)).join('\n');
 const EXPORTS = ['T', 'GRASS', 'TREE', 'WATER', 'SIDEWALK', 'GRASS_DARK', 'GRASS_LIGHT', 'PARK_CAT', 'PLAZA_CAT',
   'tileRandom', 'smoothNoise', 'grassColor', 'drawGrass', 'drawWaterTile', 'drawTrees', 'drawPavingSlabs', 'drawAsphaltGrain',
-  'drawVehicleShadow', 'bodyPaint', 'drawSaloonCabin', 'drawVanCabin', 'drawCarLights', 'BUILDING', 'solidTile', 'clipOutTiles'];
-const loadRenderer = new Function('ctx', 'camX', 'camY', 'frame', 'MAP_W', 'MAP_H', 'grid', 'PERIOD', 'blockCat', 'blockKind',
+  'drawVehicleShadow', 'bodyPaint', 'drawSaloonCabin', 'drawVanCabin', 'drawCarLights', 'BUILDING', 'solidTile', 'clipOutTiles',
+  'COURT', 'RESIDENTIAL', 'INDUSTRIAL', 'MIXED', 'CONTAINER_COLS', 'drawDistrictCourtDetail',
+  'CHINATOWN', 'CHINA_KIND', 'RES_KIND', 'drawTile',
+  'SAND', 'QUAY', 'PROP', 'AWNING_COLS', 'drawSandTile', 'drawQuayTile', 'drawPortProps'];
+const loadRenderer = new Function('ctx', 'camX', 'camY', 'frame', 'MAP_W', 'MAP_H', 'grid', 'PERIOD', 'blockCat', 'blockKind', 'districtAt',
   `const gi = (x, y) => y * MAP_W + x;
    const CITY_W = MAP_W;
    const tileAt = (x, y) => x < 0 || y < 0 || x >= MAP_W || y >= MAP_H ? GRASS : grid[gi(x, y)];
@@ -33,11 +40,11 @@ const hasBadNumber = calls => calls.some(([, args]) => args.some(arg => typeof a
 const fillStyles = calls => calls.filter(([name]) => name === 'set:fillStyle').map(([, [value]]) => value);
 
 const MAP_SIZE = 8;
-function createRenderer(tileTypes, cat = 1) {
+function createRenderer(tileTypes, cat = 1, district = 0, kind = 0) {
   const recorder = createRecordingContext();
-  const probe = loadRenderer(createRecordingContext().context, 0, 0, 0, MAP_SIZE, MAP_SIZE, [], 16, () => cat, () => 0);
+  const probe = loadRenderer(createRecordingContext().context, 0, 0, 0, MAP_SIZE, MAP_SIZE, [], 16, () => cat, () => kind, () => district);
   const grid = Array.from({ length: MAP_SIZE * MAP_SIZE }, (_, i) => tileTypes(i % MAP_SIZE, Math.floor(i / MAP_SIZE), probe));
-  return { recorder, renderer: loadRenderer(recorder.context, 0, 0, 0, MAP_SIZE, MAP_SIZE, grid, 16, () => cat, () => 0) };
+  return { recorder, renderer: loadRenderer(recorder.context, 0, 0, 0, MAP_SIZE, MAP_SIZE, grid, 16, () => cat, () => kind, () => district) };
 }
 
 console.log('1) casualità per tile deterministica');
@@ -138,6 +145,109 @@ console.log('7) marciapiede e asfalto non coprono i tile solidi');
   ok(rects.length === 4 && [[2, 3], [6, 1], [5, 5]].every(([x, y]) => rects.includes(`${x * T},${y * T},${T},${T}`)),
     'un rettangolo per ogni tile edificio, albero, acqua e nessun altro');
   ok(recorder.calls.some(([name, args]) => name === 'clip' && args[0] === 'evenodd'), 'ritaglio evenodd');
+}
+
+console.log('8) dettagli del cortile per distretto');
+{
+  const courtGrid = (x, y, probe) => y === 2 ? probe.SIDEWALK : probe.COURT;
+  const fillsFor = district => {
+    const { recorder, renderer } = createRenderer(courtGrid, 1, district);
+    const fills = new Set();
+    for (let x = 0; x < MAP_SIZE; x++) for (let h = 0; h <= 40; h++) {
+      recorder.calls.length = 0;
+      renderer.drawDistrictCourtDetail(0, 0, x, 3, h);
+      for (const [name, args] of recorder.calls) if (name === 'set:fillStyle') fills.add(args[0]);
+    }
+    return { fills, renderer, recorder };
+  };
+  const residential = fillsFor(1), industrial = fillsFor(2), mixed = fillsFor(0);
+  ok(residential.fills.has('#3f6b35'), 'RESIDENTIAL: siepe lungo il marciapiede');
+  ok(industrial.renderer.CONTAINER_COLS.some(color => industrial.fills.has(color)) && industrial.fills.has('rgba(10,10,12,.35)'),
+    'INDUSTRIAL: container e macchia d\'olio');
+  ok(!industrial.fills.has('#3f6b35') && !residential.renderer.CONTAINER_COLS.some(color => residential.fills.has(color)), 'i dettagli non si mescolano fra distretti');
+  ok(mixed.fills.size === 0, 'MIXED: nessun disegno');
+  const chinatown = fillsFor(3);
+  ok(chinatown.fills.has('#d8342a') && chinatown.fills.has('#e8c04a'), 'CHINATOWN: lanterne rosse con cappuccio dorato');
+  ok(chinatown.recorder.calls.length > 0 && !chinatown.fills.has('#3f6b35')
+    && !chinatown.renderer.CONTAINER_COLS.some(color => chinatown.fills.has(color)), 'CHINATOWN: niente siepi ne container');
+  ok(![residential, industrial, mixed].some(other => other.fills.has('#d8342a')), 'le lanterne restano in CHINATOWN');
+}
+
+console.log('9) pavimentazione del cortile cinese');
+{
+  const { CHINA_KIND, RES_KIND } = createRenderer(() => 0).renderer;
+  const courtFills = kind => {
+    const { recorder, renderer } = createRenderer((x, y, probe) => probe.COURT, 1, 0, kind);
+    const fills = new Set();
+    for (let x = 0; x < MAP_SIZE; x++) {
+      recorder.calls.length = 0;
+      renderer.drawTile(renderer.COURT, 0, 0, x, 3);
+      for (const [name, args] of recorder.calls) if (name === 'set:fillStyle') fills.add(args[0]);
+    }
+    return fills;
+  };
+  ok(courtFills(CHINA_KIND).has('#8a6a5c'), 'CHINA_KIND: cortile in pietra rossastra');
+  ok(!courtFills(RES_KIND).has('#8a6a5c'), 'altri tipi di blocco: nessuna pietra rossastra');
+}
+
+console.log('10) port');
+{
+  const sandAndQuay = createRenderer((x, y, probe) => y < 4 ? probe.SAND : probe.QUAY);
+  sandAndQuay.renderer.drawSandTile(0, 0, 1, 1);
+  const sandStyles = fillStyles(sandAndQuay.recorder.calls);
+  sandAndQuay.recorder.calls.length = 0;
+  sandAndQuay.renderer.drawQuayTile(0, 0, 1, 5);
+  ok(sandStyles.includes('#d9c48e') && fillStyles(sandAndQuay.recorder.calls).includes('#a39d90') && !hasBadNumber(sandAndQuay.recorder.calls),
+    'sand and quay tiles');
+
+  const quayBesideWater = createRenderer((x, y, probe) => x === 3 && y === 3 ? probe.QUAY : x === 4 && y === 3 ? probe.WATER : probe.SIDEWALK);
+  quayBesideWater.renderer.drawQuayTile(0, 0, 3, 3);
+  ok(fillStyles(quayBesideWater.recorder.calls).includes('#6d6a63'), 'quay kerb toward the water');
+
+  for (const shoreName of ['SAND', 'QUAY']) {
+    const pool = createRenderer((x, y, probe) => x === 3 && y === 3 ? probe.WATER : x === 4 && y === 3 ? probe[shoreName] : probe.WATER);
+    pool.renderer.drawWaterTile(0, 0, 3, 3);
+    const styles = fillStyles(pool.recorder.calls);
+    ok(styles.includes('rgba(230,245,250,.45)') && !styles.includes('#b4b9c0'), `foam next to ${shoreName.toLowerCase()}`);
+  }
+
+  const sea = createRenderer((x, y, probe) => probe.WATER);
+  sea.renderer.drawWaterTile(0, 0, 0, 0);
+  ok(sea.recorder.calls.filter(([name]) => name === 'createLinearGradient').length === 0, 'no shore at the map edge');
+
+  const props = [{ kind: 'crane', x0: 2, y0: 2, x1: 3, y1: 3, sea: [-1, 0] }, { kind: 'containers', x0: 5, y0: 2, x1: 7, y1: 3, sea: [-1, 0] }];
+  const harbour = createRenderer((x, y, probe) => probe.WATER);
+  harbour.renderer.drawPortProps(props);
+  const harbourStyles = fillStyles(harbour.recorder.calls);
+  ok(harbourStyles.includes('#d8a21c') && harbour.renderer.CONTAINER_COLS.some(color => harbourStyles.includes(color)) && !hasBadNumber(harbour.recorder.calls),
+    'port props drawn');
+  const craneAlone = createRenderer((x, y, probe) => probe.WATER);
+  craneAlone.renderer.drawPortProps([props[0]]);
+  ok(!fillStyles(craneAlone.recorder.calls).some(color => craneAlone.renderer.CONTAINER_COLS.includes(color)), 'cranes draw no containers');
+
+  const withoutFar = createRenderer((x, y, probe) => probe.WATER);
+  withoutFar.renderer.drawPortProps(props);
+  const withFar = createRenderer((x, y, probe) => probe.WATER);
+  withFar.renderer.drawPortProps([...props, { kind: 'crane', x0: 500, y0: 2, x1: 501, y1: 3, sea: [-1, 0] }]);
+  ok(withFar.recorder.calls.length === withoutFar.recorder.calls.length, 'port props culled');
+
+  const beach = createRenderer((x, y, probe) => probe.SAND);
+  beach.renderer.drawPortProps([]);
+  const beachStyles = fillStyles(beach.recorder.calls);
+  ok(beach.renderer.AWNING_COLS.some(color => beachStyles.includes(color)) && !hasBadNumber(beach.recorder.calls), 'umbrellas and towels on sand');
+
+  const beachDecorSource = ['drawBeachUmbrella', 'drawBeachTowel'].map(name => extractTopLevel(SOURCES.render, name)).join('\n');
+  ok(!/(^|[^>])>> ?\d/.test(beachDecorSource), 'beach decor reads the unsigned hash with >>>');
+
+  const dock = createRenderer((x, y, probe) => x === 0 ? probe.WATER : probe.QUAY);
+  dock.renderer.drawPortProps([]);
+  ok(dock.recorder.calls.some(([name]) => name === 'arc'), 'bollards on the quay next to the water');
+  const inlandQuay = createRenderer((x, y, probe) => probe.QUAY);
+  inlandQuay.renderer.drawPortProps([]);
+  ok(inlandQuay.recorder.calls.length === 0, 'no bollards away from the water');
+
+  ok(readSource('render.js').includes('t === SAND ? \'#d8c48a\'') && readSource('render.js').includes('t === QUAY ? \'#9a958a\'')
+    && readSource('render.js').includes('t === PROP ? \'#b8642e\''), 'minimap knows the port tiles');
 }
 
 console.log(`\n${pass} ok, ${fail} falliti`);
