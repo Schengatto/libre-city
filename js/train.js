@@ -15,6 +15,7 @@ const LOCO_L = 66, WAG_L = 52, WAG_N = 3, TRAIN_GAP = 8;   // locomotive + 3 car
 const TRAIN_BODY_H = 30;                  // width of the train's silhouette across the track
 const TRAIN_LEN = LOCO_L + WAG_N * (WAG_L + TRAIN_GAP);
 const TRAIN_STOP_BAND = 2.6 * T;          // cars within this distance of a crossing stop
+const RAIL_STOP_OFFSET = RAIL_TIE_H / 2 + T;
 const TRAIN_WARN = 360;                   // margin along the track within which the train holds traffic
 const TRAIN_HORN_NEAR = 300, TRAIN_HORN_FAR = 370;
 
@@ -48,10 +49,12 @@ function updateTrainKinematics(trainClock = frame) {
 
 // True if the train forces a traffic car to STOP (near a crossing and near the train).
 function trainBlocking(c) {
-  const reach = TRAIN_STOP_BAND + c.colH, spanStart = train.s - TRAIN_LEN - TRAIN_WARN, span = TRAIN_LEN + 2 * TRAIN_WARN;
+  const reach = TRAIN_STOP_BAND + c.colH + c.speed * c.speed / (2 * TRAFFIC_BRAKE), spanStart = train.s - TRAIN_LEN - TRAIN_WARN, span = TRAIN_LEN + 2 * TRAIN_WARN;
+  const headingX = Math.cos(c.angle), headingY = Math.sin(c.angle);
   for (const cr of railCrossings) {
-    const dx = c.x - cr.x, dy = c.y - cr.y;
+    const dx = cr.x - c.x, dy = cr.y - c.y;
     if (Math.abs(dx) > reach || Math.abs(dy) > reach || Math.hypot(dx, dy) > reach) continue;
+    if (dx * headingX + dy * headingY <= RAIL_STOP_OFFSET) continue;
     if (railWrap(cr.s - spanStart) <= span) return true;
   }
   return false;
@@ -166,7 +169,7 @@ function drawRailway() {
   loopPath(-RAIL_GAUGE / 2); ctx.stroke();
   loopPath(RAIL_GAUGE / 2); ctx.stroke();
   ctx.fillStyle = 'rgba(240,240,240,.85)';
-  const stopHalf = HALF_ROAD - 6, stopOff = RAIL_TIE_H / 2 + T;
+  const stopHalf = HALF_ROAD - 6, stopOff = RAIL_STOP_OFFSET;
   for (const cr of railCrossings) {
     if (cr.x < camX - 3 * T || cr.x > camX + vw + 3 * T || cr.y < camY - 3 * T || cr.y > camY + vh + 3 * T) continue;
     const angle = railPointAt(cr.s).angle;

@@ -8,6 +8,7 @@ let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ', msg); } else { fail++; console.log('  XX FAIL:', msg); } };
 
 const T = 32, TRAIN_SPEED = 6.5, TRAIN_BODY_H = 30, TRAIN_LEN = 66 + 3 * (52 + 8), ISLAND_BANKS = 5;
+const APPROACH_GAP = 2.25 * T;
 const GRID_SIZES = { PABC12: [8, 8], MABC12: [8, 16], GABC12: [16, 16] };
 
 function simWithCars(code) {
@@ -76,15 +77,20 @@ for (const code of Object.keys(GRID_SIZES)) {
 
   const car = sim._cars()[0];
   const frameWithHeadAt = headS => Math.round(wrap(headS) / TRAIN_SPEED);
-  const blockedNear = cr => { car.x = cr.x; car.y = cr.y; sim._setFrame(frameWithHeadAt(cr.s - 200)); return sim._trainBlocking(car); };
-  const blockedFar = cr => { car.x = cr.x; car.y = cr.y; sim._setFrame(frameWithHeadAt(cr.s + loopLen / 2)); return sim._trainBlocking(car); };
+  const approachCrossing = cr => {
+    const railAngle = pointAt(cr.s).angle, normalX = -Math.sin(railAngle), normalY = Math.cos(railAngle);
+    car.x = cr.x + normalX * APPROACH_GAP; car.y = cr.y + normalY * APPROACH_GAP;
+    car.angle = Math.atan2(-normalY, -normalX); car.speed = 0;
+  };
+  const blockedNear = cr => { approachCrossing(cr); sim._setFrame(frameWithHeadAt(cr.s - 200)); return sim._trainBlocking(car); };
+  const blockedFar = cr => { approachCrossing(cr); sim._setFrame(frameWithHeadAt(cr.s + loopLen / 2)); return sim._trainBlocking(car); };
   const bySpan = crossings.slice().sort((a, b) => a.s - b.s);
   const middle = bySpan[Math.floor(bySpan.length / 2)], first = bySpan[0], last = bySpan[bySpan.length - 1];
-  ok(!!car && blockedNear(middle) && !blockedFar(middle), `${code}: a car on a crossing stops when the train is near, not when it is far`);
+  ok(!!car && blockedNear(middle) && !blockedFar(middle), `${code}: a car approaching a crossing stops when the train is near, not when it is far`);
   ok(blockedNear(first) && !blockedFar(first), `${code}: the same holds for the first crossing after s = 0 (s = ${first.s.toFixed(0)})`);
   sim._setFrame(frameWithHeadAt(20));
   const headS = sim._train().s, straddles = wrap(headS - TRAIN_LEN) > headS;
-  const heldAt = cr => { car.x = cr.x; car.y = cr.y; return sim._trainBlocking(car); };
+  const heldAt = cr => { approachCrossing(cr); return sim._trainBlocking(car); };
   ok(straddles && heldAt(first) && heldAt(last),`${code}: a train straddling s = 0 holds the crossings on both sides of it (s = ${first.s.toFixed(0)} and ${last.s.toFixed(0)})`);
 
   const trackFrame = frameWithHeadAt((first.s + bySpan[1].s) / 2 + 150);

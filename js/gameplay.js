@@ -395,9 +395,9 @@ function updatePed(p) {
     if (dist(p.x, p.y, player.x, player.y) < 90 && Math.random() < 0.02)
       pedSay(p, wanted > 0 ? SAY_WANTED : SAY_GREET, wanted > 0 ? '#c22822' : '#20242e');
   }
+  if (walkEntersArmyIsland(p, p.dir)) p.dir = pickWalkDir(p);
   moveBox(p, p.dir.x * p.speed, p.dir.y * p.speed, p.r, p.r);
-  if (p.hitX) p.dir.x *= -1;
-  if (p.hitY) p.dir.y *= -1;
+  if (p.hitX || p.hitY) p.dir = { x: p.hitX ? -p.dir.x : p.dir.x, y: p.hitY ? -p.dir.y : p.dir.y };
   const mv = Math.abs(p.dir.x) + Math.abs(p.dir.y);
   if (mv > 0.01 && p.speed > 0.1) { p.walk += 0.25; p.facing = Math.atan2(p.dir.y, p.dir.x); } else p.walk = 0;
 }
@@ -502,6 +502,7 @@ function lineClear(x0, y0, x1, y1) {
 // Gap an AI car leaves between its own nose and the bumper ahead when queuing at a
 // standstill (while moving the distance grows with speed).
 const SAFE_GAP = 16;
+const TRAFFIC_BRAKE = 0.6;
 
 // Every vehicle is ITS OWN oriented w×h box, the same one render.js draws. carProj = the
 // box's half-extent along a unit axis (u): used both to measure gaps (where the bumper
@@ -633,7 +634,7 @@ function updateCar(c) {
   // Stall-breaker: while squeezing past someone stopped, crawl along.
   if (c.pushT > 0) { c.pushT--; cap = Math.min(cap, 1.0); }
   // Smooth acceleration/braking (pickup depends on the vehicle).
-  c.speed += clamp(cap - c.speed, -0.6, c.accel * 1.4);
+  c.speed += clamp(cap - c.speed, -TRAFFIC_BRAKE, c.accel * 1.4);
   if (c.speed < 0) c.speed = 0;
   // Horn: blocked by someone (not by the lights) → after a while, a protest.
   if (gap < T * 1.6 && c.speed < 0.7 && sg === Infinity) {
