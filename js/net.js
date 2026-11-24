@@ -409,10 +409,10 @@ function netApplyRemote(id, m) {
 function netParkCar(owner, p) {
   if (!p || p.cid == null) return;
   let c = net.looseCars.get(p.cid);
-  if (!c) { c = { netId: p.cid, role: 'parked', driver: null, colH: vehicleColH(p.bike, p.h), speed: 0, gear: 1, lightPhase: 0, kvx: 0, kvy: 0 }; net.looseCars.set(p.cid, c); }
+  if (!c) { c = { netId: p.cid, role: 'parked', driver: null, speed: 0, gear: 1, lightPhase: 0, kvx: 0, kvy: 0 }; net.looseCars.set(p.cid, c); }
   c.owner = owner;
   c.x = p.x; c.y = p.y; c.angle = p.an; c.speed = p.sp || 0;
-  c.w = p.w; c.h = p.h; c.color = p.col;
+  c.w = p.w; c.h = p.h; c.colH = vehicleColH(p.bike, p.h); c.color = p.col;
   c.isBike = p.bike; c.isTank = p.tank; c.isTaxi = p.taxi; c.isDelivery = p.del;
   c.livery = p.liv || null; c.wasPolice = p.pol;
   c.helmet = p.hel || '#2a2a2e';

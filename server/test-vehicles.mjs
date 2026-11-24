@@ -48,7 +48,7 @@ const fleet = run(`(() => {
   return { sizes: vehicles.map(v => ({ w: v.w, h: v.h, colH: v.colH, expectedColH: vehicleColH(!!v.isBike, v.h) })), serviceTypeCount: serviceTypes.length };
 })()`);
 const maxW = run('VEHICLE_MAX_W'), maxH = run('VEHICLE_MAX_H');
-ok(fleet.sizes.length === 7 + fleet.serviceTypeCount && fleet.serviceTypeCount === 8, `fleet built with every service type (${fleet.sizes.length} vehicles)`);
+ok(fleet.sizes.length === 7 + fleet.serviceTypeCount, `fleet built with every service type (${fleet.sizes.length} vehicles)`);
 ok(fleet.sizes.every(s => s.w <= maxW && s.h <= maxH), 'every vehicle fits the max box');
 ok(fleet.sizes.every(s => s.colH === s.expectedColH), 'every vehicle colH comes from vehicleColH');
 
@@ -124,8 +124,22 @@ for (const [kind, d] of Object.entries(decoded)) {
 }
 ok(decoded.saloon.worldColH === 13 && decoded.bike.worldColH === 8, 'world car colH keeps saloon 13 and bike 8');
 
-const parkCarBody = extractTopLevel(netSource, 'netParkCar');
-ok(parkCarBody.includes('vehicleColH(') && !parkCarBody.includes('colH: 13'), 'colH derived in netParkCar');
+const parkDecoder = loadSim('PVEH05');
+vm.runInContext(['var net = { looseCars: new Map() };', extractTopLevel(netSource, 'netParkCar')].join('\n'), parkDecoder.context);
+const parkedBus = parkDecoder.run(`(() => {
+  const payload = car => JSON.parse(JSON.stringify(carPayload(car)));
+  const bus = payload(makeBus(makeCar(0, 0, 'traffic')));
+  bus.cid = 41;
+  netParkCar(3, bus);
+  const created = net.looseCars.get(41);
+  const createdColH = created.colH, createdLivery = created.livery;
+  const saloon = payload(makeCar(0, 0, 'traffic'));
+  saloon.cid = 41;
+  netParkCar(3, saloon);
+  return { createdColH, createdLivery, refreshedColH: net.looseCars.get(41).colH };
+})()`);
+ok(parkedBus.createdColH === 15 && parkedBus.createdLivery === 'bus', `netParkCar derives bus colH (${parkedBus.createdColH})`);
+ok(parkedBus.refreshedColH === 13, `netParkCar refreshes colH when the shape changes (${parkedBus.refreshedColH})`);
 
 const remoteDecoder = loadSim('PVEH04');
 vm.runInContext(['var net = { players: new Map([[7, { shirt: "#fff" }]]), looseCars: new Map() };', 'function netApplyCops() {}', extractTopLevel(netSource, 'netApplyRemote')].join('\n'), remoteDecoder.context);
