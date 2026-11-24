@@ -40,7 +40,7 @@ const net = {
   // ---- Phase 2: client of an AUTHORITATIVE SERVER ----
   authoritative: false,   // true = the server owns the world; here we only render it
   snap: null,             // last 'w' snapshot received
-  trainTick: null, trainTickFrame: 0,
+  trainOffset: null, trainOffsetTarget: 0, trainSlewFrame: 0,
   inSeq: 0,               // running id of the input sent
   firePending: false, enterEdge: false, hornEdge: false, weaponReq: null,  // one-shot actions → server
   wcars: new Map(), wpeds: new Map(),   // id → world entities (interpolated)
@@ -292,7 +292,7 @@ function netShutdown() {
   net.sock = null; net._open = null; net.hello = null; net.rejoin = null;
   net.players.clear(); net.looseCars.clear(); net.remoteCops.clear();
   net.mode = null; net.myId = null; net.token = null; net.clockLeft = null;
-  net.trainTick = null;
+  net.trainOffset = null;
   net.score = 0; net.streak = 0; net.bounty = 0; updateBountyHud(0);
   policeOn = true;
   document.body.classList.remove('mp');
@@ -638,12 +638,25 @@ function netMakePlayerCar(cp) {
   return c;
 }
 
+const TRAIN_CLOCK_SNAP = 30, TRAIN_CLOCK_DEADBAND = 2;
+function netSlewTrainOffset() {
+  const gap = net.trainOffsetTarget - net.trainOffset;
+  const step = Math.min(Math.abs(gap), Math.max(0, frame - net.trainSlewFrame));
+  net.trainOffset += Math.sign(gap) * step;
+  net.trainSlewFrame = frame;
+}
 function netNoteTrainTick(m) {
   if (!Number.isFinite(m.tick)) return;
-  net.trainTick = m.tick; net.trainTickFrame = frame;
+  const target = m.tick - frame;
+  if (net.trainOffset !== null) netSlewTrainOffset();
+  const error = net.trainOffset === null ? Infinity : Math.abs(target - net.trainOffset);
+  if (error > TRAIN_CLOCK_SNAP) { net.trainOffset = target; net.trainSlewFrame = frame; }
+  net.trainOffsetTarget = error > TRAIN_CLOCK_DEADBAND ? target : net.trainOffset;
 }
 function netTrainClock() {
-  return net.trainTick === null ? frame : net.trainTick + (frame - net.trainTickFrame);
+  if (net.trainOffset === null) return frame;
+  netSlewTrainOffset();
+  return frame + net.trainOffset;
 }
 // A snapshot arrives: update the interpolation targets for the world and the ghosts.
 function netOnSnapshot(m) {
