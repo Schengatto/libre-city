@@ -150,9 +150,9 @@ function loadDentRenderer() {
     t: key => key, playerSirenOn: () => false, drawVehicleShadow: () => {}, drawCarFlames: () => {}, drawBike: () => {}, drawTank: () => {},
   });
   const renderNames = ['shade', 'roundRect', 'bodyPaint', 'drawTyres', 'drawGlassGlint', 'GLASS_COLOR', 'fillPolygon', 'tracePolygon',
-    'drawSaloonCabin', 'drawVanCabin', 'drawBusCabin', 'drawLorryCabin', 'drawSpiderCockpit', 'drawCarLights', 'BRAKE_DECELERATION', 'drawCarDents', 'drawCar'];
+    'drawSaloonCabin', 'drawVanCabin', 'drawBusCabin', 'drawLorryCabin', 'drawSpiderCockpit', 'drawCarLights', 'BRAKE_DECELERATION', 'DENT_NOTCH_POINTS', 'DENT_DEPTH_PER_LEVEL', 'DENT_CORNER_RADIUS', 'drawCarDents', 'drawCar'];
   const declarations = [
-    extractTopLevel(readSource('core.js'), 'TAU'),
+    ...['TAU', 'hashStr'].map(name => extractTopLevel(readSource('core.js'), name)),
     ...['DENT_ZONE', 'dentLevel'].map(name => extractTopLevel(gameplaySource, name)),
     ...renderNames.map(name => extractTopLevel(renderSource, name)),
   ];
@@ -194,6 +194,13 @@ ok(innermostFront(dentRenderer.dents(dentSaloon([[FRONT, 3]])).calls) < innermos
 ok(JSON.stringify(dentRenderer.dents(dentSaloon([[LEFT, 2]])).calls) === JSON.stringify(dentRenderer.dents(dentSaloon([[LEFT, 2]])).calls), 'the same car records the same dent shape');
 const sideNotchX = id => pathPoints(dentRenderer.dents(dentSaloon([[LEFT, 2]], { id })).calls).map(([x]) => x);
 ok(JSON.stringify(sideNotchX(1)) !== JSON.stringify(sideNotchX(2)), 'side notches sit at a different offset on different cars');
+
+const networkedSideNotchX = netId => pathPoints(dentRenderer.dents(dentSaloon([[LEFT, 2]], { id: undefined, netId })).calls).map(([x]) => x);
+ok(JSON.stringify(networkedSideNotchX('me#4')) !== JSON.stringify(networkedSideNotchX('rival#9')), 'cars without a numeric id differ by netId');
+ok(JSON.stringify(networkedSideNotchX('me#4')) === JSON.stringify(networkedSideNotchX('me#4')), 'a netId gives a stable notch');
+const flatHalfHeight = HALF_HEIGHT - 6;
+const endNotchPoints = pathPoints(dentRenderer.dents(dentSaloon([[FRONT, 3], [REAR, 3]])).calls);
+ok(endNotchPoints.length > 0 && endNotchPoints.every(([, y]) => Math.abs(y) <= flatHalfHeight + 1e-9), 'front and rear notches stay inside the rounded corners');
 
 const bodies = {
   bus: { livery: 'bus', w: 88, h: 28 }, lorry: { livery: 'lorry', w: 76, h: 28, cargo: '#e6e2d8' },

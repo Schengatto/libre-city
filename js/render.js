@@ -2033,17 +2033,19 @@ function drawCarLights(c, hw, hh) {
   ctx.fillStyle = braking ? '#ff4a3a' : '#9a1a1e';
   ctx.fillRect(-hw + 0.5, -hh + 2.5, 2.5, 5); ctx.fillRect(-hw + 0.5, hh - 7.5, 2.5, 5);
 }
+const DENT_NOTCH_POINTS = 7;
+const DENT_DEPTH_PER_LEVEL = 2;
+const DENT_CORNER_RADIUS = 6;
 function drawCarDents(c, hw, hh) {
   if (!c.dents) return;
-  const NOTCH_POINTS = 7;
-  const DEPTH_PER_LEVEL = 2;
-  const seed = c.id | 0;
+  const seed = typeof c.id === 'number' ? c.id | 0 : (c.netId ? hashStr(c.netId) : 0);
+  const flatHalfHeight = hh - DENT_CORNER_RADIUS;
   const sideOffsetFraction = (seed * 0.6180339887) % 1;
   const sideLength = hw * 2 / 3;
   const sideStart = -hw * 0.7 + sideOffsetFraction * (hw * 1.4 - sideLength);
   const layouts = {
-    [DENT_ZONE.front]: { from: -hh * 0.8, length: hh * 1.6, place: (along, depth) => [hw - depth, along] },
-    [DENT_ZONE.rear]: { from: -hh * 0.8, length: hh * 1.6, place: (along, depth) => [-hw + depth, along] },
+    [DENT_ZONE.front]: { from: -flatHalfHeight, length: flatHalfHeight * 2, place: (along, depth) => [hw - depth, along] },
+    [DENT_ZONE.rear]: { from: -flatHalfHeight, length: flatHalfHeight * 2, place: (along, depth) => [-hw + depth, along] },
     [DENT_ZONE.left]: { from: sideStart, length: sideLength, place: (along, depth) => [along, -hh + depth] },
     [DENT_ZONE.right]: { from: sideStart, length: sideLength, place: (along, depth) => [along, hh - depth] },
   };
@@ -2054,9 +2056,9 @@ function drawCarDents(c, hw, hh) {
     const { from, length, place } = layouts[zone];
     const edgeStart = place(from, 0), edgeEnd = place(from + length, 0);
     const crease = [];
-    for (let i = 1; i < NOTCH_POINTS; i++) {
+    for (let i = 1; i < DENT_NOTCH_POINTS; i++) {
       const jag = ((seed * 7 + i * 13 + zone * 5) % 5) / 4;
-      crease.push(place(from + length * i / NOTCH_POINTS, level * DEPTH_PER_LEVEL * (0.6 + 0.4 * jag)));
+      crease.push(place(from + length * i / DENT_NOTCH_POINTS, level * DENT_DEPTH_PER_LEVEL * (0.6 + 0.4 * jag)));
     }
     fillPolygon([edgeStart, ...crease, edgeEnd], fillColor);
     ctx.strokeStyle = creaseColor; ctx.lineWidth = 1;
