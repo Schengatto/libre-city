@@ -447,7 +447,10 @@ function netSolidCars(out) {
   // it (the server owns and pushes it): my car simply bounces off it. That keeps traffic
   // collision O(n) on the player's car alone rather than O(n²) over all pairs, and it does
   // not fight the traffic interpolation.
-  if (net.authoritative) for (const c of net.wcars.values()) out.push(c);
+  if (net.authoritative) {
+    const leadFrames = netTrafficLeadFrames(net.stats);
+    for (const c of net.wcars.values()) out.push(netTrafficCollider(c, leadFrames));
+  }
   return out;
 }
 // A rival left the match: remove the vehicles they abandoned and their patrol cars too.
@@ -626,6 +629,26 @@ function interpSample(e, renderT) {
       return;
     }
   }
+}
+const NET_SIM_FRAME_MS = 1000 / 60;
+const NET_TRAFFIC_LEAD_MAX_MS = 200;
+const NET_TRAFFIC_LEAD_EASE = 0.25;
+const NET_TRAFFIC_STILL_SPEED = 0.05;
+function netTrafficLeadFrames(stats) {
+  const oneWayMs = stats.rtt === null ? 0 : stats.rtt / 2;
+  return Math.min(NET_TRAFFIC_LEAD_MAX_MS, stats.interpDelay + oneWayMs) / NET_SIM_FRAME_MS;
+}
+function netTrafficCollider(car, leadFrames) {
+  const velocityX = Math.cos(car.angle) * car.speed + car.kvx;
+  const velocityY = Math.sin(car.angle) * car.speed + car.kvy;
+  const collider = car.collider || (car.collider = { leadX: 0, leadY: 0 });
+  const moving = Math.abs(velocityX) + Math.abs(velocityY) > NET_TRAFFIC_STILL_SPEED;
+  collider.leadX += ((moving ? velocityX * leadFrames : 0) - collider.leadX) * NET_TRAFFIC_LEAD_EASE;
+  collider.leadY += ((moving ? velocityY * leadFrames : 0) - collider.leadY) * NET_TRAFFIC_LEAD_EASE;
+  collider.x = car.x + collider.leadX; collider.y = car.y + collider.leadY;
+  collider.angle = car.angle; collider.speed = car.speed; collider.kvx = car.kvx; collider.kvy = car.kvy;
+  collider.w = car.w; collider.h = car.h; collider.mass = car.mass;
+  return collider;
 }
 
 const NET_STATS_SMOOTHING = 0.2;
