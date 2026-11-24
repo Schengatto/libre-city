@@ -29,7 +29,7 @@ const http = require('node:http');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const { performance } = require('node:perf_hooks');
+const { performance, monitorEventLoopDelay, PerformanceObserver } = require('node:perf_hooks');
 const { WebSocketServer } = require('ws');
 // Shared leaderboard across every room, persisted to disk: see server/leaderboard.js.
 const leaderboard = require('./leaderboard');
@@ -805,6 +805,33 @@ function sendFile(res, full, rel, method) {
   stream.on('error', () => { if (!res.headersSent) res.writeHead(500); res.end(); });
 }
 
+const EVENT_LOOP_WINDOW_MS = 10_000;
+const eventLoopDelay = monitorEventLoopDelay({ resolution: 10 });
+eventLoopDelay.enable();
+let gcPauseMaxMs = 0;
+let gcPauseTotalMs = 0;
+new PerformanceObserver(list => {
+  for (const entry of list.getEntries()) {
+    gcPauseMaxMs = Math.max(gcPauseMaxMs, entry.duration);
+    gcPauseTotalMs += entry.duration;
+  }
+}).observe({ entryTypes: ['gc'] });
+const nanosecondsToMs = nanoseconds => Math.round(nanoseconds / 1e5) / 10;
+const roundMs = milliseconds => Math.round(milliseconds * 10) / 10;
+let eventLoopReport = { p50: 0, p99: 0, max: 0, gcMax: 0, gcTotal: 0 };
+setInterval(() => {
+  eventLoopReport = {
+    p50: nanosecondsToMs(eventLoopDelay.percentile(50)),
+    p99: nanosecondsToMs(eventLoopDelay.percentile(99)),
+    max: nanosecondsToMs(eventLoopDelay.max),
+    gcMax: roundMs(gcPauseMaxMs),
+    gcTotal: roundMs(gcPauseTotalMs),
+  };
+  eventLoopDelay.reset();
+  gcPauseMaxMs = 0;
+  gcPauseTotalMs = 0;
+}, EVENT_LOOP_WINDOW_MS).unref();
+
 // ---------- HTTP + WebSocket ------------------------------------------------
 const server = http.createServer((req, res) => {
   const [route, qs] = req.url.split('?');
@@ -812,7 +839,7 @@ const server = http.createServer((req, res) => {
     const players = [...rooms.values()].reduce((n, r) => n + activeCount(r), 0);
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ ok: true, rooms: rooms.size, live: liveRooms(), max: MAX_ROOMS,
-                             queue: queue.length, players }));
+                             queue: queue.length, players, loop: eventLoopReport }));
     return;
   }
   // Shared leaderboard. Plain HTTP rather than a WebSocket message because it is read from
