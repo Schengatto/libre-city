@@ -28,7 +28,7 @@ ok(typeof spider.helmet === 'string' && typeof spider.riderShirt === 'string', '
 const lorry = run(`makeLorry(makeCar(0, 0, 'traffic'))`);
 ok(lorry.cargo === '#e6e2d8', 'lorry carries a cargo colour');
 
-const colHCases = [[false, 24, 13], [false, 26, 14], [false, 30, 16], [true, 12, 8], [false, 28, 15], [false, 22, 12]];
+const colHCases = [[false, 24, 13], [false, 26, 14], [false, 30, 16], [true, 12, 8], [false, 28, 15], [false, 22, 12], [false, 25, 13]];
 ok(colHCases.every(([isBike, h, expected]) => run(`vehicleColH(${isBike}, ${h})`) === expected), 'vehicleColH keeps existing values');
 
 const fleet = run(`(() => {

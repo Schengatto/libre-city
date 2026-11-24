@@ -212,7 +212,7 @@ function asPlayer(v, fn) {
 
 // ---------- Entity factories ----------
 const VEHICLE_MAX_W = 88, VEHICLE_MAX_H = 30;
-const vehicleColH = (isBike, h) => isBike ? 8 : Math.round(h / 2) + 1;
+const vehicleColH = (isBike, h) => isBike ? 8 : Math.floor(h / 2) + 1;
 let carSeq = 0;                                   // running id (priority at junctions)
 function makeCar(x, y, role, dir) {
   const isPolice = role === 'police';
@@ -354,7 +354,7 @@ function makeSoldier(x, y) {
 // Military jeep: chases like a patrol car, but the gunner fires from the vehicle.
 function makeArmyCar(x, y) {
   const c = makeCar(x, y, 'armycar');
-  c.livery = 'army'; c.color = '#4a5d33'; c.w = 48; c.h = 25; c.colH = 13;
+  c.livery = 'army'; c.color = '#4a5d33'; c.w = 48; c.h = 25; c.colH = vehicleColH(false, 25);
   c.mass = 1.8; c.accel = 0.11; c.top = 5.2; c.maxSpeed = 4.4; c.gears = 4;
   c.hornKind = 'truck'; c.hornF = 185; c.shootCd = rndi(40, 70);
   return c;
