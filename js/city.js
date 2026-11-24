@@ -596,7 +596,7 @@ function bakeBuildings() {
     b.kind = blockKind(Math.floor(midx / PERIOD), Math.floor(midy / PERIOD));
     b.face = walkableTile(tileAt(midx, b.y1 + 1)) ? 0 : walkableTile(tileAt(b.x1 + 1, midy)) ? 1
            : walkableTile(tileAt(b.x0 - 1, midy)) ? 2 : walkableTile(tileAt(midx, b.y0 - 1)) ? 3 : -1;
-    if (b.kind === RES_KIND) b.style = area <= (b.district === RESIDENTIAL ? 30 : 18) ? 'house' : 'apartment';
+    if (b.kind === RES_KIND) b.style = area <= (b.district === RESIDENTIAL ? 24 : 18) ? 'house' : 'apartment';
     else if (b.kind === OFF_KIND) b.style = area >= 20 ? 'tower' : 'shop';
     else b.style = area >= 20 ? 'warehouse' : 'workshop';
     const storeyVariation = b.district !== RESIDENTIAL && (b.style === 'apartment' || b.style === 'tower') ? (b.h >> 4) % 3 * 4 : 0;
