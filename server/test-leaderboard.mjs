@@ -111,13 +111,16 @@ const SRV_ENV = {
 
 function startServer() {
   const srv = spawn('node', ['index.js'], { cwd: import.meta.dirname, env: SRV_ENV,
-                                            stdio: ['ignore', 'pipe', 'pipe'] });
+                                            stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
   srv.stderr.on('data', d => process.stdout.write('  [srv:err] ' + d));
   return srv;
 }
-// SIGTERM, so the server's shutdown hook flushes the leaderboard: that is exactly what a
-// redeploy does, and it is the path we want covered.
-async function stopServer(srv) { srv.kill('SIGTERM'); await wait(400); }
+async function stopServer(srv) {
+  if (srv.exitCode !== null || srv.signalCode !== null) return;
+  const exited = new Promise(resolve => srv.once('exit', resolve));
+  srv.send('shutdown');
+  await exited;
+}
 function open() {
   return new Promise((res, rej) => {
     const ws = new WebSocket(WSURL);
@@ -141,10 +144,18 @@ async function playShortMatch(code) {
   return ended;
 }
 const fetchBoard = async () => (await fetch(`${HTTPURL}/leaderboard?limit=10`)).json();
+const SERVER_READY_TIMEOUT_MS = 15000;
+async function waitForServerReady() {
+  const deadline = Date.now() + SERVER_READY_TIMEOUT_MS;
+  for (;;) {
+    try { await fetchBoard(); return; } catch (error) { if (Date.now() > deadline) throw error; }
+    await wait(100);
+  }
+}
 
 let srv = startServer();
 try {
-  await wait(1200);   // start-up + simulation warm-up
+  await waitForServerReady();
 
   console.log('5) fine partita → i giocatori finiscono nella classifica condivisa');
   {
@@ -170,7 +181,7 @@ try {
     await stopServer(srv);
     ok(fs.existsSync(SRV_FILE), 'allo spegnimento la classifica è scritta su disco');
     srv = startServer();
-    await wait(1200);
+    await waitForServerReady();
     const board = await fetchBoard();
     ok(board.top.some(r => r.name === 'Alfa'), 'al riavvio i giocatori sono ancora lì');
     const before = board.top.find(r => r.name === 'Alfa');

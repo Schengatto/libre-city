@@ -941,5 +941,7 @@ server.listen(PORT, HOST, () => log(`Libre City server in ascolto su ${HOST}:${P
 for (const sig of ['SIGTERM', 'SIGINT']) {
   // The leaderboard is written to disk on a debounce: flushing here means a redeploy does not
   // throw away the last few minutes of matches.
-  process.on(sig, () => { log('shutdown', sig); leaderboard.flush(); server.close(); process.exit(0); });
+  process.on(sig, () => shutdown(sig));
 }
+process.on('message', message => { if (message === 'shutdown') shutdown('ipc'); });
+function shutdown(reason) { log('shutdown', reason); leaderboard.flush(); server.close(); process.exit(0); }
