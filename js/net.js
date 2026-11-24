@@ -581,12 +581,26 @@ function netTick() {
 // vehicles and pedestrians "dance" at every correction). To cut the delay, raise the
 // snapshot RATE (server side) rather than extrapolate. The local player does NOT come
 // through here: they are predicted (updateNetClient) to stay responsive.
-// Render delay = ~1.5 snapshot intervals: renderT ALWAYS falls between two real samples →
+// Render delay = measured mean snapshot interval + 2 × jitter (~1.5 intervals on a steady
+// stream): renderT ALWAYS falls between two real samples →
 // pure interpolation (smooth, no extrapolation or jumps). The rival's "position in the past"
 // lag drops by raising the server-side snapshot RATE (SNAP_EVERY): at 30/s (33ms) a 50ms
 // delay is enough, half the 100ms needed at 15/s — same smoothness, half the lag.
-const INTERP_MS = 50;                     // render delay (~1.5 snapshot intervals @30Hz)
-const INTERP_KEEP = 6;                    // states kept per entity (~200ms of history = jitter margin)
+const INTERP_MS = 50;                     // default render delay until enough intervals are measured (~1.5 snapshot intervals @30Hz)
+const INTERP_KEEP = 8;                    // states kept per entity (~230ms of history @30Hz = max delay + one interval)
+const INTERP_MIN_MS = 35;
+const INTERP_MAX_MS = 150;
+const INTERP_MARGIN_MS = 8;
+const INTERP_MIN_INTERVALS = 10;
+const INTERP_STEP_MS = 0.5;
+function netInterpDelayTarget(snapshotWindow) {
+  if (!snapshotWindow || snapshotWindow.intervalCount < INTERP_MIN_INTERVALS) return INTERP_MS;
+  const target = snapshotWindow.meanInterval + 2 * snapshotWindow.jitter + INTERP_MARGIN_MS;
+  return Math.min(INTERP_MAX_MS, Math.max(INTERP_MIN_MS, target));
+}
+function netInterpDelayStep(current, target) {
+  return current + Math.max(-INTERP_STEP_MS, Math.min(INTERP_STEP_MS, target - current));
+}
 function interpFeed(e, x, y, a) {
   const t = performance.now();
   const buf = e.ib || (e.ib = []);
@@ -625,6 +639,7 @@ function createNetStats() {
     inputRtt: null, inputRttLast: null, pendingInputs: [],
     snapshotTimes: [], snapshotWindow: null,
     hostHz: null, lastTick: null, lastTickAt: 0,
+    interpDelay: INTERP_MS,
   };
 }
 function netStatsSmooth(previous, sample) {
@@ -716,7 +731,7 @@ function netRenderStatsOverlay() {
     netStatsOverlayEl.id = 'netStats';
     document.body.appendChild(netStatsOverlayEl);
   }
-  netStatsOverlayEl.textContent = netStatsLines(net.stats, INTERP_MS, performance.now());
+  netStatsOverlayEl.textContent = netStatsLines(net.stats, net.stats.interpDelay, performance.now());
   netStatsOverlayEl.classList.add('show');
 }
 function netSendPing() {
@@ -833,7 +848,9 @@ function netApplyFx(e) {
 // Samples the world at the render instant (in the past) from the interpolation buffer, and
 // extrapolates the bullets. Smooth and at the correct speed at any frame rate.
 function netInterpWorld() {
-  const renderT = performance.now() - INTERP_MS;
+  const stats = net.stats;
+  stats.interpDelay = netInterpDelayStep(stats.interpDelay, netInterpDelayTarget(stats.snapshotWindow));
+  const renderT = performance.now() - stats.interpDelay;
   for (const c of net.wcars.values()) interpSample(c, renderT);
   for (const p of net.wpeds.values()) interpSample(p, renderT);
   for (const g of net.players.values()) {

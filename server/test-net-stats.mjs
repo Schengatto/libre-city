@@ -7,7 +7,8 @@ const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ', msg); } els
 const near = (actual, expected, tolerance = 1e-6) => actual !== null && Math.abs(actual - expected) <= tolerance;
 
 const NET_STATS_NAMES = [
-  'INTERP_MS', 'NET_STATS_SMOOTHING', 'NET_STATS_WINDOW_MS', 'NET_STATS_PENDING_INPUTS',
+  'INTERP_MS', 'INTERP_KEEP', 'INTERP_MIN_MS', 'INTERP_MAX_MS', 'INTERP_MARGIN_MS', 'INTERP_MIN_INTERVALS',
+  'INTERP_STEP_MS', 'netInterpDelayTarget', 'netInterpDelayStep', 'NET_STATS_SMOOTHING', 'NET_STATS_WINDOW_MS', 'NET_STATS_PENDING_INPUTS',
   'createNetStats', 'netStatsSmooth', 'netStatsOnPong', 'netStatsOnInputSent', 'netStatsOnAck',
   'netStatsOnTick', 'netStatsSnapshotWindow', 'netStatsOnSnapshot', 'netStatsLines',
 ];
@@ -111,6 +112,46 @@ function testOverlayLines() {
   ok(lines[7].includes(api.INTERP_MS.toFixed(1)), 'overlay shows the interpolation delay');
 }
 
+function windowFrom(times) {
+  return api.netStatsSnapshotWindow(times, times[times.length - 1]);
+}
+
+function testInterpDelay() {
+  ok(api.netInterpDelayTarget(null) === api.INTERP_MS, 'no data: default delay');
+  ok(api.netInterpDelayTarget(windowFrom([0, 33, 66, 99])) === api.INTERP_MS, 'too few intervals: default delay');
+
+  const steady = [];
+  for (let k = 0; k <= 30; k++) steady.push(k * 33);
+  ok(near(api.netInterpDelayTarget(windowFrom(steady)), 33 + api.INTERP_MARGIN_MS), 'stable stream: mean interval + margin');
+
+  const fast = [];
+  for (let k = 0; k <= 30; k++) fast.push(k * 10);
+  ok(api.netInterpDelayTarget(windowFrom(fast)) === api.INTERP_MIN_MS, 'fast stable stream is clamped to the minimum');
+
+  const jittery = [];
+  for (let k = 0, at = 0; k <= 30; k++, at += k % 2 ? 13 : 53) jittery.push(at);
+  const jitteryWindow = windowFrom(jittery);
+  const expected = jitteryWindow.meanInterval + 2 * jitteryWindow.jitter + api.INTERP_MARGIN_MS;
+  ok(near(api.netInterpDelayTarget(jitteryWindow), expected) && expected > 33 + api.INTERP_MARGIN_MS, 'jittery stream: delay grows with jitter');
+
+  const stalling = [];
+  for (let k = 0, at = 0; k <= 30; k++, at += k % 2 ? 5 : 200) stalling.push(at);
+  ok(api.netInterpDelayTarget(windowFrom(stalling)) === api.INTERP_MAX_MS, 'very jittery stream is clamped to the maximum');
+
+  ok(api.netInterpDelayStep(50, 150) === 50 + api.INTERP_STEP_MS, 'step toward a higher target is bounded');
+  ok(api.netInterpDelayStep(50, 35) === 50 - api.INTERP_STEP_MS, 'step toward a lower target is bounded');
+  ok(near(api.netInterpDelayStep(50, 50.2), 50.2),'close target is reached exactly');
+  let delay = api.INTERP_MS;
+  for (let frame = 0; frame < 1000; frame++) delay = api.netInterpDelayStep(delay, api.INTERP_MAX_MS);
+  ok(delay === api.INTERP_MAX_MS, 'delay converges to the target without overshoot');
+
+  const snapshotIntervalMs = 1000 / 30;
+  ok((api.INTERP_KEEP - 1) * snapshotIntervalMs >= api.INTERP_MAX_MS + snapshotIntervalMs, 'interpolation history covers the max delay plus one interval');
+
+  const stats = api.createNetStats();
+  ok(stats.interpDelay === api.INTERP_MS, 'stats start at the default delay');
+}
+
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function testServerPongEcho() {
@@ -157,6 +198,7 @@ testInputRoundTrip();
 testSnapshotWindow();
 testHostRate();
 testOverlayLines();
+testInterpDelay();
 await testServerPongEcho();
 
 console.log(`\nnet stats: ${pass} ok, ${fail} failed`);
