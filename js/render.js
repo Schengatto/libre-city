@@ -92,6 +92,7 @@ function drawWorldStatic() {
   ctx.restore();
   drawRailway();                                 // the train track (a loop around the city)
   drawBuildingShadows();
+  drawPortProps(portProps);
   if (chinaGate) drawChinaGatePillars(chinaGate);
   drawLandmarks();
 }
@@ -171,6 +172,10 @@ function drawTile(t, px, py, x, y) {
     else drawGrass(px, py, x, y);
   } else if (t === WATER) {
     drawWaterTile(px, py, x, y);
+  } else if (t === SAND) {
+    drawSandTile(px, py, x, y);
+  } else if (t === QUAY || t === PROP) {
+    drawQuayTile(px, py, x, y);
   } else if (t === COURT) {                                  // the lot's inner courtyard
     const k = blockKind(Math.floor(x / PERIOD), Math.floor(y / PERIOD));
     const h = hash2(x + 9, y + 27);
@@ -240,7 +245,7 @@ const BROADLEAF_PALETTES = [['#24562a', '#367a36', '#5c9e48'], ['#2a6130', '#3f8
 const BLOSSOM_PALETTES = [['#9c4a68', '#cf7898', '#f2bcd0'], ['#8f8a9c', '#d6d0e0', '#f7f3fb']];
 const CONIFER_PALETTE = ['#173f27', '#245e36', '#3f8250'];
 const WATER_SIDES = [[0, -1], [0, 1], [-1, 0], [1, 0]];
-const SOFT_SHORES = [GRASS, TREE, COURT];
+const SOFT_SHORES = [GRASS, TREE, COURT, SAND, QUAY];
 
 function tileRandom(seed) {
   let state = seed >>> 0;
@@ -332,7 +337,7 @@ function drawWaterTile(px, py, x, y) {
   ctx.fillRect(px + ((h >> 8) & 15), py + 19 + ((h >> 12) & 5), 5, 2);
   for (const [dx, dy] of WATER_SIDES) {
     const neighbour = tileAt(x + dx, y + dy);
-    if (neighbour === WATER) continue;
+    if (neighbour === WATER || x + dx < 0 || y + dy < 0 || x + dx >= MAP_W || y + dy >= MAP_H) continue;
     fadeFromEdge(px, py, dx, dy, 14, '120,190,200', 0.5);
     if (dx < 0 || dy < 0) fadeFromEdge(px, py, dx, dy, 7, '0,0,0', 0.3);
     if (SOFT_SHORES.includes(neighbour)) {
@@ -340,6 +345,93 @@ function drawWaterTile(px, py, x, y) {
     } else {
       ctx.fillStyle = '#b4b9c0'; edgeBand(px, py, dx, dy, 3);
       ctx.fillStyle = 'rgba(255,255,255,.35)'; edgeBand(px, py, dx, dy, 1);
+    }
+  }
+}
+function drawSandTile(px, py, x, y) {
+  ctx.fillStyle = '#d9c48e'; ctx.fillRect(px, py, T, T);
+  const h = hash2(x, y);
+  ctx.fillStyle = 'rgba(120,90,40,.14)'; ctx.fillRect(px + (h & 15), py + ((h >> 4) & 15), 3, 2);
+  ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(px + ((h >> 8) & 15), py + ((h >> 12) & 15), 2, 2);
+  if (h % 7 === 0) { ctx.fillStyle = '#e9dcc0'; ctx.fillRect(px + ((h >> 5) & 15) + 4, py + ((h >> 9) & 15) + 4, 3, 2); }
+}
+function drawQuayTile(px, py, x, y) {
+  ctx.fillStyle = '#a39d90'; ctx.fillRect(px, py, T, T);
+  ctx.fillStyle = 'rgba(0,0,0,.10)'; ctx.fillRect(px, py + T / 2, T, 1); ctx.fillRect(px + T / 2, py, 1, T);
+  if (hash2(x, y) % 5 === 0) { ctx.fillStyle = 'rgba(255,255,255,.10)'; ctx.fillRect(px + 4, py + 4, 9, 3); }
+  for (const [dx, dy] of WATER_SIDES) {
+    if (tileAt(x + dx, y + dy) !== WATER) continue;
+    ctx.fillStyle = '#6d6a63'; edgeBand(px, py, dx, dy, 3);
+    ctx.fillStyle = 'rgba(255,255,255,.22)'; edgeBand(px - dx, py - dy, dx, dy, 1);
+  }
+}
+function drawPortCrane(prop) {
+  const left = prop.x0 * T - camX, top = prop.y0 * T - camY;
+  const width = (prop.x1 - prop.x0 + 1) * T, height = (prop.y1 - prop.y0 + 1) * T;
+  const [seaX, seaY] = prop.sea, centreX = left + width / 2, centreY = top + height / 2;
+  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(left + 3, top + 3, width, height);
+  ctx.fillStyle = '#d8a21c'; ctx.fillRect(left + 2, top + 2, width - 4, height - 4);
+  ctx.fillStyle = '#3b3e46'; ctx.fillRect(left + 7, top + 7, width - 14, height - 14);
+  const boomStart = -0.8 * T, boomLength = 3 * T;
+  const boomX = seaX ? centreX + Math.min(seaX * boomStart, seaX * (boomStart + boomLength)) : centreX - 3;
+  const boomY = seaY ? centreY + Math.min(seaY * boomStart, seaY * (boomStart + boomLength)) : centreY - 3;
+  ctx.fillStyle = '#d8a21c'; ctx.fillRect(boomX, boomY, seaX ? boomLength : 6, seaY ? boomLength : 6);
+  ctx.fillStyle = shade('#d8a21c', -0.3);
+  ctx.fillRect(seaX ? boomX : centreX - 0.5, seaY ? boomY : centreY - 0.5, seaX ? boomLength : 1, seaY ? boomLength : 1);
+  ctx.fillStyle = '#5a5e66'; ctx.fillRect(centreX - seaX * 0.8 * T - 4, centreY - seaY * 0.8 * T - 4, 8, 8);
+  ctx.fillStyle = '#2d3138'; ctx.fillRect(centreX - 6, centreY - 6, 12, 12);
+  ctx.fillStyle = '#9fd0e8'; ctx.fillRect(centreX - 4 + seaX * 3, centreY - 4 + seaY * 3, 8, 8);
+}
+function drawContainerStack(prop) {
+  for (let ty = prop.y0; ty <= prop.y1; ty++) for (let tx = prop.x0; tx <= prop.x1; tx++) {
+    const px = tx * T - camX, py = ty * T - camY, color = CONTAINER_COLS[hash2(tx, ty) % CONTAINER_COLS.length];
+    ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(px + 3, py + 4, T - 2, T - 3);
+    ctx.fillStyle = color; ctx.fillRect(px + 1, py + 2, T - 3, T - 5);
+    ctx.fillStyle = shade(color, -0.25);
+    for (let rib = 5; rib < T - 4; rib += 5) ctx.fillRect(px + rib, py + 2, 1, T - 5);
+    ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(px + 1, py + 2, T - 3, 2);
+  }
+}
+function drawBollard(px, py, dx, dy) {
+  const x = px + T / 2 + dx * (T / 2 - 5), y = py + T / 2 + dy * (T / 2 - 5);
+  ctx.fillStyle = 'rgba(0,0,0,.30)'; ctx.beginPath(); ctx.arc(x + 1, y + 1, 3, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#2d3138'; ctx.beginPath(); ctx.arc(x, y, 3, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#6b707a'; ctx.fillRect(x - 1, y - 1, 2, 2);
+}
+function drawBeachUmbrella(px, py, h) {
+  const x = px + T / 2, y = py + T / 2, color = AWNING_COLS[(h >> 3) % AWNING_COLS.length];
+  ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.beginPath(); ctx.arc(x + 3, y + 3, 9, 0, TAU); ctx.fill();
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, 9, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#ece7db';
+  for (let rib = 0; rib < 3; rib++) {
+    const angle = rib * TAU / 6;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.arc(x, y, 9, angle, angle + TAU / 12); ctx.closePath(); ctx.fill();
+  }
+  ctx.fillStyle = shade(color, -0.35); ctx.beginPath(); ctx.arc(x, y, 1.5, 0, TAU); ctx.fill();
+}
+function drawBeachTowel(px, py, h) {
+  const x = px + 6 + (h >> 3) % 8, y = py + 7 + (h >> 6) % 8, color = AWNING_COLS[(h >> 9) % AWNING_COLS.length];
+  ctx.fillStyle = color; ctx.fillRect(x, y, 14, 8);
+  ctx.fillStyle = '#ece7db'; ctx.fillRect(x + 4, y, 2, 8); ctx.fillRect(x + 9, y, 2, 8);
+}
+function drawPortProps(props) {
+  const margin = 3 * T;
+  for (const prop of props) {
+    if ((prop.x1 + 1) * T < camX - margin || prop.x0 * T > camX + vw + margin
+      || (prop.y1 + 1) * T < camY - margin || prop.y0 * T > camY + vh + margin) continue;
+    if (prop.kind === 'crane') drawPortCrane(prop); else drawContainerStack(prop);
+  }
+  const x0 = Math.max(0, Math.floor((camX - margin) / T)), x1 = Math.min(MAP_W - 1, Math.ceil((camX + vw + margin) / T));
+  const y0 = Math.max(0, Math.floor((camY - margin) / T)), y1 = Math.min(MAP_H - 1, Math.ceil((camY + vh + margin) / T));
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    const t = grid[gi(x, y)];
+    if (t !== SAND && t !== QUAY) continue;
+    const h = hash2(x, y), px = x * T - camX, py = y * T - camY;
+    if (t === SAND) {
+      if (h % 4 === 0) drawBeachUmbrella(px, py, h); else if (h % 4 === 1) drawBeachTowel(px, py, h);
+    } else if (h % 3 === 0) {
+      const waterSide = WATER_SIDES.find(([dx, dy]) => tileAt(x + dx, y + dy) === WATER);
+      if (waterSide) drawBollard(px, py, waterSide[0], waterSide[1]);
     }
   }
 }
@@ -2225,7 +2317,7 @@ cityMini.width = MAP_W; cityMini.height = MAP_H;
     const t = grid[gi(x, y)];
     m.fillStyle = t === ROAD ? '#3a3d45' : t === SIDEWALK ? '#8a9098' : t === ALLEY ? '#2b2d33'
                 : t === GRASS || t === TREE ? '#3f8a3a' : t === WATER ? '#2f6b9e'
-                : t === COURT ? '#79807a' : '#6a5a4a';
+                : t === COURT ? '#79807a' : t === SAND ? '#d8c48a' : t === QUAY ? '#9a958a' : t === PROP ? '#b8642e' : '#6a5a4a';
     m.fillRect(x, y, 1, 1);
   }
   // Special buildings, clearly visible on the map.
