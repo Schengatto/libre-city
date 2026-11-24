@@ -202,6 +202,9 @@ async function testServerPongEcho() {
     ok(pongs[0] && pongs[0].c === 1234.5, 'finite client timestamp is echoed');
     ok(pongs.slice(1).every(pong => !('c' in pong) && Object.keys(pong).length === 1), 'non-number timestamps are dropped');
     ws.close();
+    const health = await (await fetch(`http://127.0.0.1:${PORT}/health`)).json();
+    const loopFields = ['p50', 'p99', 'max', 'gcMax', 'gcTotal'];
+    ok(health.loop && loopFields.every(field => Number.isFinite(health.loop[field])), 'health reports event-loop delay and GC pauses');
   } finally {
     server.kill('SIGTERM');
     await wait(150);
