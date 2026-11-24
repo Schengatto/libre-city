@@ -1320,7 +1320,6 @@ function drawBuildings() {
   }
 }
 function drawChinaSigns(b, px, py, W, H, L) {
-  if (b.face < 0) return;
   const sideways = b.face === 1 || b.face === 2, span = sideways ? H : W, thickness = b.face < 2 ? L : 5;
   for (let along = 8; along + 5 <= span - 3; along += 14) {
     const x = b.face === 1 ? px + W - L : sideways ? px : px + along;

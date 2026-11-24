@@ -38,7 +38,7 @@ function floodCovers(districts, id, centre) {
   return grid.every((d, cell) => d !== id || reached.has(cell));
 }
 
-console.log('1) distretti');
+console.log('1) districts');
 const loaded = {};
 for (const [size, codes] of Object.entries(CODES)) for (const code of codes) {
   const city = loadCity(code);
@@ -144,7 +144,7 @@ for (const size of ['P', 'M']) for (const code of CODES[size]) {
 }
 ok(latePatched && latePorts >= 3 && lateWrong.length === 0, `late port keeps inland centres out of the band (${latePorts} late ports)` + (latePatched ? '' : ' (patch not applied)') + (lateWrong.length ? ': ' + lateWrong.join(', ') : ''));
 
-console.log('2) porto');
+console.log('2) port');
 const K = loaded.PDST00.run('({ ROAD, SIDEWALK, WATER, SAND, QUAY, PROP, PORT_STRIP })');
 const STRIP = '(() => { const len = portSide % 2 ? MAP_H : MAP_W, rows = []; for (let s = 0; s < len; s++) { const row = []; for (let d = 0; d <= PORT_STRIP + 1; d++) { const [x, y] = [[s, d], [MAP_W - 1 - d, s], [s, MAP_H - 1 - d], [d, s]][portSide]; row.push(grid[gi(x, y)]); } rows.push(row); } return rows; })()';
 const toSideDepth = (x, y, side, mapW, mapH) => [[x, y], [y, mapW - 1 - x], [x, mapH - 1 - y], [y, x]][side];
@@ -223,12 +223,12 @@ ok(walkWrong.length === 0, 'peds accept sand and quay, never sea or props' + (wa
 
 console.log('3) residential and industrial looks');
 const LOOK_STATS = `(() => {
-  const stats = { houses: 0, buildings: 0, wrongApartments: 0, trees: 0, courts: 0, industrialTrees: 0, wrongIndustrial: 0, industrialBuildings: 0 };
+  const stats = { houses: 0, buildings: 0, apartments: 0, wrongApartments: 0, trees: 0, courts: 0, industrialTrees: 0, wrongIndustrial: 0, industrialBuildings: 0 };
   for (const b of bldgs) {
     if (b.district === RESIDENTIAL) {
       stats.buildings++;
       if (b.style === 'house') stats.houses++;
-      if (b.style === 'apartment' && b.lift !== 11) stats.wrongApartments++;
+      if (b.style === 'apartment') { stats.apartments++; if (b.lift !== 11) stats.wrongApartments++; }
     } else if (b.district === INDUSTRIAL || b.district === PORT) {
       stats.industrialBuildings++;
       if (b.style !== 'warehouse' && b.style !== 'workshop') stats.wrongIndustrial++;
@@ -255,6 +255,7 @@ const treeShares = residentialStats.map(s => s.trees / (s.trees + s.courts));
 const shareRange = shares => `${Math.min(...shares).toFixed(2)}-${Math.max(...shares).toFixed(2)}`;
 ok(residentialStats.length > 0 && residentialStats.every(s => s.buildings > 0) && houseShares.every(share => share >= 0.6),
   `residential: houses >= 60% of buildings (${residentialStats.length} codes, ${shareRange(houseShares)})`);
+ok(residentialStats.every(s => s.apartments > 0), 'every residential code has apartments');
 ok(residentialStats.every(s => s.wrongApartments === 0), 'residential apartments all at lift 11');
 ok(residentialStats.every(s => s.trees + s.courts > 0) && treeShares.every(share => share >= 0.18 && share <= 0.32),
   `residential courts: trees 18-32% (${shareRange(treeShares)})`);
