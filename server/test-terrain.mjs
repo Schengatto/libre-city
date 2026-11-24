@@ -236,6 +236,9 @@ console.log('10) port');
   const beachStyles = fillStyles(beach.recorder.calls);
   ok(beach.renderer.AWNING_COLS.some(color => beachStyles.includes(color)) && !hasBadNumber(beach.recorder.calls), 'umbrellas and towels on sand');
 
+  const beachDecorSource = ['drawBeachUmbrella', 'drawBeachTowel'].map(name => extractTopLevel(SOURCES.render, name)).join('\n');
+  ok(!/(^|[^>])>> ?\d/.test(beachDecorSource), 'beach decor reads the unsigned hash with >>>');
+
   const dock = createRenderer((x, y, probe) => x === 0 ? probe.WATER : probe.QUAY);
   dock.renderer.drawPortProps([]);
   ok(dock.recorder.calls.some(([name]) => name === 'arc'), 'bollards on the quay next to the water');

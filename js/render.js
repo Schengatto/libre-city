@@ -399,7 +399,7 @@ function drawBollard(px, py, dx, dy) {
   ctx.fillStyle = '#6b707a'; ctx.fillRect(x - 1, y - 1, 2, 2);
 }
 function drawBeachUmbrella(px, py, h) {
-  const x = px + T / 2, y = py + T / 2, color = AWNING_COLS[(h >> 3) % AWNING_COLS.length];
+  const x = px + T / 2, y = py + T / 2, color = AWNING_COLS[(h >>> 3) % AWNING_COLS.length];
   ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.beginPath(); ctx.arc(x + 3, y + 3, 9, 0, TAU); ctx.fill();
   ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, 9, 0, TAU); ctx.fill();
   ctx.fillStyle = '#ece7db';
@@ -410,7 +410,7 @@ function drawBeachUmbrella(px, py, h) {
   ctx.fillStyle = shade(color, -0.35); ctx.beginPath(); ctx.arc(x, y, 1.5, 0, TAU); ctx.fill();
 }
 function drawBeachTowel(px, py, h) {
-  const x = px + 6 + (h >> 3) % 8, y = py + 7 + (h >> 6) % 8, color = AWNING_COLS[(h >> 9) % AWNING_COLS.length];
+  const x = px + 6 + (h >>> 3) % 8, y = py + 7 + (h >>> 6) % 8, color = AWNING_COLS[(h >>> 9) % AWNING_COLS.length];
   ctx.fillStyle = color; ctx.fillRect(x, y, 14, 8);
   ctx.fillStyle = '#ece7db'; ctx.fillRect(x + 4, y, 2, 8); ctx.fillRect(x + 9, y, 2, 8);
 }
