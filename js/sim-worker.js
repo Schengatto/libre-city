@@ -29,6 +29,7 @@
   function applySimStubs(roomCode) {
     const stubs = makeSimStubs(roomCode, 900, self);
     for (const key in stubs) if (!(key in self)) self[key] = stubs[key];
+    Object.defineProperty(self, 'location', { value: stubs.location, configurable: true, writable: true });
   }
 
   // dev-only:begin
@@ -39,7 +40,7 @@
   }
   // dev-only:end
 
-  if (bundled) applySimStubs(self.location.hash.replace(/^#room=/, ''));
+  if (bundled) applySimStubs(self.name);
 
   function sendToServer(payload) {
     if (socket && socket.readyState === OPEN_SOCKET_STATE) socket.send(typeof payload === 'string' ? payload : JSON.stringify(payload));

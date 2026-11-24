@@ -9,7 +9,7 @@ import { runOverPedestrians } from './police-scenarios.mjs';
 const require = createRequire(import.meta.url);
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const JS_DIR = path.join(ROOT_DIR, 'js');
-const { SIM_FILES } = require('./sim-runtime.js');
+const { SIM_FILES, createRoomSim } = require('./sim-runtime.js');
 const { buildSimWorkerBundle } = require('../build-sim-worker.js');
 
 let pass = 0, fail = 0;
@@ -22,7 +22,7 @@ class FakeSocket {
   close() { this.closed = true; }
 }
 
-function createWorkerHarness() {
+function createWorkerHarness(workerGlobals = {}) {
   let now = 0;
   let nextTimerId = 1;
   const timers = [];
@@ -30,6 +30,7 @@ function createWorkerHarness() {
   const importedFiles = [];
   const scope = {
     location: { hash: '#room=TEST' },
+    name: 'TEST',
     navigator: { userAgent: 'fake-worker' },
     postMessage: message => posted.push(message),
     WebSocket: FakeSocket,
@@ -38,6 +39,7 @@ function createWorkerHarness() {
     setTimeout, clearTimeout,
     setInterval: (fn, ms) => { const id = nextTimerId++; timers.push({ id, fn, ms, next: now + ms }); return id; },
     clearInterval: id => { const index = timers.findIndex(timer => timer.id === id); if (index >= 0) timers.splice(index, 1); },
+    ...workerGlobals,
   };
   scope.self = scope;
   vm.createContext(scope);
@@ -71,7 +73,8 @@ ok(harness.importedFiles.length === 0, 'no sim script loaded before start');
 harness.send({ type: 'start', url: 'ws://fake/host', code: 'test', token: 'tok-1', hostId: 'p1' });
 ok(harness.importedFiles[0] === 'sim-stubs.js', 'stubs are imported first');
 ok(JSON.stringify(harness.importedFiles.slice(1)) === JSON.stringify(SIM_FILES), 'sim files are imported in the server order');
-ok(harness.scope.location.hash === '#room=TEST' && harness.scope.navigator.userAgent === 'fake-worker', 'native location and navigator are not overridden');
+ok(harness.scope.location.hash === '#room=TEST', 'location is the stub carrying the room code');
+ok(harness.scope.navigator.userAgent === 'fake-worker', 'native navigator is not overridden');
 ok(typeof harness.scope.sfx === 'object' && typeof harness.scope.netActive === 'function', 'missing stubs are copied onto self');
 const socket = FakeSocket.instances[0];
 ok(socket && socket.url === 'ws://fake/host', 'hostlink socket opens on the given url');
@@ -164,6 +167,12 @@ console.log('  ', JSON.stringify(workerPoliceOff));
 ok(workerPoliceOff.inCar && workerPoliceOff.knocked > 0, 'the guest runs pedestrians over with the police off');
 ok(workerPoliceOff.wantedAfterRunOver === 0, 'hoststart police:false keeps the guest unwanted');
 ok(workerPoliceOff.maxSnapshotCops === 0 && workerPoliceOff.maxSnapshotPoliceCars === 0, 'hoststart police:false spawns no police');
+
+console.log('bundle served by the service worker');
+const cachedWorker = createWorkerHarness({ location: { hash: '', href: 'http://localhost/js/sim-worker.0123456789.js' }, name: 'PSSUHG' });
+vm.runInContext(buildSimWorkerBundle(ROOT_DIR), cachedWorker.scope, { filename: 'sim-worker-bundle.js' });
+ok(vm.runInContext('ROOM_CODE', cachedWorker.scope) === 'PSSUHG', 'the room code comes from the worker name when the url lost its #room fragment');
+ok(cachedWorker.scope.__sim.worldInfo().sig === createRoomSim('PSSUHG').worldInfo().sig, 'the worker simulates the same city as the room');
 
 console.log('built load');
 const TEST_DIST_DIR = path.join(ROOT_DIR, '.tmp', 'test-sim-worker-dist');

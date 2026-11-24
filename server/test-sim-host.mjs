@@ -11,9 +11,9 @@ const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ', msg); } els
 class FakeWorker {
   static instances = [];
   static failNext = false;
-  constructor(url) {
+  constructor(url, options) {
     if (FakeWorker.failNext) { FakeWorker.failNext = false; throw new Error('blocked'); }
-    this.url = url; this.posted = []; this.terminated = false; this.onmessage = null; this.onerror = null;
+    this.url = url; this.options = options; this.posted = []; this.terminated = false; this.onmessage = null; this.onerror = null;
     FakeWorker.instances.push(this);
   }
   postMessage(message) { this.posted.push(message); }
@@ -40,7 +40,8 @@ ok(host.simHostActive() === false, 'inactive before start');
 host.simHostStart();
 const firstWorker = FakeWorker.instances[0];
 ok(host.simHostActive() === true, 'active after start');
-ok(firstWorker.url === 'js/sim-worker.js#room=ABCD', 'worker url = meta content + #room=ROOM_CODE');
+ok(firstWorker.url === 'js/sim-worker.js', 'worker url = meta content');
+ok(firstWorker.options && firstWorker.options.name === 'ABCD', 'worker name = ROOM_CODE, which survives a service-worker-cached script');
 const startMessage = firstWorker.posted[0];
 ok(startMessage && startMessage.type === 'start' && startMessage.code === 'ABCD' && startMessage.hostId === 'p1' && startMessage.token === 'tok-1',
   'start message carries code, hostId and token');
