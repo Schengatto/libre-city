@@ -353,7 +353,7 @@ function netCopPayloads() {
     if (c.role !== 'police') continue;
     if (!c.netId) c.netId = net.myId + '#c' + (net.copSeq++);
     (out || (out = [])).push({ cid: c.netId, x: Math.round(c.x), y: Math.round(c.y),
-      an: c.angle, sp: c.speed, w: c.w, h: c.h, col: c.color, lp: c.lightPhase || 0 });
+      an: c.angle, sp: c.speed, w: c.w, h: c.h, col: c.color, lp: c.lightPhase || 0, dn: c.dents || undefined });
   }
   return out;   // null when there are none: the receiver removes mine
 }
@@ -432,7 +432,7 @@ function netApplyCops(owner, list) {
       net.remoteCops.set(p.cid, c);
     } else if (dist(c.x, c.y, p.x, p.y) > 280) { c.x = p.x; c.y = p.y; c.angle = p.an; }  // teleport
     c.tx = p.x; c.ty = p.y; c.ta = p.an; c.speed = p.sp;
-    c.w = p.w; c.h = p.h; c.color = p.col;
+    c.w = p.w; c.h = p.h; c.color = p.col; c.dents = p.dn || 0;
   }
   for (const [cid, c] of net.remoteCops) if (c.owner === owner && (!seen || !seen.has(cid))) net.remoteCops.delete(cid);
 }

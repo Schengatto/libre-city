@@ -205,5 +205,23 @@ for (const [name, body] of Object.entries(bodies)) {
   ok(dented.dentRuns === 1 && countCalls(dented.calls, 'fill') > countCalls(clean.calls, 'fill'), `drawCar draws dents on a ${name}`);
 }
 
+const netCopContext = vm.createContext({ cars: [], dist: (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by), net: { myId: 'me', copSeq: 0, remoteCops: new Map() } });
+vm.runInContext(['netCopPayloads', 'netApplyCops'].map(name => extractTopLevel(netSource, name)).join('\n'), netCopContext);
+const copPayloadJson = patrol => {
+  netCopContext.cars = [patrol];
+  return vm.runInContext('JSON.stringify(netCopPayloads())', netCopContext);
+};
+const patrolCar = extra => ({ role: 'police', x: 10, y: 20, angle: 0, speed: 1, w: 46, h: 24, color: '#f2f4f8', ...extra });
+ok(!JSON.parse(copPayloadJson(patrolCar({ dents: 0 })))[0].hasOwnProperty('dn'), 'an undamaged patrol car adds no dn');
+ok(JSON.parse(copPayloadJson(patrolCar({ dents: 13 })))[0].dn === 13, 'a dented patrol car sends dn equal to its dents');
+const applyCops = list => {
+  netCopContext.list = list;
+  vm.runInContext("netApplyCops('rival', list)", netCopContext);
+  return netCopContext.net.remoteCops.get('r#c0');
+};
+const copWire = extra => [{ cid: 'r#c0', x: 10, y: 20, an: 0, sp: 1, w: 46, h: 24, col: '#f2f4f8', lp: 0, ...extra }];
+ok(applyCops(copWire({ dn: 13 })).dents === 13, 'netApplyCops decodes dn onto the remote patrol car');
+ok(applyCops(copWire({})).dents === 0, 'a later undamaged payload resets the remote patrol car dents');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
