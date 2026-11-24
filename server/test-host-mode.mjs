@@ -449,9 +449,11 @@ try {
   check(boundedStart && !boundedStart.state.some(row => row.id === futureGuestId), 'hst rows for ids not in the room are dropped');
   check(await waitFor(() => findType(boundedHost.ws, 'end'), MATCH_END_TIMEOUT_MS), 'the bounded match ends');
   const boundedBoard = await (await fetch(`http://127.0.0.1:${PORT}/leaderboard?limit=100`)).json();
+  const recordedScoreCap = Math.ceil((TEST_MAX_PPM * (performance.now() - boundedCreatedAt)) / 60_000);
   const maxRow = boundedBoard.top.find(row => row.name === 'Max');
-  check(maxRow && boundedRow && maxRow.score === boundedRow.s && maxRow.kills === 0 && maxRow.deaths === 2,
-    'the leaderboard records the clamped host score');
+  check(maxRow && boundedRow && maxRow.score >= boundedRow.s && maxRow.score <= recordedScoreCap
+    && maxRow.kills === 0 && maxRow.deaths === 2,
+    `the leaderboard records the clamped host score (${boundedRow && boundedRow.s} <= ${maxRow && maxRow.score} <= ${recordedScoreCap})`);
   check(!boundedBoard.top.some(row => row.name === 'Gina'), 'a score reported for an id not yet in the room is never recorded');
   closeAll([boundedHost.ws, boundedLink, boundedRelink, lateGuest.ws]);
 
