@@ -127,7 +127,7 @@ let player = {
   kills: 0, deaths: 0, score: 0, streak: 0, bounty: 0,   // score/streak/bounty (PvP)
 };
 (function spawnPlayer() {
-  const p = randomRoadNear(WORLD_W / 2, WORLD_H / 2, 0, 300) || nodes[Math.floor(nodes.length / 2)];
+  const p = randomPublicRoadNear(WORLD_W / 2, WORLD_H / 2, 0, 300) || nodes[Math.floor(nodes.length / 2)];
   player.x = p.x; player.y = p.y;
 })();
 
@@ -410,7 +410,7 @@ function randomParkingNear(cx, cy, rmin, rmax) {
     const wx = p.x - tan.y * off * side, wy = p.y + tan.x * off * side;
     const tx = Math.floor(wx / T), ty = Math.floor(wy / T);
     if (tx < 2 || ty < 2 || tx >= MAP_W - 2 || ty >= MAP_H - 2) continue;
-    if (tileAt(tx, ty) !== ROAD) continue;
+    if (tileAt(tx, ty) !== ROAD || inArmyIsland(tx, ty)) continue;
     if (cars.some(o => dist(o.x, o.y, wx, wy) < 60)) continue;
     return { x: wx, y: wy, angle: Math.atan2(tan.y, tan.x) };      // parallel parking
   }
@@ -419,7 +419,7 @@ function randomParkingNear(cx, cy, rmin, rmax) {
 // A coin on a walkable tile (pavement, road, grass, plaza or alley).
 function spawnCoinNear(cx, cy, rmin, rmax) {
   const p = randomTileNear(cx, cy, rmin, rmax,
-    (tx, ty) => { const t = tileAt(tx, ty); return t === SIDEWALK || t === ROAD || t === GRASS; });
+    (tx, ty) => { const t = tileAt(tx, ty); return (t === SIDEWALK || t === ROAD || t === GRASS) && !inArmyIsland(tx, ty); });
   if (p) coins.push({ x: p.x + rnd(-9, 9), y: p.y + rnd(-9, 9), spin: rnd(0, TAU), bob: rnd(0, TAU), val: 10 });
 }
 // A higher-value coin tucked away in an alley.

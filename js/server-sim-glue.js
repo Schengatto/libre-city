@@ -48,7 +48,7 @@ MP = players;                            // switches the sim helpers onto the mu
 var __playerSeq = 0;
 
 function makeSimPlayer(name, shirtIdx) {
-  const sp = randomRoadNear(WORLD_W / 2, WORLD_H / 2, 0, 500) || nodes[Math.floor(nodes.length / 2)];
+  const sp = randomPublicRoadNear(WORLD_W / 2, WORLD_H / 2, 0, 500) || nodes[Math.floor(nodes.length / 2)];
   return {
     id: 'p' + (++__playerSeq), name: String(name || 'Ospite').slice(0, 14), shirtIdx: shirtIdx | 0,
     x: sp.x, y: sp.y, r: 8, health: 100, aim: 0, walk: 0, moving: false,
