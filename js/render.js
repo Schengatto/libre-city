@@ -1227,8 +1227,6 @@ function drawBuildings() {
     drawPlannedBuilding(b, px, py, W, H);
   }
 }
-// Awning-shaded shopfront for shops/workshops, a main door for the rest — on the side
-// that faces the street.
 function drawChinaSigns(b, px, py, W, H, L) {
   if (b.face < 0) return;
   const sideways = b.face === 1 || b.face === 2, span = sideways ? H : W, thickness = b.face < 2 ? L : 5;
@@ -1266,6 +1264,8 @@ function drawChinaGateBeam(gate) {
   stroke('#d4af37', 1.5, leftTop, rightTop, -9);
   ctx.restore();
 }
+// Awning-shaded shopfront for shops/workshops, a main door for the rest — on the side
+// that faces the street.
 function drawFacade(b, px, py, W, H, L) {
   if (b.face < 0) return;
   if (b.style === 'chinashop') return drawChinaSigns(b, px, py, W, H, L);

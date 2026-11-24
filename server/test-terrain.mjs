@@ -15,12 +15,14 @@ const DECLARATIONS = [
   ['render', 'drawTyres'], ['render', 'drawGlassGlint'], ['render', 'drawSaloonCabin'], ['render', 'drawVanCabin'],
   ['render', 'drawCarLights'], ['city', 'solidTile'], ['render', 'clipOutTiles'],
   ['city', 'MIXED'], ['city', 'walkableTile'], ['render', 'CONTAINER_COLS'], ['render', 'drawDistrictCourtDetail'],
+  ['render', 'drawTile'],
 ];
 const moduleSource = DECLARATIONS.map(([file, name]) => extractTopLevel(SOURCES[file], name)).join('\n');
 const EXPORTS = ['T', 'GRASS', 'TREE', 'WATER', 'SIDEWALK', 'GRASS_DARK', 'GRASS_LIGHT', 'PARK_CAT', 'PLAZA_CAT',
   'tileRandom', 'smoothNoise', 'grassColor', 'drawGrass', 'drawWaterTile', 'drawTrees', 'drawPavingSlabs', 'drawAsphaltGrain',
   'drawVehicleShadow', 'bodyPaint', 'drawSaloonCabin', 'drawVanCabin', 'drawCarLights', 'BUILDING', 'solidTile', 'clipOutTiles',
-  'COURT', 'RESIDENTIAL', 'INDUSTRIAL', 'MIXED', 'CONTAINER_COLS', 'drawDistrictCourtDetail'];
+  'COURT', 'RESIDENTIAL', 'INDUSTRIAL', 'MIXED', 'CONTAINER_COLS', 'drawDistrictCourtDetail',
+  'CHINATOWN', 'CHINA_KIND', 'RES_KIND', 'drawTile'];
 const loadRenderer = new Function('ctx', 'camX', 'camY', 'frame', 'MAP_W', 'MAP_H', 'grid', 'PERIOD', 'blockCat', 'blockKind', 'districtAt',
   `const gi = (x, y) => y * MAP_W + x;
    const CITY_W = MAP_W;
@@ -35,11 +37,11 @@ const hasBadNumber = calls => calls.some(([, args]) => args.some(arg => typeof a
 const fillStyles = calls => calls.filter(([name]) => name === 'set:fillStyle').map(([, [value]]) => value);
 
 const MAP_SIZE = 8;
-function createRenderer(tileTypes, cat = 1, district = 0) {
+function createRenderer(tileTypes, cat = 1, district = 0, kind = 0) {
   const recorder = createRecordingContext();
-  const probe = loadRenderer(createRecordingContext().context, 0, 0, 0, MAP_SIZE, MAP_SIZE, [], 16, () => cat, () => 0, () => district);
+  const probe = loadRenderer(createRecordingContext().context, 0, 0, 0, MAP_SIZE, MAP_SIZE, [], 16, () => cat, () => kind, () => district);
   const grid = Array.from({ length: MAP_SIZE * MAP_SIZE }, (_, i) => tileTypes(i % MAP_SIZE, Math.floor(i / MAP_SIZE), probe));
-  return { recorder, renderer: loadRenderer(recorder.context, 0, 0, 0, MAP_SIZE, MAP_SIZE, grid, 16, () => cat, () => 0, () => district) };
+  return { recorder, renderer: loadRenderer(recorder.context, 0, 0, 0, MAP_SIZE, MAP_SIZE, grid, 16, () => cat, () => kind, () => district) };
 }
 
 console.log('1) casualità per tile deterministica');
@@ -161,6 +163,28 @@ console.log('8) dettagli del cortile per distretto');
     'INDUSTRIAL: container e macchia d\'olio');
   ok(!industrial.fills.has('#3f6b35') && !residential.renderer.CONTAINER_COLS.some(color => residential.fills.has(color)), 'i dettagli non si mescolano fra distretti');
   ok(mixed.fills.size === 0, 'MIXED: nessun disegno');
+  const chinatown = fillsFor(3);
+  ok(chinatown.fills.has('#d8342a') && chinatown.fills.has('#e8c04a'), 'CHINATOWN: lanterne rosse con cappuccio dorato');
+  ok(chinatown.recorder.calls.length > 0 && !chinatown.fills.has('#3f6b35')
+    && !chinatown.renderer.CONTAINER_COLS.some(color => chinatown.fills.has(color)), 'CHINATOWN: niente siepi ne container');
+  ok(![residential, industrial, mixed].some(other => other.fills.has('#d8342a')), 'le lanterne restano in CHINATOWN');
+}
+
+console.log('9) pavimentazione del cortile cinese');
+{
+  const { CHINA_KIND, RES_KIND } = createRenderer(() => 0).renderer;
+  const courtFills = kind => {
+    const { recorder, renderer } = createRenderer((x, y, probe) => probe.COURT, 1, 0, kind);
+    const fills = new Set();
+    for (let x = 0; x < MAP_SIZE; x++) {
+      recorder.calls.length = 0;
+      renderer.drawTile(renderer.COURT, 0, 0, x, 3);
+      for (const [name, args] of recorder.calls) if (name === 'set:fillStyle') fills.add(args[0]);
+    }
+    return fills;
+  };
+  ok(courtFills(CHINA_KIND).has('#8a6a5c'), 'CHINA_KIND: cortile in pietra rossastra');
+  ok(!courtFills(RES_KIND).has('#8a6a5c'), 'altri tipi di blocco: nessuna pietra rossastra');
 }
 
 console.log(`\n${pass} ok, ${fail} falliti`);
