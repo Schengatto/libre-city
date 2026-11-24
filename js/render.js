@@ -189,6 +189,7 @@ function drawTile(t, px, py, x, y) {
         ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.fillRect(px + 6, py + 8, 12, 2);
       }
     }
+    drawDistrictCourtDetail(px, py, x, y, h);
   } else { // BUILDING — the building bodies are drawn by drawBuildings()
     if (lmGrid[gi(x, y)] !== 255) return;                    // covered by a special building
     if (bldgIdx[gi(x, y)] !== 65535) return;                 // covered by a building
@@ -199,6 +200,27 @@ function drawTile(t, px, py, x, y) {
     if (tileAt(x, y - 1) === BUILDING) { ctx.fillStyle = 'rgba(0,0,0,.20)'; ctx.fillRect(px, py, T, 5); }
     if (tileAt(x - 1, y) === BUILDING) { ctx.fillStyle = 'rgba(0,0,0,.14)'; ctx.fillRect(px, py, 5, T); }
   }
+}
+
+const CONTAINER_COLS = ['#b5452f', '#2f6fa8', '#3f8a4a', '#c99a2e', '#7a4a8a'];
+function drawDistrictCourtDetail(px, py, x, y, h) {
+  const district = districtAt(Math.floor(x / PERIOD), Math.floor(y / PERIOD));
+  if (district === RESIDENTIAL) {
+    if (h % 3 !== 0) return;
+    ctx.fillStyle = '#3f6b35';
+    for (const [dx, dy] of WATER_SIDES) if (walkableTile(tileAt(x + dx, y + dy))) edgeBand(px, py, dx, dy, 5);
+    return;
+  }
+  if (district !== INDUSTRIAL && district !== PORT) return;
+  if (h % 7 === 3) {
+    ctx.fillStyle = 'rgba(10,10,12,.35)'; ctx.beginPath();
+    ctx.ellipse(px + 8 + (h & 15), py + 10 + ((h >> 4) & 11), 6, 4, 0, 0, TAU); ctx.fill();
+  }
+  if (h % 13 !== 0) return;
+  ctx.fillStyle = CONTAINER_COLS[h % 5]; ctx.fillRect(px + 4, py + 10, 24, 12);
+  ctx.fillStyle = 'rgba(0,0,0,.28)';
+  for (let rib = 8; rib < 28; rib += 4) ctx.fillRect(px + rib, py + 10, 1, 12);
+  ctx.fillStyle = 'rgba(255,255,255,.16)'; ctx.fillRect(px + 4, py + 10, 24, 2);
 }
 
 const GRASS_DARK = [58, 116, 52], GRASS_LIGHT = [102, 160, 72];
@@ -693,6 +715,7 @@ function drawRoofProp(prop, ox, oy, roofColor = '#9a5a44') {
       ctx.fillStyle = '#1e1a17'; ctx.fillRect(x + 1, y + 1, Math.max(1, topW - 2), Math.max(1, topH - 2));
       break;
     }
+    case 'smokestack':
     case 'stack': {
       drawRoundPropShadow(cx, cy, radius, shadowLength);
       const body = ctx.createRadialGradient(cx - radius * 0.4, cy - radius * 0.4, 0, cx, cy, radius);
@@ -1028,6 +1051,7 @@ function planBuilding(b, W, H) {
       if (props.length) break;
     }
   }
+  if (b.district === INDUSTRIAL) placeOn(byFreeArea[0], [{ type: 'smokestack', w: [14, 16], h: [14, 16], height: 24, max: 1 }], 1);
   const minimum = roofs[0].w >= 64 && roofs[0].h >= 64 ? 3 : 0;
   const busyRoofFactor = Math.min(roofs[0].w, roofs[0].h) >= 96 ? 1.7 : 1;
   const count = Math.max(minimum, Math.round(style.propDensity * busyRoofFactor * roofs[0].w * roofs[0].h / 1000));

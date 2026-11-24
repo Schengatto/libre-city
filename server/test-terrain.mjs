@@ -14,12 +14,14 @@ const DECLARATIONS = [
   ['render', 'GLASS_COLOR'], ['render', 'BRAKE_DECELERATION'], ['render', 'drawVehicleShadow'], ['render', 'bodyPaint'],
   ['render', 'drawTyres'], ['render', 'drawGlassGlint'], ['render', 'drawSaloonCabin'], ['render', 'drawVanCabin'],
   ['render', 'drawCarLights'], ['city', 'solidTile'], ['render', 'clipOutTiles'],
+  ['city', 'MIXED'], ['city', 'walkableTile'], ['render', 'CONTAINER_COLS'], ['render', 'drawDistrictCourtDetail'],
 ];
 const moduleSource = DECLARATIONS.map(([file, name]) => extractTopLevel(SOURCES[file], name)).join('\n');
 const EXPORTS = ['T', 'GRASS', 'TREE', 'WATER', 'SIDEWALK', 'GRASS_DARK', 'GRASS_LIGHT', 'PARK_CAT', 'PLAZA_CAT',
   'tileRandom', 'smoothNoise', 'grassColor', 'drawGrass', 'drawWaterTile', 'drawTrees', 'drawPavingSlabs', 'drawAsphaltGrain',
-  'drawVehicleShadow', 'bodyPaint', 'drawSaloonCabin', 'drawVanCabin', 'drawCarLights', 'BUILDING', 'solidTile', 'clipOutTiles'];
-const loadRenderer = new Function('ctx', 'camX', 'camY', 'frame', 'MAP_W', 'MAP_H', 'grid', 'PERIOD', 'blockCat', 'blockKind',
+  'drawVehicleShadow', 'bodyPaint', 'drawSaloonCabin', 'drawVanCabin', 'drawCarLights', 'BUILDING', 'solidTile', 'clipOutTiles',
+  'COURT', 'RESIDENTIAL', 'INDUSTRIAL', 'MIXED', 'CONTAINER_COLS', 'drawDistrictCourtDetail'];
+const loadRenderer = new Function('ctx', 'camX', 'camY', 'frame', 'MAP_W', 'MAP_H', 'grid', 'PERIOD', 'blockCat', 'blockKind', 'districtAt',
   `const gi = (x, y) => y * MAP_W + x;
    const CITY_W = MAP_W;
    const tileAt = (x, y) => x < 0 || y < 0 || x >= MAP_W || y >= MAP_H ? GRASS : grid[gi(x, y)];
@@ -33,11 +35,11 @@ const hasBadNumber = calls => calls.some(([, args]) => args.some(arg => typeof a
 const fillStyles = calls => calls.filter(([name]) => name === 'set:fillStyle').map(([, [value]]) => value);
 
 const MAP_SIZE = 8;
-function createRenderer(tileTypes, cat = 1) {
+function createRenderer(tileTypes, cat = 1, district = 0) {
   const recorder = createRecordingContext();
-  const probe = loadRenderer(createRecordingContext().context, 0, 0, 0, MAP_SIZE, MAP_SIZE, [], 16, () => cat, () => 0);
+  const probe = loadRenderer(createRecordingContext().context, 0, 0, 0, MAP_SIZE, MAP_SIZE, [], 16, () => cat, () => 0, () => district);
   const grid = Array.from({ length: MAP_SIZE * MAP_SIZE }, (_, i) => tileTypes(i % MAP_SIZE, Math.floor(i / MAP_SIZE), probe));
-  return { recorder, renderer: loadRenderer(recorder.context, 0, 0, 0, MAP_SIZE, MAP_SIZE, grid, 16, () => cat, () => 0) };
+  return { recorder, renderer: loadRenderer(recorder.context, 0, 0, 0, MAP_SIZE, MAP_SIZE, grid, 16, () => cat, () => 0, () => district) };
 }
 
 console.log('1) casualità per tile deterministica');
@@ -138,6 +140,27 @@ console.log('7) marciapiede e asfalto non coprono i tile solidi');
   ok(rects.length === 4 && [[2, 3], [6, 1], [5, 5]].every(([x, y]) => rects.includes(`${x * T},${y * T},${T},${T}`)),
     'un rettangolo per ogni tile edificio, albero, acqua e nessun altro');
   ok(recorder.calls.some(([name, args]) => name === 'clip' && args[0] === 'evenodd'), 'ritaglio evenodd');
+}
+
+console.log('8) dettagli del cortile per distretto');
+{
+  const courtGrid = (x, y, probe) => y === 2 ? probe.SIDEWALK : probe.COURT;
+  const fillsFor = district => {
+    const { recorder, renderer } = createRenderer(courtGrid, 1, district);
+    const fills = new Set();
+    for (let x = 0; x < MAP_SIZE; x++) for (let h = 0; h <= 40; h++) {
+      recorder.calls.length = 0;
+      renderer.drawDistrictCourtDetail(0, 0, x, 3, h);
+      for (const [name, args] of recorder.calls) if (name === 'set:fillStyle') fills.add(args[0]);
+    }
+    return { fills, renderer, recorder };
+  };
+  const residential = fillsFor(1), industrial = fillsFor(2), mixed = fillsFor(0);
+  ok(residential.fills.has('#3f6b35'), 'RESIDENTIAL: siepe lungo il marciapiede');
+  ok(industrial.renderer.CONTAINER_COLS.some(color => industrial.fills.has(color)) && industrial.fills.has('rgba(10,10,12,.35)'),
+    'INDUSTRIAL: container e macchia d\'olio');
+  ok(!industrial.fills.has('#3f6b35') && !residential.renderer.CONTAINER_COLS.some(color => residential.fills.has(color)), 'i dettagli non si mescolano fra distretti');
+  ok(mixed.fills.size === 0, 'MIXED: nessun disegno');
 }
 
 console.log(`\n${pass} ok, ${fail} falliti`);

@@ -221,5 +221,46 @@ for (const size of ['P', 'M', 'G']) {
 }
 ok(walkWrong.length === 0, 'peds accept sand and quay, never sea or props' + (walkWrong.length ? ': ' + [...new Set(walkWrong)].slice(0, 6).join(', ') : ''));
 
+console.log('3) residential and industrial looks');
+const LOOK_STATS = `(() => {
+  const stats = { houses: 0, buildings: 0, wrongApartments: 0, trees: 0, courts: 0, industrialTrees: 0, wrongIndustrial: 0, industrialBuildings: 0 };
+  for (const b of bldgs) {
+    if (b.district === RESIDENTIAL) {
+      stats.buildings++;
+      if (b.style === 'house') stats.houses++;
+      if (b.style === 'apartment' && b.lift !== 11) stats.wrongApartments++;
+    } else if (b.district === INDUSTRIAL || b.district === PORT) {
+      stats.industrialBuildings++;
+      if (b.style !== 'warehouse' && b.style !== 'workshop') stats.wrongIndustrial++;
+    }
+  }
+  for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
+    const bx = Math.floor(x / PERIOD), by = Math.floor(y / PERIOD), district = districtAt(bx, by), t = grid[gi(x, y)];
+    if (blockCat(bx, by) !== BUILD_CAT) continue;
+    if (district === RESIDENTIAL) { if (t === TREE) stats.trees++; else if (t === COURT) stats.courts++; }
+    else if (district === INDUSTRIAL && t === TREE) stats.industrialTrees++;
+  }
+  return stats;
+})()`;
+const residentialStats = [], industrialStats = [];
+for (const [code, { run, districts }] of Object.entries(loaded)) {
+  const present = new Set(districts.grid);
+  if (!present.has(RESIDENTIAL) && !present.has(INDUSTRIAL) && !present.has(PORT)) continue;
+  const stats = run(LOOK_STATS);
+  if (present.has(RESIDENTIAL)) residentialStats.push({ code, ...stats });
+  if (present.has(INDUSTRIAL) || present.has(PORT)) industrialStats.push({ code, ...stats });
+}
+const houseShares = residentialStats.map(s => s.houses / s.buildings);
+const treeShares = residentialStats.map(s => s.trees / (s.trees + s.courts));
+const shareRange = shares => `${Math.min(...shares).toFixed(2)}-${Math.max(...shares).toFixed(2)}`;
+ok(residentialStats.length > 0 && residentialStats.every(s => s.buildings > 0) && houseShares.every(share => share >= 0.6),
+  `residential: houses >= 60% of buildings (${residentialStats.length} codes, ${shareRange(houseShares)})`);
+ok(residentialStats.every(s => s.wrongApartments === 0), 'residential apartments all at lift 11');
+ok(residentialStats.every(s => s.trees + s.courts > 0) && treeShares.every(share => share >= 0.18 && share <= 0.32),
+  `residential courts: trees 18-32% (${shareRange(treeShares)})`);
+ok(industrialStats.length > 0 && industrialStats.every(s => s.wrongIndustrial === 0 && s.industrialBuildings > 0),
+  `industrial and port buildings are warehouse or workshop (${industrialStats.length} codes, ${industrialStats.reduce((sum, s) => sum + s.industrialBuildings, 0)} buildings)`);
+ok(industrialStats.every(s => s.industrialTrees === 0), 'no TREE in built-up industrial cells');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

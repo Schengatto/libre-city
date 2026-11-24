@@ -19,12 +19,13 @@ const DECLARATIONS = [
   ['render', 'WORLD_CHUNK'], ['render', 'transposedPainter'], ['render', 'planRoofShape'], ['render', 'sawtoothTeeth'],
   ['render', 'drawSawtoothRoof'], ['render', 'ROOF_PLANE_TONES'], ['render', 'gableRoofPlanes'], ['render', 'axisFiller'],
   ['render', 'drawRoofEdge'], ['render', 'drawMetalRoof'], ['render', 'FACADE_MATERIALS'],
+  ['city', 'MIXED'],
 ];
 const moduleSource = DECLARATIONS.map(([file, name]) => extractTopLevel(SOURCES[file], name)).join('\n');
 
 const loadRenderer = new Function('ctx', 'bldgs', 'camX', 'camY', 'vw', 'vh', 'frame', 'document',
   `${moduleSource}\nreturn { buildingShadowPolygon, hipRoofPlanes, drawBuildings, drawBuildingShadows, buildingRandom, rectsOverlap,
-    MATERIAL_TILE, WORLD_CHUNK, materialPattern, planRoofProps, planBuilding, volumeRoof, STYLE_ROOF, sawtoothTeeth, gableRoofPlanes, drawBuildingWalls, FACADE_MATERIALS };`);
+    MATERIAL_TILE, WORLD_CHUNK, materialPattern, planRoofProps, planBuilding, volumeRoof, STYLE_ROOF, sawtoothTeeth, gableRoofPlanes, drawBuildingWalls, FACADE_MATERIALS, drawRoofProp, INDUSTRIAL };`);
 const createdCanvases = [];
 const documentStub = {
   createElement: tag => {
@@ -190,6 +191,20 @@ const chimneyCounts = housePlans.map(plan => plan.props.filter(prop => prop.type
 ok(chimneyCounts.every(count => count >= 1 && count <= 2), `${housePlans.length} house: 1-2 camini (${chimneyCounts.join('')})`);
 ok(housePlans.some(plan => plan.props.some(prop => prop.type === 'dormer')) && housePlans.some(plan => plan.props.some(prop => prop.type === 'solar')),
   'house: abbaini e pannelli solari sulla falda sud');
+
+console.log('5b) comignolo solo nel distretto industriale');
+{
+  const smokestacksOf = b => renderer.planBuilding(b, (b.x1 + 1) * 32, (b.y1 + 1) * 32).props.filter(prop => prop.type === 'smokestack').length;
+  const bigRoofSamples = plannerSamples.filter(b => (b.style === 'warehouse' || b.style === 'workshop') && (b.x1 + 1) * 32 - b.lift >= 64 && (b.y1 + 1) * 32 - b.lift >= 64);
+  const wrongIndustrial = bigRoofSamples.filter(b => smokestacksOf({ ...b, district: renderer.INDUSTRIAL }) !== 1);
+  ok(bigRoofSamples.length > 0 && wrongIndustrial.length === 0, `${bigRoofSamples.length} industriali con tetto >= 64x64: un solo smokestack` + (wrongIndustrial.length ? ` (${wrongIndustrial.length} sbagliati)` : ''));
+  ok(plannerSamples.every(b => smokestacksOf(b) === 0), 'senza distretto nessuno smokestack');
+  const stackRecorder = createRecordingContext();
+  const stackRenderer = loadRenderer(stackRecorder.context, [], 0, 0, 100000, 100000, 0, documentStub);
+  stackRenderer.drawRoofProp({ type: 'smokestack', x: 4, y: 4, w: 15, h: 15, height: 24 }, 10, 10);
+  ok(stackRecorder.calls.some(([name]) => name === 'createRadialGradient') && !stackRecorder.calls.some(([, args]) => args.some(arg => typeof arg === 'number' && !Number.isFinite(arg))),
+    'smokestack disegnato con gradiente e soli numeri finiti');
+}
 
 console.log('6) dente di sega');
 for (const [w, h] of [[100, 40], [40, 100], [26, 26], [57, 25], [120, 33]]) {

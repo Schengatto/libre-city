@@ -582,21 +582,24 @@ function bakeBuildings() {
     // Buildable tiles left outside the building become courtyard (or private greenery).
     for (let y = ya; y <= yb; y++) for (let x = xa; x <= xb; x++) {
       if (!isB(x, y) || bldgIdx[gi(x, y)] !== 65535) continue;
-      const k = blockKind(Math.floor(x / PERIOD), Math.floor(y / PERIOD)), hh = hash2(x + 21, y + 33);
-      grid[gi(x, y)] = (k === RES_KIND && hh % 7 === 0) || (k === OFF_KIND && hh % 23 === 0) ? TREE : COURT;
+      const cellX = Math.floor(x / PERIOD), cellY = Math.floor(y / PERIOD);
+      const k = blockKind(cellX, cellY), hh = hash2(x + 21, y + 33);
+      const residentialTreeStep = districtAt(cellX, cellY) === RESIDENTIAL ? 4 : 7;
+      grid[gi(x, y)] = (k === RES_KIND && hh % residentialTreeStep === 0) || (k === OFF_KIND && hh % 23 === 0) ? TREE : COURT;
     }
   }
   // Second pass (courtyards now carved): style, height and the side facing the street.
   for (const b of bldgs) {
     const w = b.x1 - b.x0 + 1, h = b.y1 - b.y0 + 1, area = w * h;
     const midx = (b.x0 + b.x1) >> 1, midy = (b.y0 + b.y1) >> 1;
+    b.district = districtAt(Math.floor(midx / PERIOD), Math.floor(midy / PERIOD));
     b.kind = blockKind(Math.floor(midx / PERIOD), Math.floor(midy / PERIOD));
     b.face = walkableTile(tileAt(midx, b.y1 + 1)) ? 0 : walkableTile(tileAt(b.x1 + 1, midy)) ? 1
            : walkableTile(tileAt(b.x0 - 1, midy)) ? 2 : walkableTile(tileAt(midx, b.y0 - 1)) ? 3 : -1;
-    if (b.kind === RES_KIND) b.style = area <= 18 ? 'house' : 'apartment';
+    if (b.kind === RES_KIND) b.style = area <= (b.district === RESIDENTIAL ? 30 : 18) ? 'house' : 'apartment';
     else if (b.kind === OFF_KIND) b.style = area >= 20 ? 'tower' : 'shop';
     else b.style = area >= 20 ? 'warehouse' : 'workshop';
-    const storeyVariation = b.style === 'apartment' || b.style === 'tower' ? (b.h >> 4) % 3 * 4 : 0;
+    const storeyVariation = b.district !== RESIDENTIAL && (b.style === 'apartment' || b.style === 'tower') ? (b.h >> 4) % 3 * 4 : 0;
     b.lift = { house: 7, apartment: 11, shop: 9, tower: 16, warehouse: 9, workshop: 8 }[b.style] + storeyVariation;
     const pal = [RES_COLORS, OFF_COLORS, IND_COLORS][b.kind];
     b.col = pal[b.h % pal.length];
