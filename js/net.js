@@ -630,6 +630,7 @@ function interpSample(e, renderT) {
 
 const NET_STATS_SMOOTHING = 0.2;
 const NET_STATS_WINDOW_MS = 5000;
+const NET_STATS_HOST_HZ_MIN_SPAN_MS = 1000;
 const NET_STATS_PENDING_INPUTS = 64;
 const NET_STATS_PING_MS = 1000;
 const NET_STATS_OVERLAY_REFRESH_MS = 500;
@@ -638,7 +639,7 @@ function createNetStats() {
     rtt: null, rttLast: null,
     inputRtt: null, inputRttLast: null, pendingInputs: [],
     snapshotTimes: [], snapshotWindow: null,
-    hostHz: null, lastTick: null, lastTickAt: 0,
+    hostHz: null, tickSamples: [],
     interpDelay: INTERP_MS,
   };
 }
@@ -665,13 +666,13 @@ function netStatsOnAck(stats, ack, now) {
   pending.splice(0, ackedCount);
 }
 function netStatsOnTick(stats, tick, now) {
-  if (!Number.isFinite(tick) || tick === stats.lastTick) return;
-  if (stats.lastTick !== null && tick > stats.lastTick) {
-    if (now <= stats.lastTickAt) return;
-    stats.hostHz = netStatsSmooth(stats.hostHz, (tick - stats.lastTick) * 1000 / (now - stats.lastTickAt));
-  }
-  stats.lastTick = tick;
-  stats.lastTickAt = now;
+  if (!Number.isFinite(tick)) return;
+  const samples = stats.tickSamples;
+  if (samples.length && tick < samples[samples.length - 1].tick) samples.length = 0;
+  samples.push({ tick, at: now });
+  while (samples[0].at < now - NET_STATS_WINDOW_MS) samples.shift();
+  const oldest = samples[0], span = now - oldest.at;
+  stats.hostHz = span >= NET_STATS_HOST_HZ_MIN_SPAN_MS ? (tick - oldest.tick) * 1000 / span : null;
 }
 function netStatsSnapshotWindow(times, now) {
   let first = 0;

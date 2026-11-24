@@ -8,7 +8,7 @@ const near = (actual, expected, tolerance = 1e-6) => actual !== null && Math.abs
 
 const NET_STATS_NAMES = [
   'INTERP_MS', 'INTERP_KEEP', 'INTERP_MIN_MS', 'INTERP_MAX_MS', 'INTERP_MARGIN_MS', 'INTERP_MIN_INTERVALS',
-  'INTERP_STEP_MS', 'netInterpDelayTarget', 'netInterpDelayStep', 'NET_STATS_SMOOTHING', 'NET_STATS_WINDOW_MS', 'NET_STATS_PENDING_INPUTS',
+  'INTERP_STEP_MS', 'netInterpDelayTarget', 'netInterpDelayStep', 'NET_STATS_SMOOTHING', 'NET_STATS_WINDOW_MS', 'NET_STATS_HOST_HZ_MIN_SPAN_MS', 'NET_STATS_PENDING_INPUTS',
   'createNetStats', 'netStatsSmooth', 'netStatsOnPong', 'netStatsOnInputSent', 'netStatsOnAck',
   'netStatsOnTick', 'netStatsSnapshotWindow', 'netStatsOnSnapshot', 'netStatsLines',
 ];
@@ -89,19 +89,34 @@ function testSnapshotWindow() {
 function testHostRate() {
   const stats = api.createNetStats();
   api.netStatsOnTick(stats, 100, 1000);
-  ok(stats.hostHz === null, 'first tick only sets the base');
+  ok(stats.hostHz === null, 'first tick gives no rate');
+  api.netStatsOnTick(stats, 130, 1500);
+  ok(stats.hostHz === null, 'window shorter than 1 s gives no rate');
   api.netStatsOnTick(stats, 160, 2000);
-  ok(near(stats.hostHz, 60), 'host Hz = delta tick / delta wall seconds');
-  api.netStatsOnTick(stats, 160, 2500);
-  ok(near(stats.hostHz, 60) && stats.lastTickAt === 2000, 'repeated tick keeps the base');
+  ok(near(stats.hostHz, 60), 'host Hz = tick span / wall span of the window');
+  api.netStatsOnTick(stats, undefined, 2100);
+  ok(near(stats.hostHz, 60) && stats.tickSamples.length === 3, 'snapshot without tick is ignored');
   api.netStatsOnTick(stats, 10, 3000);
-  ok(near(stats.hostHz, 60) && stats.lastTick === 10 && stats.lastTickAt === 3000, 'tick going backwards (host migration) rebases without a sample');
-  api.netStatsOnTick(stats, 40, 4000);
-  ok(near(stats.hostHz, 60 + (30 - 60) * api.NET_STATS_SMOOTHING), 'host Hz is smoothed after a rebase');
-  api.netStatsOnTick(stats, 50, 4000);
-  ok(stats.lastTick === 40, 'tick advance with no elapsed wall time waits for the next snapshot');
-  api.netStatsOnTick(stats, undefined, 5000);
-  ok(stats.lastTick === 40, 'snapshot without tick is ignored');
+  ok(stats.hostHz === null && stats.tickSamples.length === 1, 'tick going backwards (host migration) restarts the window');
+  api.netStatsOnTick(stats, 70, 4000);
+  ok(near(stats.hostHz, 60), 'rate resumes once the restarted window spans 1 s');
+
+  const steady = api.createNetStats();
+  for (let k = 0; k <= 300; k++) api.netStatsOnTick(steady, k * 2, k * 1000 / 30);
+  ok(near(steady.hostHz, 60, 0.01), 'steady 30/s snapshots of 2 ticks give 60 Hz');
+  ok(steady.tickSamples[0].at >= 300 * 1000 / 30 - api.NET_STATS_WINDOW_MS, 'tick samples are pruned to the window');
+
+  const bunched = api.createNetStats();
+  let tick = 0, maxHz = 0;
+  for (let burst = 0; burst < 20; burst++) {
+    for (let k = 0; k < 10; k++) {
+      tick += 2;
+      api.netStatsOnTick(bunched, tick, burst * 330 + k * 0.1);
+      if (bunched.hostHz !== null) maxHz = Math.max(maxHz, bunched.hostHz);
+    }
+  }
+  ok(Math.abs(bunched.hostHz - 60) < 5, `bunched arrivals (10 snapshots in 1 ms every 330 ms) read ~60 Hz (got ${bunched.hostHz.toFixed(1)})`);
+  ok(maxHz < 90, `bunched arrivals never spike the rate (max ${maxHz.toFixed(1)})`);
 }
 
 function testOverlayLines() {
