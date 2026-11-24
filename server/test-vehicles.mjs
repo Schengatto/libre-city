@@ -42,16 +42,17 @@ const fleet = run(`(() => {
     makeSpider(makeCar(0, 0, 'traffic')),
     makeArmyCar(0, 0),
   ];
-  for (const type of ['police', 'hospital', 'fire', 'bank', 'market', 'gunshop', 'army', 'pizzeria']) {
-    try { vehicles.push(makeServiceCar(type, dummy)); } catch (error) {}
-  }
-  return { sizes: vehicles.map(v => ({ w: v.w, h: v.h })), maxW: VEHICLE_MAX_W, maxH: VEHICLE_MAX_H };
+  const serviceTypes = ['police', 'hospital', 'fire', 'bank', 'market', 'gunshop', 'army', 'pizzeria'];
+  for (const type of serviceTypes) vehicles.push(makeServiceCar(type, dummy));
+  return { sizes: vehicles.map(v => ({ w: v.w, h: v.h, colH: v.colH, expectedColH: vehicleColH(!!v.isBike, v.h) })), serviceTypeCount: serviceTypes.length };
 })()`);
-ok(fleet.sizes.length >= 12, `fleet built (${fleet.sizes.length} vehicles)`);
-ok(fleet.sizes.every(s => s.w <= fleet.maxW && s.h <= fleet.maxH), 'every vehicle fits the max box');
+const maxW = run('VEHICLE_MAX_W'), maxH = run('VEHICLE_MAX_H');
+ok(fleet.sizes.length === 7 + fleet.serviceTypeCount && fleet.serviceTypeCount === 8, `fleet built with every service type (${fleet.sizes.length} vehicles)`);
+ok(fleet.sizes.every(s => s.w <= maxW && s.h <= maxH), 'every vehicle fits the max box');
+ok(fleet.sizes.every(s => s.colH === s.expectedColH), 'every vehicle colH comes from vehicleColH');
 
 const carReach = run('CAR_REACH');
-ok(carReach >= Math.hypot(88, 30) && carReach === 93, `CAR_REACH covers the largest pair (${carReach})`);
+ok(carReach >= Math.hypot(maxW, maxH) && carReach === 93, `CAR_REACH covers the largest pair (${carReach})`);
 
 const mix = run(`(() => {
   const counts = { bus: 0, lorry: 0, spider: 0, taxi: 0, bike: 0, plain: 0 };
@@ -78,7 +79,7 @@ ok(share('spider') >= 0.012 && share('spider') <= 0.028, `spider share ${share('
 ok(mix.counts.taxi > 0 && mix.counts.bike > 0, 'taxis and bikes still appear in the mix');
 ok(mix.doubled === 0, 'no car carries two vehicle types');
 
-const spacing = run(`(() => {
+const spacing = loadSim('PVEH02').run(`(() => {
   cars.length = 0;
   dressTrafficCar = c => makeBus(c);
   const mapCentreX = WORLD_W / 2, mapCentreY = WORLD_H / 2;
