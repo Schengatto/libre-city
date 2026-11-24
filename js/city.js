@@ -229,47 +229,52 @@ function reserveArmyIsland({ i, j }, armyNode) {
   const x0 = Math.round((colX[i - 1] + colX[i + 1]) / 2 / T - ARMY_W / 2), x1 = x0 + ARMY_W - 1;
   const y0 = Math.round((rowY[j - 1] + rowY[j + 1]) / 2 / T - ARMY_H / 2), y1 = y0 + ARMY_H - 1;
   const [di, dj] = [[0, -1], [1, 0], [0, 1], [-1, 0]][rndi(0, 3)];
+  const tileCentre = px => (Math.floor(px / T) + 0.5) * T;
+  const gateAxis = di
+    ? tileCentre(clamp(rowY[j], (y0 + 4) * T, (y0 + ARMY_H - 4) * T))
+    : tileCentre(clamp(colX[i], (x0 + 4) * T, (x0 + ARMY_W - 4) * T));
   const gateApproach = {
-    x: di ? (di < 0 ? x0 - 0.5 : x1 + 1.5) * T : colX[i],
-    y: dj ? (dj < 0 ? y0 - 0.5 : y1 + 1.5) * T : rowY[j],
+    x: di ? (di < 0 ? x0 - 0.5 : x1 + 1.5) * T : gateAxis,
+    y: dj ? (dj < 0 ? y0 - 0.5 : y1 + 1.5) * T : gateAxis,
     edges: [], signal: false, live: true,
   };
   nodes.push(gateApproach);
-  addRoadEdge(armyNode + dj * NX + di, nodes.length - 1);
+  const approachIndex = nodes.length - 1, streetIndex = armyNode + dj * NX + di, street = nodes[streetIndex];
+  if ((di ? street.y : street.x) === gateAxis) addRoadEdge(streetIndex, approachIndex);
+  else {
+    nodes.push({ x: di ? street.x : gateAxis, y: di ? gateAxis : street.y, edges: [], signal: false, live: true });
+    addRoadEdge(streetIndex, nodes.length - 1);
+    addRoadEdge(nodes.length - 1, approachIndex);
+  }
   const island = { x0: x0 - ISLAND_BANKS, y0: y0 - ISLAND_BANKS, x1: x1 + ISLAND_BANKS, y1: y1 + ISLAND_BANKS };
-  const fenceCentreX = (x0 + ARMY_W / 2) * T, fenceCentreY = (y0 + ARMY_H / 2) * T;
-  const tileCentre = px => (Math.floor(px / T) + 0.5) * T;
-  const bridge = di
-    ? { x: gateApproach.x, y: tileCentre(clamp(gateApproach.y, fenceCentreY - (ARMY_H / 2 - 4) * T, fenceCentreY + (ARMY_H / 2 - 4) * T)) }
-    : { x: tileCentre(clamp(gateApproach.x, fenceCentreX - (ARMY_W / 2 - 4) * T, fenceCentreX + (ARMY_W / 2 - 4) * T)), y: gateApproach.y };
+  const bridge = { x: gateApproach.x, y: gateApproach.y };
   const tileInside = (line, offset) => Math.ceil(line / T - 0.5) + offset;
   const superblock = { x0: tileInside(colX[i - 1], 0), y0: tileInside(rowY[j - 1], 0), x1: tileInside(colX[i + 1], -1), y1: tileInside(rowY[j + 1], -1) };
   armyZone = { x0, y0, x1, y1, island, gateApproach, bridge, superblock };
 }
 function bakeArmyIsland() {
   if (!armyZone) return;
-  const { x0, y0, x1, y1, island, gateApproach, bridge, superblock } = armyZone;
+  const { x0, y0, x1, y1, island, bridge, superblock } = armyZone;
   const gateX = Math.floor(bridge.x / T), gateY = Math.floor(bridge.y / T), deckHalf = HALF_ROAD + T;
   const verticalBridge = gateY < y0 || gateY > y1;
   const beyondGateSide = (x, y) => gateY < y0 ? y < y0 : gateY > y1 ? y > y1 : gateX < x0 ? x < x0 : x > x1;
-  const bridgeAxis = verticalBridge ? bridge.x : bridge.y, streetAxis = verticalBridge ? gateApproach.x : gateApproach.y;
-  const offDeck = (x, y, ring) => {
-    if (!beyondGateSide(x, y)) return Infinity;
-    const across = ((verticalBridge ? x : y) + 0.5) * T;
-    if (ring < ISLAND_BANKS) return Math.abs(across - bridgeAxis);
-    return Math.max(0, Math.min(bridgeAxis, streetAxis) - across, across - Math.max(bridgeAxis, streetAxis));
-  };
+  const bridgeAxis = verticalBridge ? bridge.x : bridge.y;
+  const offDeck = (x, y) => beyondGateSide(x, y) ? Math.abs(((verticalBridge ? x : y) + 0.5) * T - bridgeAxis) : Infinity;
   for (let y = island.y0; y <= island.y1; y++) for (let x = island.x0; x <= island.x1; x++) {
     const ring = Math.max(x0 - x, x - x1, y0 - y, y - y1);
     if (ring < 1) continue;
-    const deckOffset = offDeck(x, y, ring);
+    const deckOffset = offDeck(x, y);
     grid[gi(x, y)] = deckOffset <= HALF_ROAD ? ROAD : deckOffset <= deckHalf ? SIDEWALK
       : ring === 1 ? GRASS : ring < ISLAND_BANKS ? WATER : SIDEWALK;
   }
+  const besideRoad = (x, y) => {
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (grid[gi(x + dx, y + dy)] === ROAD) return true;
+    return false;
+  };
   for (let y = superblock.y0; y <= superblock.y1; y++) for (let x = superblock.x0; x <= superblock.x1; x++) {
     const bankDistance = Math.max(island.x0 - x, x - island.x1, island.y0 - y, y - island.y1);
     const tile = grid[gi(x, y)];
-    if (bankDistance < 1 || tile === ROAD || tile === SIDEWALK || railCentrelineDistance((x + 0.5) * T, (y + 0.5) * T) <= 1.5 * T) continue;
+    if (bankDistance < 1 || tile === ROAD || (tile === SIDEWALK && besideRoad(x, y)) || railCentrelineDistance((x + 0.5) * T, (y + 0.5) * T) <= 1.5 * T) continue;
     grid[gi(x, y)] = bankDistance === 1 ? SIDEWALK : GRASS;
   }
 }

@@ -157,11 +157,18 @@ const CHECK_GATE_DRAW = `(() => {
   camX = army.gate.x - 512; camY = army.gate.y - 512; vw = 1024; vh = 1024;
   const recorder = makeRecorder(); ctx = recorder.context;
   drawArmyGate(army);
+  const asphaltAt = recorder.calls.findIndex(([name, args]) => name === 'set:fillStyle' && args[0] === '#33363d');
+  const paving = asphaltAt < 0 ? null : recorder.calls.slice(asphaltAt).find(([name]) => name === 'fillRect')[1];
+  const pavedAcross = paving && (horizontalFence ? [paving[1] + camY, paving[1] + paving[3] + camY] : [paving[0] + camX, paving[0] + paving[2] + camX]);
+  const pavedAlong = paving && (horizontalFence ? [paving[0] + camX, paving[0] + paving[2] + camX] : [paving[1] + camY, paving[1] + paving[3] + camY]);
+  const fenceTileStart = (horizontalFence ? gateTileY : gateTileX) * T, gateAlong = horizontalFence ? army.gate.x : army.gate.y;
+  const pavedGate = !!paving && Math.abs(pavedAcross[0] - fenceTileStart) < 1e-6 && Math.abs(pavedAcross[1] - fenceTileStart - T) < 1e-6
+    && Math.abs(pavedAlong[0] + pavedAlong[1] - 2 * gateAlong) < 1e-6 && Math.abs(pavedAlong[1] - pavedAlong[0] - 2 * HALF_ROAD) < 1e-6;
   const posts = recorder.calls.filter(([name, args]) => name === 'fillRect' && args[2] === 10 && args[3] === 10)
     .map(([, [x, y]]) => horizontalFence ? x + 5 + camX : y + 5 + camY).sort((a, b) => a - b);
   const depths = recorder.calls.filter(([name]) => name === 'lineTo')
     .map(([, [x, y]]) => ((horizontalFence ? y + camY : x + camX) - fenceLine) * inwardSign);
-  return JSON.stringify({ openingTiles: opening.length, ends, posts, maxDepth: Math.max(...depths), minDepth: Math.min(...depths) });
+  return JSON.stringify({ openingTiles: opening.length, ends, posts, maxDepth: Math.max(...depths), minDepth: Math.min(...depths), pavedGate });
 })()`;
 
 const renderBody = extractTopLevel(RENDER_SOURCE, 'render');
@@ -212,6 +219,7 @@ for (const code of CODES) {
   ok(gate.openingTiles === 5, `${code}: the gate opening is 5 tiles`);
   ok(gate.posts.length === 2 && gate.posts.every((post, k) => Math.abs(post - gate.ends[k]) < 1e-6), `${code}: two gate posts stand at the ends of the opening (${gate.posts.map(p => p.toFixed(1)).join(', ')} vs ${gate.ends.join(', ')})`);
   ok(gate.maxDepth > T && gate.maxDepth < 3 * T && gate.minDepth > -T / 4, `${code}: the gate leaves swing open into the yard (depth ${gate.minDepth.toFixed(1)}..${gate.maxDepth.toFixed(1)} px)`);
+  ok(gate.pavedGate, `${code}: the gate opening is paved with road-wide asphalt across the fence tile`);
 }
 
 console.log(`\n${pass} ok, ${fail} failed`);

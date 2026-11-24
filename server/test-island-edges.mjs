@@ -41,6 +41,14 @@ const CHECK_ISLAND = `(() => {
   const opensWide = opening.length > 0 && Math.abs((opening[0][0] + opening[opening.length - 1][0] + 1) / 2 * T - army.gate.x) < 1
     && Math.abs((opening[0][1] + opening[opening.length - 1][1] + 1) / 2 * T - army.gate.y) < 1;
   if (!opensWide) failures.push('lm.gate is not the centre of the opening');
+  const approachIndex = nodes.indexOf(gateApproach), gateAxis = horizontalFence ? army.gate.x : army.gate.y;
+  const gateEdges = edges.filter(e => e.a === approachIndex || e.b === approachIndex);
+  const edgeAxes = gateEdges.flatMap(e => [nodes[e.a], nodes[e.b]]).map(n => horizontalFence ? n.x : n.y);
+  if (gateEdges.length !== 1 || edgeAxes.some(axis => axis !== gateAxis)) failures.push('road edge to the gate runs at ' + edgeAxes.join('/') + ', gate axis ' + gateAxis);
+  const jogIndex = nodes.findIndex((n, index) => index >= NX * NY && index !== approachIndex);
+  const jog = jogIndex < 0 ? null : edges[nodes[jogIndex].edges.find(index => edges[index].a !== approachIndex && edges[index].b !== approachIndex)];
+  if (jogIndex >= 0 && (nodes[jogIndex].edges.length !== 2 || !jog || (nodes[jog.a].x !== nodes[jog.b].x && nodes[jog.a].y !== nodes[jog.b].y))) failures.push('the jog onto the gate axis is not one axis-aligned street');
+  if ((horizontalFence ? bridge.x : bridge.y) !== gateAxis) failures.push('bridge axis ' + (horizontalFence ? bridge.x : bridge.y) + ' is not the gate axis ' + gateAxis);
   for (const [x, y] of opening) for (let ring = 1; ring <= ISLAND_BANKS; ring++) {
     const tile = tileAt(x + outward.x * ring, y + outward.y * ring);
     if (tile !== ROAD && tile !== SIDEWALK) { failures.push('gate tile ' + x + ',' + y + ' is not fully on the deck (ring ' + ring + ')'); break; }
@@ -78,10 +86,14 @@ const CHECK_ISLAND = `(() => {
   }
   if (!reachesStreet) failures.push('the deck road does not reach the street around the superblock');
   const leftovers = {};
+  const besideRoad = (x, y) => [-1, 0, 1].some(dy => [-1, 0, 1].some(dx => tileAt(x + dx, y + dy) === ROAD));
   for (let y = superblock.y0; y <= superblock.y1; y++) for (let x = superblock.x0; x <= superblock.x1; x++) {
-    if (x >= island.x0 && x <= island.x1 && y >= island.y0 && y <= island.y1) continue;
+    const bankDistance = Math.max(island.x0 - x, x - island.x1, island.y0 - y, y - island.y1);
+    if (bankDistance < 1) continue;
     const tile = grid[gi(x, y)];
     if (tile === BUILDING || tile === TREE || tile === COURT || tile === ALLEY || tile === PROP || tile === WATER) leftovers[tile] = (leftovers[tile] || 0) + 1;
+    const strayPavement = tile === SIDEWALK && bankDistance > 1 && !besideRoad(x, y) && railCentrelineDistance((x + 0.5) * T, (y + 0.5) * T) > 1.5 * T;
+    if (strayPavement) leftovers['stray sidewalk'] = (leftovers['stray sidewalk'] || 0) + 1;
   }
   if (Object.keys(leftovers).length) failures.push('city tiles between the moat and the street: ' + JSON.stringify(leftovers));
   const post = army.guardDuties.find(duty => duty.post).post;
@@ -92,7 +104,7 @@ const CHECK_ISLAND = `(() => {
     if (opening.some(([x, y]) => horizontalFence ? x === tx : y === ty)) failures.push(name + ' stands in the lane of the gate opening');
     if (tx < x0 + 1 || tx > x1 - 1 || ty < y0 + 1 || ty > y1 - 1) failures.push(name + ' is not inside the yard');
   }
-  return JSON.stringify({ failures, clamped: Math.abs(bridge.x - gateApproach.x) > T / 2 || Math.abs(bridge.y - gateApproach.y) > T / 2 });
+  return JSON.stringify({ failures, clamped: !!jog && jog.len > T / 2 });
 })()`;
 
 const CHECK_PONDS = `(() => {

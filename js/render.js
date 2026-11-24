@@ -1517,6 +1517,9 @@ function drawArmyGate(lm) {
   const alongFence = horizontalFence ? { x: 1, y: 0 } : { x: 0, y: 1 };
   const inward = horizontalFence ? { x: 0, y: gateTileY === lm.y0 ? 1 : -1 } : { x: gateTileX === lm.x0 ? 1 : -1, y: 0 };
   const halfOpening = 2.5 * T, leafLength = halfOpening - 6, swing = 0.21 * TAU, railOffset = 3;
+  const pavingHalfX = horizontalFence ? HALF_ROAD : T / 2, pavingHalfY = horizontalFence ? T / 2 : HALF_ROAD;
+  ctx.fillStyle = '#33363d';
+  ctx.fillRect(lm.gate.x - camX - pavingHalfX, lm.gate.y - camY - pavingHalfY, 2 * pavingHalfX, 2 * pavingHalfY);
   for (const end of [-1, 1]) {
     const hingeX = lm.gate.x - camX + alongFence.x * end * halfOpening, hingeY = lm.gate.y - camY + alongFence.y * end * halfOpening;
     const leafX = -alongFence.x * end * Math.cos(swing) + inward.x * Math.sin(swing);
