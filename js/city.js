@@ -28,7 +28,20 @@ const OFF_COLORS = ['#5d6b78','#6b6f7a','#4f5a68','#556170','#5f7a72','#7a6a86',
 const IND_COLORS = ['#5f6b5a','#736256','#6d5f6b','#82755a','#6a7d6a','#8a8478'];
 const hash2 = (a, b) => (((a | 0) * 73856093) ^ ((b | 0) * 19349663)) >>> 0;
 const RES_KIND = 0, OFF_KIND = 1, IND_KIND = 2;
-const blockKind = (bx, by) => hash2(bx + 13, by + 29) % 3;
+const MIXED = 0, RESIDENTIAL = 1, INDUSTRIAL = 2, CHINATOWN = 3, PORT = 4;
+const DISTRICT_KINDS = [-1, RES_KIND, IND_KIND, OFF_KIND, IND_KIND];
+const DISTRICT_COUNTS = { P: 2, M: 3, G: 4 };
+const DISTRICT_RADIUS_SHARE = 0.22;
+const DISTRICT_COLS = Math.ceil(MAP_W / PERIOD), DISTRICT_ROWS = Math.ceil(MAP_H / PERIOD);
+const districtGrid = new Uint8Array(DISTRICT_COLS * DISTRICT_ROWS);
+const districtAt = (bx, by) => bx >= 0 && by >= 0 && bx < DISTRICT_COLS && by < DISTRICT_ROWS ? districtGrid[by * DISTRICT_COLS + bx] : MIXED;
+const districtCentres = [];
+let portSide = -1, portHarbourFirst = false;
+const districtRandom = mulberry32(hashStr(ROOM_CODE + ':DISTRICTS'));
+const blockKind = (bx, by) => {
+  const district = districtAt(bx, by);
+  return district === MIXED ? hash2(bx + 13, by + 29) % 3 : DISTRICT_KINDS[district];
+};
 const blockColor = (bx, by) => {
   const pal = [RES_COLORS, OFF_COLORS, IND_COLORS][blockKind(bx, by)];
   return pal[hash2(bx, by) % pal.length];
@@ -52,9 +65,9 @@ const AWNING_COLS = ['#c0392b', '#2e86c0', '#27ae60', '#d68910'];
 // Block category: park, plaza or buildings (for a more varied city).
 const BUILD_CAT = 0, PARK_CAT = 1, PLAZA_CAT = 2;
 function blockCat(bx, by) {
-  const h = hash2(bx + 7, by + 3) % 9;
-  if (h === 0 || h === 6) return PARK_CAT;      // ~2/9 parks
-  if (h === 3) return PLAZA_CAT;                // ~1/9 plazas
+  const h = hash2(bx + 7, by + 3) % 9, district = cellTouchesRail(bx, by) ? MIXED : districtAt(bx, by);
+  if (h === 0 || h === 6 || (h === 8 && district === RESIDENTIAL)) return PARK_CAT;
+  if (h === 3 && district !== INDUSTRIAL && district !== PORT) return PLAZA_CAT;
   return BUILD_CAT;
 }
 const blockHasPond  = (bx, by) => hash2(bx + 1, by + 8) % 3 === 0;   // park with a pond
@@ -278,7 +291,93 @@ function bakeRailCorridor() {
     railCrossings.push({ s, x: p.x, y: p.y });
   }
 }
-function genCity() { buildGraph(); bakeRoads(); bakeSidewalksAndBlocks(); bakeRailCorridor(); bakeArmyIsland(); carveAlleys(); }
+function cellTouchesRail(bx, by) {
+  return railCentrelineDistance((bx + 0.5) * PERIOD * T, (by + 0.5) * PERIOD * T) <= 1.5 * T + PERIOD * T * Math.SQRT1_2;
+}
+function inPortBand(bx, by) {
+  const x = (bx + 0.5) * PERIOD * T, y = (by + 0.5) * PERIOD * T;
+  return [y < rowY[1], x > colX[NX - 2], y > rowY[NY - 2], x < colX[1]][portSide] === true;
+}
+function pickDistricts() {
+  const count = DISTRICT_COUNTS[String(ROOM_CODE).charAt(0)] ?? 2;
+  const ids = [RESIDENTIAL, INDUSTRIAL, CHINATOWN, PORT];
+  for (let i = ids.length - 1; i > 0; i--) {
+    const j = Math.floor(districtRandom() * (i + 1));
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+  }
+  const chosen = ids.slice(0, count), spare = ids.slice(count);
+  const setUpPort = () => {
+    portSide = MAP_H > MAP_W ? (districtRandom() < 0.5 ? 1 : 3) : Math.floor(districtRandom() * 4);
+    portHarbourFirst = districtRandom() < 0.5;
+    districtCentres.push({ id: PORT, bx: -1, by: -1, r: 0 });
+  };
+  if (chosen.includes(PORT)) setUpPort();
+  const R = Math.round(Math.min(MAP_W, MAP_H) * DISTRICT_RADIUS_SHARE);
+  const cellCentre = b => (b + 0.5) * PERIOD;
+  const island = armyZone && armyZone.island;
+  const islandDistance = (x, y) => Math.hypot(Math.max(island.x0 - x, 0, x - island.x1 - 1), Math.max(island.y0 - y, 0, y - island.y1 - 1));
+  const listCandidates = () => {
+    const cells = [];
+    for (let by = 0; by < DISTRICT_ROWS; by++) for (let bx = 0; bx < DISTRICT_COLS; bx++) {
+      const x = cellCentre(bx), y = cellCentre(by);
+      const insideRing = x > MARGIN && x < MAP_W - MARGIN && y > MARGIN && y < MAP_H - MARGIN;
+      if (insideRing && (!island || islandDistance(x, y) >= PERIOD) && !inPortBand(bx, by)) cells.push({ bx, by });
+    }
+    return cells;
+  };
+  const clearance = ({ bx, by }) => {
+    const x = cellCentre(bx), y = cellCentre(by);
+    let nearest = portSide >= 0 ? [y, MAP_W - x, MAP_H - y, x][portSide] : Infinity;
+    for (const centre of districtCentres)
+      if (centre.id !== PORT) nearest = Math.min(nearest, Math.hypot(x - cellCentre(centre.bx), y - cellCentre(centre.by)));
+    return nearest;
+  };
+  const tryPlace = (id, candidates, r, factor) => {
+    for (let attempt = 0; attempt < 200 && candidates.length; attempt++) {
+      const cell = candidates[Math.floor(districtRandom() * candidates.length)];
+      if (clearance(cell) >= factor * r) { districtCentres.push({ id, bx: cell.bx, by: cell.by, r }); return true; }
+    }
+    return false;
+  };
+  const pending = chosen.filter(id => id !== PORT);
+  while (pending.length) {
+    const id = pending.shift(), candidates = listCandidates();
+    if (tryPlace(id, candidates, R, 1.5) || tryPlace(id, candidates, R, 1.0) || tryPlace(id, candidates, 0.75 * R, 1.0)) continue;
+    if (spare.length) {
+      const replacement = spare.shift();
+      if (replacement === PORT) setUpPort(); else pending.unshift(replacement);
+      continue;
+    }
+    const widest = candidates.reduce((best, cell) => !best || clearance(cell) > clearance(best) ? cell : best, null);
+    if (widest) districtCentres.push({ id, bx: widest.bx, by: widest.by, r: 0.75 * R });
+  }
+  const inland = districtCentres.filter(centre => centre.id !== PORT);
+  for (let by = 0; by < DISTRICT_ROWS; by++) for (let bx = 0; bx < DISTRICT_COLS; bx++) {
+    let district = MIXED, nearest = Infinity;
+    if (inPortBand(bx, by)) district = PORT;
+    else for (const centre of inland) {
+      const distance = Math.hypot((bx - centre.bx) * PERIOD, (by - centre.by) * PERIOD);
+      if (distance <= centre.r && distance < nearest) { nearest = distance; district = centre.id; }
+    }
+    const onIsland = island && bx * PERIOD <= island.x1 && bx * PERIOD + PERIOD - 1 >= island.x0 && by * PERIOD <= island.y1 && by * PERIOD + PERIOD - 1 >= island.y0;
+    districtGrid[by * DISTRICT_COLS + bx] = onIsland ? MIXED : district;
+  }
+  for (const centre of inland) {
+    const reached = new Uint8Array(districtGrid.length), stack = [centre.by * DISTRICT_COLS + centre.bx];
+    while (stack.length) {
+      const cell = stack.pop(), bx = cell % DISTRICT_COLS, by = (cell - bx) / DISTRICT_COLS;
+      if (reached[cell] || districtGrid[cell] !== centre.id) continue;
+      reached[cell] = 1;
+      if (bx > 0) stack.push(cell - 1);
+      if (bx < DISTRICT_COLS - 1) stack.push(cell + 1);
+      if (by > 0) stack.push(cell - DISTRICT_COLS);
+      if (by < DISTRICT_ROWS - 1) stack.push(cell + DISTRICT_COLS);
+    }
+    for (let cell = 0; cell < districtGrid.length; cell++) if (districtGrid[cell] === centre.id && !reached[cell]) districtGrid[cell] = MIXED;
+  }
+  for (const centre of inland) districtGrid[centre.by * DISTRICT_COLS + centre.bx] = centre.id;
+}
+function genCity() { buildGraph(); pickDistricts(); bakeRoads(); bakeSidewalksAndBlocks(); bakeRailCorridor(); bakeArmyIsland(); carveAlleys(); }
 genCity();
 
 const tileAt = (tx, ty) => (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) ? BUILDING : grid[gi(tx, ty)];
