@@ -211,6 +211,22 @@ ok(rivalSpider.fills.includes('#44aa66') && rivalSpider.fills.includes('#d23a3a'
 const parkedPlayerSpider = carRenderer.draw({ ...spiders, role: 'parked', driver: 'player' });
 ok(parkedPlayerSpider.fills.includes('#123456'), 'a spider the local player sits in shows the driver');
 
+const kerbParking = loadSim('PVEH08').run(`(() => {
+  const anchor = randomParkingNear(player.x, player.y, 0, 1800);
+  const bus = makeBus(makeParked(anchor.x, anchor.y, anchor.angle));
+  cars.length = 0; cars.push(bus);
+  const clearance = (bus.w + 46) / 2 + 14;
+  let nearest = Infinity, found = 0;
+  for (let i = 0; i < 400; i++) {
+    const spot = randomParkingNear(anchor.x, anchor.y, 0, 150);
+    if (!spot) continue;
+    found++;
+    nearest = Math.min(nearest, dist(spot.x, spot.y, bus.x, bus.y));
+  }
+  return { clearance, nearest, found };
+})()`);
+ok(kerbParking.found > 0 && kerbParking.nearest >= kerbParking.clearance, `a parked saloon keeps ${kerbParking.clearance} px from a bus (nearest ${kerbParking.nearest.toFixed(1)}, ${kerbParking.found} spots)`);
+
 const gameplaySource = readSource('gameplay.js');
 const plainCarGuard = '!c.livery && !c.isBike && !c.isTaxi';
 const spawnerLines = name => gameplaySource.split('\n').filter(line => line.includes(`${name}(c)`));

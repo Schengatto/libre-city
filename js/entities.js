@@ -443,7 +443,7 @@ function randomParkingNear(cx, cy, rmin, rmax) {
     const tx = Math.floor(wx / T), ty = Math.floor(wy / T);
     if (tx < 2 || ty < 2 || tx >= MAP_W - 2 || ty >= MAP_H - 2) continue;
     if (tileAt(tx, ty) !== ROAD || inArmyIsland(tx, ty)) continue;
-    if (cars.some(o => dist(o.x, o.y, wx, wy) < 60)) continue;
+    if (cars.some(o => dist(o.x, o.y, wx, wy) < ((o.w || 46) + 46) / 2 + 14)) continue;
     return { x: wx, y: wy, angle: Math.atan2(tan.y, tan.x) };      // parallel parking
   }
   return null;
