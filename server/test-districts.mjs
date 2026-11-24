@@ -262,5 +262,40 @@ ok(industrialStats.length > 0 && industrialStats.every(s => s.wrongIndustrial ==
   `industrial and port buildings are warehouse or workshop (${industrialStats.length} codes, ${industrialStats.reduce((sum, s) => sum + s.industrialBuildings, 0)} buildings)`);
 ok(industrialStats.every(s => s.industrialTrees === 0), 'no TREE in built-up industrial cells');
 
+console.log('4) chinatown');
+const CHINATOWN = 3;
+const CHINA_BUILDINGS = `(() => {
+  const stats = { buildings: 0, wrong: 0 };
+  for (const b of bldgs) {
+    if (b.district !== CHINATOWN) continue;
+    stats.buildings++;
+    if (b.kind !== CHINA_KIND || (b.style !== 'pagoda' && b.style !== 'chinashop')) stats.wrong++;
+  }
+  return stats;
+})()`;
+const CHINA_GATE = `(() => {
+  if (!chinaGate) return null;
+  const tileOf = point => tileAt(Math.floor(point.x / T), Math.floor(point.y / T));
+  const distanceToGate = node => Math.hypot(node.x - chinaGate.x, node.y - chinaGate.y);
+  const junction = nodes.reduce((best, node) => distanceToGate(node) < distanceToGate(best) ? node : best);
+  const leftTile = tileOf(chinaGate.left), rightTile = tileOf(chinaGate.right);
+  return {
+    onRoad: tileOf(chinaGate) === ROAD, pillarsOnSidewalk: leftTile === SIDEWALK && rightTile === SIDEWALK,
+    pillarsPassable: !solidTile(Math.floor(chinaGate.left.x / T), Math.floor(chinaGate.left.y / T)) && !solidTile(Math.floor(chinaGate.right.x / T), Math.floor(chinaGate.right.y / T)),
+    junctionDistrict: districtAt(Math.floor(junction.x / T / PERIOD), Math.floor(junction.y / T / PERIOD)),
+    gateDistance: distanceToGate(junction) / T,
+  };
+})()`;
+const chinaBuildingStats = [], gateWrong = [];
+for (const [code, { run, districts }] of Object.entries(loaded)) {
+  const hasChinatown = districts.grid.includes(CHINATOWN), gate = run(CHINA_GATE);
+  if (hasChinatown) chinaBuildingStats.push({ code, ...run(CHINA_BUILDINGS) });
+  if (hasChinatown !== (gate !== null)) gateWrong.push(`${code}: gate ${gate !== null} but chinatown ${hasChinatown}`);
+  else if (gate && !(gate.onRoad && gate.pillarsOnSidewalk && gate.pillarsPassable && gate.junctionDistrict === CHINATOWN && Math.abs(gate.gateDistance - 4.5) < 0.01)) gateWrong.push(`${code}: ${JSON.stringify(gate)}`);
+}
+ok(chinaBuildingStats.length > 0 && chinaBuildingStats.every(s => s.buildings > 0 && s.wrong === 0),
+  `chinatown buildings are pagoda or chinashop (${chinaBuildingStats.length} codes, ${chinaBuildingStats.reduce((sum, s) => sum + s.buildings, 0)} buildings)`);
+ok(gateWrong.length === 0, 'paifang: present exactly with a chinatown, on the road, pillars on passable sidewalk, junction in chinatown' + (gateWrong.length ? ': ' + gateWrong.slice(0, 4).join('; ') : ''));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

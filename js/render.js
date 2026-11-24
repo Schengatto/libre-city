@@ -92,6 +92,7 @@ function drawWorldStatic() {
   ctx.restore();
   drawRailway();                                 // the train track (a loop around the city)
   drawBuildingShadows();
+  if (chinaGate) drawChinaGatePillars(chinaGate);
   drawLandmarks();
 }
 // A pavement counts as "kerbside" (covered by the smooth ribbon) if it touches asphalt.
@@ -180,6 +181,9 @@ function drawTile(t, px, py, x, y) {
       ctx.fillStyle = '#7e838c'; ctx.fillRect(px, py, T, T);
       ctx.strokeStyle = 'rgba(0,0,0,.10)'; ctx.lineWidth = 1; ctx.strokeRect(px + 0.5, py + 0.5, T - 1, T - 1);
       if (h % 11 === 0) { ctx.fillStyle = 'rgba(255,255,255,.10)'; ctx.fillRect(px + 5, py + 5, 8, 3); }
+    } else if (k === CHINA_KIND) {
+      ctx.fillStyle = '#8a6a5c'; ctx.fillRect(px, py, T, T);
+      ctx.strokeStyle = 'rgba(0,0,0,.12)'; ctx.lineWidth = 1; ctx.strokeRect(px + 0.5, py + 0.5, T - 1, T - 1);
     } else {                                                 // industrial yard
       ctx.fillStyle = '#4d5058'; ctx.fillRect(px, py, T, T);
       ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.fillRect(px + (h & 15), py + ((h >> 4) & 15), 5, 3);
@@ -209,6 +213,13 @@ function drawDistrictCourtDetail(px, py, x, y, h) {
     if (h % 3 !== 0) return;
     ctx.fillStyle = '#3f6b35';
     for (const [dx, dy] of WATER_SIDES) if (walkableTile(tileAt(x + dx, y + dy))) edgeBand(px, py, dx, dy, 5);
+    return;
+  }
+  if (district === CHINATOWN) {
+    if (h % 5 !== 0) return;
+    const lanternX = px + 8 + (h & 15), lanternY = py + 10 + ((h >> 4) & 11);
+    ctx.fillStyle = '#d8342a'; ctx.beginPath(); ctx.arc(lanternX, lanternY, 4, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#e8c04a'; ctx.fillRect(lanternX - 2, lanternY - 5, 4, 2);
     return;
   }
   if (district !== INDUSTRIAL && district !== PORT) return;
@@ -437,6 +448,8 @@ const WALL_LAYOUT = {
   tower:     { floorHeight: 4, bay: 4, windowWidth: 3 },
   warehouse: null,
   workshop:  { floorHeight: 99, bay: 12, windowWidth: 8 },
+  pagoda:    { floorHeight: 99, bay: 10, windowWidth: 4 },
+  chinashop: { floorHeight: 5, bay: 8, windowWidth: 4 },
 };
 function buildingRandom(seed) {
   return tileRandom(seed);
@@ -820,6 +833,7 @@ function windowTone(b, column, floor) {
 const FACADE_MATERIALS = {
   house: ['brick', 'brickV'], apartment: ['brick', 'brickV'], shop: ['brick', 'brickV'],
   tower: ['panel', 'panelV'], warehouse: ['metal', 'metalH'], workshop: ['metal', 'metalH'],
+  pagoda: ['brick', 'brickV'], chinashop: ['brick', 'brickV'],
 };
 function drawBuildingWalls(b, px, py, W, H, L) {
   const rw = W - L, rh = H - L;
@@ -884,6 +898,21 @@ function drawHouseRoof(x, y, w, h, color, shape) {
   }
   ctx.lineCap = 'butt';
   ctx.strokeStyle = 'rgba(10,8,6,.55)'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+}
+function drawPagodaRoof(x, y, w, h, color) {
+  const left = x - 3, top = y - 3, right = x + w + 3, bottom = y + h + 3, middleX = x + w / 2, middleY = y + h / 2;
+  ctx.fillStyle = shade(color, -0.3); ctx.beginPath();
+  ctx.moveTo(left, top);
+  ctx.quadraticCurveTo(middleX, top + 3, right, top);
+  ctx.quadraticCurveTo(right - 3, middleY, right, bottom);
+  ctx.quadraticCurveTo(middleX, bottom - 3, left, bottom);
+  ctx.quadraticCurveTo(left + 3, middleY, left, top);
+  ctx.fill();
+  drawHouseRoof(x + 2, y + 2, w - 4, h - 4, color, 'hip');
+  const planes = hipRoofPlanes(x + 2, y + 2, w - 4, h - 4);
+  ctx.strokeStyle = '#d4af37'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.beginPath();
+  ctx.moveTo(...planes.north[3]); ctx.lineTo(...planes.south[3]);
+  ctx.stroke(); ctx.lineCap = 'butt';
 }
 function southRoofZone(shape, roof) {
   if (roof.w < roof.h) return null;
@@ -953,6 +982,17 @@ const STYLE_ROOF = {
     material: 'tilesH', upperMaterial: 'tilesH', propDensity: 0, colors: ROOF_COLS,
     pool: [{ type: 'chimney', w: [5, 7], h: [5, 7], height: 6 }],
   },
+  pagoda: {
+    material: 'tilesH', upperMaterial: 'tilesH', propDensity: 0, colors: ['#a3322a', '#b23a2e', '#2f7a5c', '#348a66'],
+    pool: [],
+  },
+  chinashop: {
+    material: 'tar', upperMaterial: 'tar', propDensity: 0.4, colors: ['#7a6a60', '#86705e', '#6e6a66'],
+    pool: [
+      { type: 'hvac', w: [11, 14], h: [8, 10], height: 4 },
+      { type: 'vent', w: [5, 6], h: [5, 6], height: 3 },
+    ],
+  },
 };
 function volumeRoof(volumes, index) {
   const volume = volumes[index], wall = volume.lift - (volume.parent < 0 ? 0 : volumes[volume.parent].lift);
@@ -1016,12 +1056,14 @@ function planRoofShape(b, random) {
   if (b.style === 'workshop') return random() < 0.5 ? 'sawtooth' : 'flat';
   if (b.style === 'warehouse') return 'metalGable';
   if (b.style === 'house') return random() < 0.55 ? 'hip' : 'gable';
+  if (b.style === 'pagoda') return 'pagoda';
   return 'flat';
 }
 function planBuilding(b, W, H) {
   const random = buildingRandom(b.h);
   const volumes = planVolumes(b, W, H, random);
   const roofShape = planRoofShape(b, random);
+  if (roofShape === 'pagoda') return { volumes, props: [], roofShape };
   const style = STYLE_ROOF[b.style];
   const roofs = volumes.map((volume, index) => volumeRoof(volumes, index));
   const reserved = volumes.map((volume, index) => volumes.filter(child => child.parent === index));
@@ -1145,6 +1187,7 @@ function drawVolume(b, volume, wall, ox, oy, roofMaterial, roofShape) {
   if (roofShape === 'sawtooth') return drawSawtoothRoof(b, x, y, roofW, roofH, roofColor);
   if (roofShape === 'metalGable') return drawMetalRoof(b, x, y, roofW, roofH, roofColor);
   if (roofShape === 'hip' || roofShape === 'gable') return drawHouseRoof(x, y, roofW, roofH, roofColor, roofShape);
+  if (roofShape === 'pagoda') return drawPagodaRoof(x, y, roofW, roofH, roofColor);
   const tone = (volume.lift - b.lift) * 0.015 + (MATERIAL_TONES[roofMaterial] || 0);
   drawRoofSurface(x, y, roofW, roofH, shade(roofColor, tone), roofMaterial);
   drawCornice(x, y, roofW, roofH, b.col);
@@ -1186,8 +1229,46 @@ function drawBuildings() {
 }
 // Awning-shaded shopfront for shops/workshops, a main door for the rest — on the side
 // that faces the street.
+function drawChinaSigns(b, px, py, W, H, L) {
+  if (b.face < 0) return;
+  const sideways = b.face === 1 || b.face === 2, span = sideways ? H : W, thickness = b.face < 2 ? L : 5;
+  for (let along = 8; along + 5 <= span - 3; along += 14) {
+    const x = b.face === 1 ? px + W - L : sideways ? px : px + along;
+    const y = b.face === 0 ? py + H - L : sideways ? py + along : py;
+    const boardW = sideways ? thickness : 5, boardH = sideways ? 5 : thickness;
+    ctx.fillStyle = '#e8c04a'; ctx.fillRect(x, y, boardW, boardH);
+    ctx.fillStyle = '#b3261e'; ctx.fillRect(x + 1, y + 1, boardW - 2, boardH - 2);
+  }
+}
+function drawChinaGatePillars(gate) {
+  for (const pillar of [gate.left, gate.right]) {
+    const x = pillar.x - camX, y = pillar.y - camY;
+    ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(x - 4, y - 3, 12, 10);
+    ctx.fillStyle = '#7a1914'; ctx.fillRect(x - 6, y - 6, 12, 12);
+    ctx.fillStyle = '#b3261e'; ctx.fillRect(x - 4, y - 4, 8, 8);
+    ctx.fillStyle = '#d4af37'; ctx.fillRect(x - 6, y - 6, 12, 2);
+  }
+}
+function drawChinaGateBeam(gate) {
+  const { left, right } = gate, padding = 40, rise = 22;
+  if (Math.max(left.x, right.x) + padding < camX || Math.min(left.x, right.x) - padding > camX + vw
+    || Math.max(left.y, right.y) + padding < camY || Math.min(left.y, right.y) - padding > camY + vh) return;
+  const leftTop = { x: left.x - camX, y: left.y - camY - rise }, rightTop = { x: right.x - camX, y: right.y - camY - rise };
+  ctx.save(); ctx.lineCap = 'round';
+  const stroke = (color, width, from, to, dy = 0) => {
+    ctx.strokeStyle = color; ctx.lineWidth = width; ctx.beginPath();
+    ctx.moveTo(from.x, from.y + dy); ctx.lineTo(to.x, to.y + dy); ctx.stroke();
+  };
+  for (const [top, base] of [[leftTop, left], [rightTop, right]]) stroke('#b3261e', 5, top, { x: base.x - camX, y: base.y - camY - 4 });
+  stroke('#b3261e', 8, leftTop, rightTop);
+  stroke('#d4af37', 2, leftTop, rightTop, 1);
+  stroke('#2f7a5c', 4, leftTop, rightTop, -6);
+  stroke('#d4af37', 1.5, leftTop, rightTop, -9);
+  ctx.restore();
+}
 function drawFacade(b, px, py, W, H, L) {
   if (b.face < 0) return;
+  if (b.style === 'chinashop') return drawChinaSigns(b, px, py, W, H, L);
   if (b.style === 'shop' || b.style === 'workshop') {
     const c1 = AWNING_COLS[b.h % AWNING_COLS.length], c2 = '#ece7db';
     if (b.face === 0) for (let sx = px + 2, k = 0; sx < px + W - 4; sx += 6, k++) { ctx.fillStyle = k & 1 ? c2 : c1; ctx.fillRect(sx, py + H - L - 2, 6, 6); }
@@ -2115,6 +2196,7 @@ function render() {
     else if (e.role === 'traffic' || e.role === 'police' || e.role === 'armycar' || e.role === 'parked' || e.role === 'player') drawCar(e);
     else drawPed(e);
   }
+  if (chinaGate) drawChinaGateBeam(chinaGate);
   drawTrafficLights();
   drawBullets();
   drawRockets();

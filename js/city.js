@@ -26,10 +26,11 @@ const gi = (x, y) => y * MAP_W + x;
 const RES_COLORS = ['#7d5b46','#8a6d52','#89746a','#9a8466','#8f6f5a','#96826f','#7a5a5a','#847b6a'];
 const OFF_COLORS = ['#5d6b78','#6b6f7a','#4f5a68','#556170','#5f7a72','#7a6a86','#665a72','#5a6d6b'];
 const IND_COLORS = ['#5f6b5a','#736256','#6d5f6b','#82755a','#6a7d6a','#8a8478'];
+const CHINA_COLORS = ['#9e2b25', '#b8352c', '#2f7d62', '#3a8f70', '#c9a23a', '#8c2a2a'];
 const hash2 = (a, b) => (((a | 0) * 73856093) ^ ((b | 0) * 19349663)) >>> 0;
-const RES_KIND = 0, OFF_KIND = 1, IND_KIND = 2;
+const RES_KIND = 0, OFF_KIND = 1, IND_KIND = 2, CHINA_KIND = 3;
 const MIXED = 0, RESIDENTIAL = 1, INDUSTRIAL = 2, CHINATOWN = 3, PORT = 4;
-const DISTRICT_KINDS = [-1, RES_KIND, IND_KIND, OFF_KIND, IND_KIND];
+const DISTRICT_KINDS = [-1, RES_KIND, IND_KIND, CHINA_KIND, IND_KIND];
 const DISTRICT_COUNTS = { P: 2, M: 3, G: 4 };
 const DISTRICT_RADIUS_SHARE = 0.22;
 const DISTRICT_COLS = Math.ceil(MAP_W / PERIOD), DISTRICT_ROWS = Math.ceil(MAP_H / PERIOD);
@@ -43,7 +44,7 @@ const blockKind = (bx, by) => {
   return district === MIXED ? hash2(bx + 13, by + 29) % 3 : DISTRICT_KINDS[district];
 };
 const blockColor = (bx, by) => {
-  const pal = [RES_COLORS, OFF_COLORS, IND_COLORS][blockKind(bx, by)];
+  const pal = [RES_COLORS, OFF_COLORS, IND_COLORS, CHINA_COLORS][blockKind(bx, by)];
   return pal[hash2(bx, by) % pal.length];
 };
 // Building lots: they split blocks into a regular grid of rectangles, and
@@ -408,6 +409,37 @@ genCity();
 const tileAt = (tx, ty) => (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) ? BUILDING : grid[gi(tx, ty)];
 const solidTile = (tx, ty) => { const t = tileAt(tx, ty); return t === BUILDING || t === TREE || t === WATER || t === PROP; };
 
+function pickChinaGate() {
+  const mapCentre = { x: WORLD_W / 2, y: WORLD_H / 2 };
+  const distanceToCentre = point => Math.hypot(point.x - mapCentre.x, point.y - mapCentre.y);
+  const tileOfPoint = point => tileAt(Math.floor(point.x / T), Math.floor(point.y / T));
+  const inChinatown = node => districtAt(Math.floor(node.x / T / PERIOD), Math.floor(node.y / T / PERIOD)) === CHINATOWN;
+  const findPillar = (centre, direction) => {
+    for (let step = 1; step <= 24; step++) {
+      const point = { x: centre.x + direction.x * step * T / 4, y: centre.y + direction.y * step * T / 4 };
+      if (tileOfPoint(point) !== SIDEWALK) continue;
+      const further = { x: point.x + direction.x * T / 4, y: point.y + direction.y * T / 4 };
+      return tileOfPoint(further) === SIDEWALK ? further : point;
+    }
+    return null;
+  };
+  const junctions = nodes.filter(node => node.live && node.edges.length >= 3 && inChinatown(node))
+    .sort((a, b) => distanceToCentre(a) - distanceToCentre(b));
+  for (const junction of junctions) {
+    const otherEnds = junction.edges.map(index => edges[index]).map(edge => nodes[nodes[edge.a] === junction ? edge.b : edge.a]);
+    const towardsCentre = otherEnds.reduce((best, end) => distanceToCentre(end) < distanceToCentre(best) ? end : best);
+    const length = Math.hypot(towardsCentre.x - junction.x, towardsCentre.y - junction.y);
+    const direction = { x: (towardsCentre.x - junction.x) / length, y: (towardsCentre.y - junction.y) / length };
+    const centre = { x: junction.x + direction.x * 4.5 * T, y: junction.y + direction.y * 4.5 * T };
+    if (tileOfPoint(centre) !== ROAD) continue;
+    const left = findPillar(centre, { x: direction.y, y: -direction.x });
+    const right = findPillar(centre, { x: -direction.y, y: direction.x });
+    if (left && right) return { x: centre.x, y: centre.y, angle: Math.atan2(direction.y, direction.x), left, right };
+  }
+  return null;
+}
+const chinaGate = pickChinaGate();
+
 // ---------- Special buildings: police, hospital, fire station, bank, market ----------
 const landmarks = [];                                  // { type, x0, y0, x1, y1, cx, cy, door }
 const lmGrid = new Uint8Array(MAP_W * MAP_H).fill(255);
@@ -598,10 +630,11 @@ function bakeBuildings() {
            : walkableTile(tileAt(b.x0 - 1, midy)) ? 2 : walkableTile(tileAt(midx, b.y0 - 1)) ? 3 : -1;
     if (b.kind === RES_KIND) b.style = area <= (b.district === RESIDENTIAL ? 24 : 18) ? 'house' : 'apartment';
     else if (b.kind === OFF_KIND) b.style = area >= 20 ? 'tower' : 'shop';
+    else if (b.kind === CHINA_KIND) b.style = area >= 20 ? 'pagoda' : 'chinashop';
     else b.style = area >= 20 ? 'warehouse' : 'workshop';
     const storeyVariation = b.district !== RESIDENTIAL && (b.style === 'apartment' || b.style === 'tower') ? (b.h >> 4) % 3 * 4 : 0;
-    b.lift = { house: 7, apartment: 11, shop: 9, tower: 16, warehouse: 9, workshop: 8 }[b.style] + storeyVariation;
-    const pal = [RES_COLORS, OFF_COLORS, IND_COLORS][b.kind];
+    b.lift = { house: 7, apartment: 11, shop: 9, tower: 16, warehouse: 9, workshop: 8, pagoda: 10, chinashop: 9 }[b.style] + storeyVariation;
+    const pal = [RES_COLORS, OFF_COLORS, IND_COLORS, CHINA_COLORS][b.kind];
     b.col = pal[b.h % pal.length];
   }
 }
