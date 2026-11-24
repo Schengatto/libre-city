@@ -753,8 +753,8 @@ function carHit(a, b) {
   return { pen, nx, ny, px: a.x + nx * (reachA - pen / 2), py: a.y + ny * (reachA - pen / 2) };
 }
 // Distance beyond which two vehicles cannot touch (broad-phase): half the diagonal of the
-// largest box in play (the tank, 56×30) ×2.
-const CAR_REACH = 64;
+// largest box in play (VEHICLE_MAX_W×VEHICLE_MAX_H, the bus), i.e. its diagonal.
+const CAR_REACH = Math.ceil(Math.hypot(VEHICLE_MAX_W, VEHICLE_MAX_H));
 // Applies a displacement to a car, respecting its kind of motion.
 function shoveCar(c, dx, dy) {
   if (c.role === 'traffic' && c.edge != null) {         // railed car: backs up along its lane
@@ -824,7 +824,7 @@ function resolveCarCollisions() {
           if (a.driver === 'player' || b.driver === 'player') {
             shake(Math.min(8, 2 + imp * 0.8), Math.min(9, 3 + imp * 0.7)); sfx.crash();
             const other = a.driver === 'player' ? b : a;
-            if (other.role !== 'parked') damageCar(other, Math.min(16, 2 + imp * 2.2));   // ramming the traffic
+            if (other.role !== 'parked') damageCar(other, Math.min(16, 2 + imp * 2.2), other === b ? Math.atan2(ny, nx) : Math.atan2(-ny, -nx));   // ramming the traffic
           }
         }
       }
@@ -859,7 +859,7 @@ function resolveRemoteCarCollisions() {
       if (imp > 1.6) {                                  // a real hit: sparks, shake, damage
         spawnSparks(hit.px, hit.py, Math.min(10, Math.round(2 + imp * 1.4)));
         shake(Math.min(8, 2 + imp * 0.8), Math.min(9, 3 + imp * 0.7)); sfx.crash();
-        damageCar(a, Math.min(16, 2 + imp * 2.2));
+        damageCar(a, Math.min(16, 2 + imp * 2.2), Math.atan2(-ny, -nx));
       }
     }
   }
@@ -924,8 +924,8 @@ function updateBullets() {
           const c = v.car;
           if (Math.abs(b.x - c.x) < c.w / 2 + 2 && Math.abs(b.y - c.y) < c.h / 2 + 4) {
             if (b.fromNet) netRegisterHit(b.fromNet);
-            if (c.isTank) { damageCar(c, 1); sfx.ricochet(hear(b.x, b.y, 620)); }   // the armour laughs off bullets
-            else asPlayer(v, () => { damageCar(c, b.fromNet ? (b.dmg || 4) : 4); hurtPlayer(3); });
+            if (c.isTank) { damageCar(c, 1, Math.atan2(b.vy, b.vx)); sfx.ricochet(hear(b.x, b.y, 620)); }   // the armour laughs off bullets
+            else asPlayer(v, () => { damageCar(c, b.fromNet ? (b.dmg || 4) : 4, Math.atan2(b.vy, b.vx)); hurtPlayer(3); });
             spawnSparks(b.x, b.y, 2); hit = true;
           }
         } else if (dist(b.x, b.y, v.x, v.y) < v.r + 3) {
@@ -937,7 +937,29 @@ function updateBullets() {
     if (hit || b.life <= 0 || b.x < 0 || b.y < 0 || b.x > WORLD_W || b.y > WORLD_H) bullets.splice(i, 1);
   }
 }
+const DENT_ZONE = { front: 0, rear: 1, left: 2, right: 3 };
+const DENT_THRESHOLDS = [8, 24, 48];
+function dentZone(c, impactAngle) {
+  const rel = angDiff(c.angle, impactAngle + Math.PI);
+  const magnitude = Math.abs(rel);
+  if (magnitude <= Math.PI / 4) return DENT_ZONE.front;
+  if (magnitude >= 3 * Math.PI / 4) return DENT_ZONE.rear;
+  return rel > 0 ? DENT_ZONE.right : DENT_ZONE.left;
+}
+function dentLevel(dents, zone) {
+  return (dents >> (2 * zone)) & 3;
+}
+function addDent(c, dmg, impactAngle) {
+  if (c.isBike || c.isTank || !Number.isFinite(impactAngle) || !Number.isFinite(dmg)) return;
+  const zone = dentZone(c, impactAngle);
+  if (!c.dentDamage) { c.dentDamage = [0, 0, 0, 0]; c.dents = 0; }
+  c.dentDamage[zone] += dmg;
+  let level = 0;
+  while (level < DENT_THRESHOLDS.length && c.dentDamage[zone] >= DENT_THRESHOLDS[level]) level++;
+  c.dents = (c.dents & ~(3 << (2 * zone))) | (level << (2 * zone));
+}
 function damageCar(c, dmg, angle, chain = 0) {
+  addDent(c, dmg, angle);
   c.health -= dmg;
   if (c.health <= 30 && !c.smoking) c.smoking = true;
   if (c.smoking && frame % 4 === 0) parts.push({ x: c.x + rnd(-10, 10), y: c.y + rnd(-8, 8), vx: rnd(-0.4, 0.4), vy: rnd(-1.4, -0.5), life: rndi(20, 40), color: '#555', size: rnd(4, 8), kind: 'smoke' });
@@ -998,7 +1020,7 @@ function explodeCar(c, chain = 0) {
     if (dist(v.x, v.y, c.x, c.y) < 90) asPlayer(v, () => hurtPlayer(28, Math.atan2(v.y - c.y, v.x - c.x)));
   });
   // ...and it damages the cars alongside, which can catch fire in turn: chain reaction!
-  for (const o of [...cars]) if (dist(o.x, o.y, c.x, c.y) < 95) damageCar(o, 26, undefined, chain + 1);
+  for (const o of [...cars]) if (dist(o.x, o.y, c.x, c.y) < 95) damageCar(o, 26, Math.atan2(o.y - c.y, o.x - c.x), chain + 1);
   if (player.car === c) { player.car = null; engineGain(0); }
 }
 
@@ -1204,13 +1226,13 @@ function managePopulation() {
   if (frame % 40 === 0 && nTaxi < 3 * nP) {
     const centre = spawnCentre();
     const c = spawnTrafficNear(centre.x, centre.y, inMin, inMax);
-    if (c) { makeTaxi(c); cars.push(c); }
+    if (c) { if (!c.livery && !c.isBike && !c.isTaxi) makeTaxi(c); cars.push(c); }
   }
   // ...and at least a couple of delivery bikes.
   if (frame % 40 === 20 && nDeliv < 2 * nP) {
     const centre = spawnCentre();
     const c = spawnTrafficNear(centre.x, centre.y, inMin, inMax);
-    if (c) { makeDeliveryMoto(c); cars.push(c); }
+    if (c) { if (!c.livery && !c.isBike && !c.isTaxi) makeDeliveryMoto(c); cars.push(c); }
   }
   // Replaces (off-screen) the service vehicles in front of each special building.
   if (frame % 120 === 0) for (const lm of landmarks) {

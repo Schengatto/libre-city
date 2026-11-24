@@ -1953,9 +1953,10 @@ function bodyPaint(color, angle, hw, hh) {
   paint.addColorStop(0, shade(color, 0.22)); paint.addColorStop(0.45, color); paint.addColorStop(1, shade(color, -0.28));
   return paint;
 }
-function drawTyres(hw, hh) {
+function drawTyres(hw, hh, hasDoubleRearAxle) {
   ctx.fillStyle = '#111215';
-  for (const axleX of [hw - 11, -hw + 9]) { ctx.fillRect(axleX - 4, -hh - 1, 8, 3); ctx.fillRect(axleX - 4, hh - 2, 8, 3); }
+  const axlePositions = hasDoubleRearAxle ? [hw - 11, -hw + 9, -hw + 19] : [hw - 11, -hw + 9];
+  for (const axleX of axlePositions) { ctx.fillRect(axleX - 4, -hh - 1, 8, 3); ctx.fillRect(axleX - 4, hh - 2, 8, 3); }
 }
 function drawGlassGlint(frontX, backX, hh) {
   fillPolygon([[backX + 1, -hh + 4], [backX + 3, -hh + 4], [frontX - 1, hh - 6], [frontX - 3, hh - 6]], 'rgba(190,220,255,.30)');
@@ -1978,6 +1979,46 @@ function drawVanCabin(c, hw, hh) {
   ctx.fillStyle = 'rgba(0,0,0,.30)'; ctx.fillRect(hw - 16, -hh + 2, 1.5, c.h - 4);
   ctx.fillStyle = c.color; ctx.fillRect(hw - 10, -hh - 1.5, 2.5, 2); ctx.fillRect(hw - 10, hh - 0.5, 2.5, 2);
 }
+function drawBusCabin(c, hw, hh) {
+  ctx.fillStyle = GLASS_COLOR;
+  ctx.fillRect(-hw + 5, -hh + 1.5, c.w - 20, 3.5); ctx.fillRect(-hw + 5, hh - 5, c.w - 20, 3.5);
+  ctx.fillStyle = 'rgba(255,255,255,.16)';
+  for (let pillarX = -hw + 13; pillarX < hw - 15; pillarX += 9) { ctx.fillRect(pillarX, -hh + 1.5, 1, 3.5); ctx.fillRect(pillarX, hh - 5, 1, 3.5); }
+  ctx.fillStyle = shade(c.color, 0.14); roundRect(-hw + 3, -hh + 5.5, c.w - 14, c.h - 11, 3); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 1; roundRect(-hw + 3, -hh + 5.5, c.w - 14, c.h - 11, 3); ctx.stroke();
+  ctx.fillStyle = 'rgba(235,245,255,.55)';
+  roundRect(-hw + 20, -3.5, 9, 7, 1.5); ctx.fill(); roundRect(hw - 35, -3.5, 9, 7, 1.5); ctx.fill();
+  ctx.fillStyle = GLASS_COLOR; roundRect(hw - 8, -hh + 2.5, 5, c.h - 5, 2); ctx.fill();
+  drawGlassGlint(hw - 3, hw - 8, hh);
+}
+function drawLorryCabin(c, hw, hh) {
+  const cargoLength = c.w - 24;
+  ctx.fillStyle = c.cargo || '#e6e2d8'; roundRect(-hw + 2, -hh + 1.5, cargoLength, c.h - 3, 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,.3)'; ctx.lineWidth = 1; roundRect(-hw + 2, -hh + 1.5, cargoLength, c.h - 3, 2); ctx.stroke();
+  ctx.fillStyle = 'rgba(0,0,0,.12)';
+  for (let ribX = -hw + 7; ribX < -hw + 2 + cargoLength - 2; ribX += 6) ctx.fillRect(ribX, -hh + 1.5, 1, c.h - 3);
+  ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(hw - 21.5, -hh + 1, 2, c.h - 2);
+  ctx.fillStyle = shade(c.color, 0.1); roundRect(hw - 19, -hh + 1.5, 18, c.h - 3, 3); ctx.fill();
+  ctx.fillStyle = GLASS_COLOR; roundRect(hw - 9, -hh + 3, 5, c.h - 6, 2); ctx.fill();
+  drawGlassGlint(hw - 4, hw - 9, hh);
+}
+function drawSpiderCockpit(c, hw, hh) {
+  ctx.fillStyle = 'rgba(255,255,255,.6)';
+  ctx.fillRect(-hw + 2, -3.2, c.w - 12, 1.6); ctx.fillRect(-hw + 2, 1.6, c.w - 12, 1.6);
+  ctx.fillStyle = GLASS_COLOR; roundRect(hw - 14, -hh + 3, 4, c.h - 6, 1.5); ctx.fill();
+  drawGlassGlint(hw - 10, hw - 14, hh);
+  ctx.fillStyle = '#1a1c22';
+  roundRect(-7, -hh + 3, 8, 6, 2); ctx.fill(); roundRect(-7, hh - 9, 8, 6, 2); ctx.fill();
+  ctx.strokeStyle = '#9aa0ac'; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(-9, -hh + 2); ctx.lineTo(-9, hh - 2); ctx.stroke();
+  if (c.role === 'parked' && c.driver !== 'player') return;
+  if (!(c.driver || c.role === 'traffic' || c.role === 'police')) return;
+  const seatY = -hh + 6;
+  ctx.fillStyle = c.driver === 'player' ? player.shirt : (c.riderShirt || '#3a72d2');
+  ctx.beginPath(); ctx.ellipse(-3, seatY, 3.5, 4.5, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = c.helmet || '#2a2a2e';
+  ctx.beginPath(); ctx.arc(-1, seatY, 2.6, 0, TAU); ctx.fill();
+}
 function drawCarLights(c, hw, hh) {
   ctx.fillStyle = '#fff4cc';
   roundRect(hw - 3, -hh + 2.5, 3, 5, 1.2); ctx.fill(); roundRect(hw - 3, hh - 7.5, 3, 5, 1.2); ctx.fill();
@@ -1993,6 +2034,45 @@ function drawCarLights(c, hw, hh) {
   ctx.fillStyle = braking ? '#ff4a3a' : '#9a1a1e';
   ctx.fillRect(-hw + 0.5, -hh + 2.5, 2.5, 5); ctx.fillRect(-hw + 0.5, hh - 7.5, 2.5, 5);
 }
+const DENT_NOTCH_POINTS = 7;
+const DENT_DEPTH_PER_LEVEL = 2;
+const DENT_CORNER_RADIUS = 6;
+function dentNotchPoint(zone, hw, hh, along, depth) {
+  switch (zone) {
+    case DENT_ZONE.front: return [hw - depth, along];
+    case DENT_ZONE.rear: return [-hw + depth, along];
+    case DENT_ZONE.left: return [along, -hh + depth];
+    default: return [along, hh - depth];
+  }
+}
+function drawCarDents(c, hw, hh) {
+  if (!c.dents) return;
+  const seedKey = c.netId != null ? c.netId : c.id;
+  const seed = typeof seedKey === 'number' ? seedKey | 0 : (seedKey ? hashStr(seedKey) : 0);
+  const flatHalfHeight = hh - DENT_CORNER_RADIUS;
+  const sideOffsetFraction = (seed * 0.6180339887) % 1;
+  const sideLength = hw * 2 / 3;
+  const sideStart = -hw * 0.7 + sideOffsetFraction * (hw * 1.4 - sideLength);
+  const fillColor = shade(c.color, -0.35), creaseColor = shade(c.color, -0.65);
+  for (let zone = DENT_ZONE.front; zone <= DENT_ZONE.right; zone++) {
+    const level = dentLevel(c.dents, zone);
+    if (!level) continue;
+    const alongEnds = zone === DENT_ZONE.front || zone === DENT_ZONE.rear;
+    const from = alongEnds ? -flatHalfHeight : sideStart;
+    const length = alongEnds ? flatHalfHeight * 2 : sideLength;
+    const edgeStart = dentNotchPoint(zone, hw, hh, from, 0), edgeEnd = dentNotchPoint(zone, hw, hh, from + length, 0);
+    const crease = [];
+    for (let i = 1; i < DENT_NOTCH_POINTS; i++) {
+      const jag = ((seed * 7 + i * 13 + zone * 5) % 5) / 4;
+      crease.push(dentNotchPoint(zone, hw, hh, from + length * i / DENT_NOTCH_POINTS, level * DENT_DEPTH_PER_LEVEL * (0.6 + 0.4 * jag)));
+    }
+    fillPolygon([edgeStart, ...crease, edgeEnd], fillColor);
+    ctx.strokeStyle = creaseColor; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(crease[0][0], crease[0][1]);
+    for (let i = 1; i < crease.length; i++) ctx.lineTo(crease[i][0], crease[i][1]);
+    ctx.stroke();
+  }
+}
 function drawCar(c) {
   if (c.isBike) { drawBike(c); return; }
   if (c.isTank) { drawTank(c); return; }
@@ -2001,14 +2081,17 @@ function drawCar(c) {
   ctx.save();
   ctx.translate(x, y); ctx.rotate(c.angle);
   const hw = c.w / 2, hh = c.h / 2;
-  drawTyres(hw, hh);
+  drawTyres(hw, hh, c.livery === 'bus' || c.livery === 'lorry');
   const paint = bodyPaint(c.color, c.angle, hw, hh);
-  ctx.fillStyle = paint; roundRect(-hw, -hh, c.w, c.h, 6); ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 1.2; roundRect(-hw, -hh, c.w, c.h, 6); ctx.stroke();
-  if (c.livery && c.livery !== 'army') drawVanCabin(c, hw, hh);
+  ctx.fillStyle = paint; roundRect(-hw, -hh, c.w, c.h, DENT_CORNER_RADIUS); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = 1.2; roundRect(-hw, -hh, c.w, c.h, DENT_CORNER_RADIUS); ctx.stroke();
+  if (c.livery === 'bus') drawBusCabin(c, hw, hh);
+  else if (c.livery === 'lorry') drawLorryCabin(c, hw, hh);
+  else if (c.livery === 'spider') drawSpiderCockpit(c, hw, hh);
+  else if (c.livery && c.livery !== 'army') drawVanCabin(c, hw, hh);
   else drawSaloonCabin(c, hw, hh, (c.role === 'police' || c.wasPolice) ? '#20407a' : paint);
   drawCarLights(c, hw, hh);
-  if (c.isTaxi) {                                    // taxi livery: chequers + roof sign
+  if (c.isTaxi) {                                   // taxi livery: chequers + roof sign
     for (let i = 0; i < 5; i++) {
       const sx = -hw + 7 + i * 7;
       ctx.fillStyle = i & 1 ? '#f4f4f4' : '#1a1a1e';
@@ -2049,6 +2132,7 @@ function drawCar(c) {
     ctx.fillStyle = '#e8e4c8'; ctx.font = 'bold 10px Trebuchet MS'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('★', -1, 0.5); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   }
+  drawCarDents(c, hw, hh);
   // Flashing lights: patrol cars mid-chase, or the player's patrol car/ambulance with the
   // siren on.
   if (c.role === 'police' || playerSirenOn(c)) {

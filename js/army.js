@@ -75,7 +75,7 @@ function explodeRocket(r) {
       if (!wasDown && v.downT > 0 && r.owner && v !== r.owner && typeof creditKill === 'function') creditKill(r.owner, v, vb);
     }
   });
-  for (const o of [...cars]) if (o !== r.src && dist(o.x, o.y, r.x, r.y) < carR) damageCar(o, 45 * pw);
+  for (const o of [...cars]) if (o !== r.src && dist(o.x, o.y, r.x, r.y) < carR) damageCar(o, 45 * pw, Math.atan2(o.y - r.y, o.x - r.x));
 }
 // The tracks are unforgiving: a car caught under the tank explodes on the spot.
 function tankCrush(c) {
