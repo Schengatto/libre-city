@@ -1,7 +1,7 @@
 import vm from 'node:vm';
 import runtime from './sim-runtime.js';
 import stubs from '../js/sim-stubs.js';
-import { readSource, extractTopLevel } from './render-test-kit.mjs';
+import { readSource, extractTopLevel, createRecordingContext } from './render-test-kit.mjs';
 const { BUNDLE } = runtime;
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ', msg); } else { fail++; console.log('  XX FAIL:', msg); } };
@@ -154,6 +154,53 @@ const remoteCarColH = remoteDecoder.run(`(() => {
 })()`);
 ok(remoteCarColH.saloon === 13 && remoteCarColH.bus === 15 && remoteCarColH.bike === 8, `remote player car colH follows vehicle change (${JSON.stringify(remoteCarColH)})`);
 ok(!extractTopLevel(netSource, 'netApplyRemote').includes('colH: 13'), 'netApplyRemote has no fixed colH');
+
+const renderSource = readSource('render.js');
+const RENDER_DECLARATIONS = ['shade', 'roundRect', 'bodyPaint', 'drawTyres', 'drawGlassGlint', 'GLASS_COLOR', 'fillPolygon', 'tracePolygon',
+  'drawSaloonCabin', 'drawVanCabin', 'drawBusCabin', 'drawLorryCabin', 'drawSpiderCockpit', 'drawCarLights', 'BRAKE_DECELERATION', 'drawCar'];
+function loadCarRenderer() {
+  const recorder = createRecordingContext();
+  const context = vm.createContext({
+    ctx: recorder.context, camX: 0, camY: 0, frame: 0, player: { shirt: '#123456' }, Math,
+    t: key => key, playerSirenOn: () => false, drawVehicleShadow: () => {}, drawCarFlames: () => {}, drawBike: () => {}, drawTank: () => {},
+  });
+  const cabinNames = ['drawSaloonCabin', 'drawVanCabin', 'drawBusCabin', 'drawLorryCabin', 'drawSpiderCockpit'];
+  const declarations = [extractTopLevel(readSource('core.js'), 'TAU'), ...RENDER_DECLARATIONS.map(name => extractTopLevel(renderSource, name))];
+  const wrappers = cabinNames.map(name => `{ const original = ${name}; ${name} = function (...args) { cabinsRun.push('${name}'); return original(...args); }; }`);
+  vm.runInContext(['var cabinsRun = [];', ...declarations, ...wrappers].join('\n'), context);
+  const draw = car => {
+    recorder.calls.length = 0;
+    vm.runInContext('cabinsRun.length = 0', context);
+    context.car = car;
+    vm.runInContext('drawCar(car)', context);
+    const fills = recorder.calls.filter(([name]) => name === 'set:fillStyle').map(([, args]) => args[0]);
+    const tyreRects = recorder.calls.filter(([name, args]) => name === 'fillRect' && args[2] === 8 && args[3] === 3).length;
+    return { cabins: [...vm.runInContext('cabinsRun', context)], fills, tyreRects };
+  };
+  return { draw };
+}
+const carRenderer = loadCarRenderer();
+const bodyOf = (livery, extra = {}) => ({ x: 100, y: 100, angle: 0.4, speed: 1, role: 'parked', driver: null, color: '#2f7bd6', livery, ...extra });
+const buses = bodyOf('bus', { w: 88, h: 28 }), lorries = bodyOf('lorry', { w: 76, h: 28, cargo: '#e6e2d8' });
+const spiders = bodyOf('spider', { w: 42, h: 22, helmet: '#d23a3a', riderShirt: '#44aa66' });
+const saloons = bodyOf(null, { w: 46, h: 24 });
+const cabinCases = [
+  [buses, 'drawBusCabin'], [lorries, 'drawLorryCabin'], [spiders, 'drawSpiderCockpit'],
+  [bodyOf('ambulance', { w: 50, h: 25 }), 'drawVanCabin'], [saloons, 'drawSaloonCabin'],
+];
+for (const [car, expectedCabin] of cabinCases) {
+  const drawn = carRenderer.draw(car);
+  ok(drawn.cabins.length === 1 && drawn.cabins[0] === expectedCabin, `${car.livery || 'saloon'} draws through ${expectedCabin} only (${drawn.cabins})`);
+}
+ok(carRenderer.draw(buses).tyreRects === 6 && carRenderer.draw(lorries).tyreRects === 6, 'bus and lorry draw a rear double axle');
+ok(carRenderer.draw(spiders).tyreRects === 4 && carRenderer.draw(saloons).tyreRects === 4, 'spider and saloon keep two axles');
+
+const trafficSpider = carRenderer.draw({ ...spiders, role: 'traffic' });
+ok(trafficSpider.fills.includes('#44aa66') && trafficSpider.fills.includes('#d23a3a'), 'traffic spider shows rider shirt and helmet');
+const parkedSpider = carRenderer.draw({ ...spiders, role: 'parked', driver: null });
+ok(!parkedSpider.fills.includes('#44aa66') && !parkedSpider.fills.includes('#d23a3a'), 'parked empty spider shows no driver');
+const playerSpider = carRenderer.draw({ ...spiders, role: 'player', driver: 'player' });
+ok(playerSpider.fills.includes('#123456') && !playerSpider.fills.includes('#44aa66') && playerSpider.fills.includes('#d23a3a'), 'player-driven spider uses the player shirt');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
