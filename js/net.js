@@ -383,12 +383,12 @@ function netApplyRemote(id, m) {
     g.gun = !!m.g; g.hp = m.hp; g.down = !!m.dn;
     if (m.st) g.stats = m.st;
     if (m.c) {
-      if (!g.car) g.car = { role: 'traffic', driver: 'net', colH: vehicleColH(m.c.bike, m.c.h), speed: 0, gear: 1,
+      if (!g.car) g.car = { role: 'traffic', driver: 'net', speed: 0, gear: 1,
                             kvx: 0, kvy: 0, lightPhase: 0, x: m.c.x, y: m.c.y, angle: m.c.an, tx: null };
       const c = g.car;
       if (c.tx == null || dist(c.x, c.y, m.c.x, m.c.y) > 280) { c.x = m.c.x; c.y = m.c.y; c.angle = m.c.an; }  // teleport
       c.tx = m.c.x; c.ty = m.c.y; c.ta = m.c.an; c.speed = m.c.sp;
-      c.w = m.c.w; c.h = m.c.h; c.color = m.c.col;
+      c.w = m.c.w; c.h = m.c.h; c.colH = vehicleColH(m.c.bike, m.c.h); c.color = m.c.col;
       c.isBike = m.c.bike; c.isTank = m.c.tank; c.isTaxi = m.c.taxi; c.isDelivery = m.c.del;
       c.livery = m.c.liv || null; c.wasPolice = m.c.pol;
       c.helmet = m.c.hel || '#2a2a2e'; c.riderShirt = g.shirt;

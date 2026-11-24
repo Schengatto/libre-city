@@ -124,10 +124,22 @@ for (const [kind, d] of Object.entries(decoded)) {
 }
 ok(decoded.saloon.worldColH === 13 && decoded.bike.worldColH === 8, 'world car colH keeps saloon 13 and bike 8');
 
-const colHDerivedBodies = ['netParkCar', 'netApplyRemote'].map(name => [name, extractTopLevel(netSource, name)]);
-for (const [name, body] of colHDerivedBodies) {
-  ok(body.includes('vehicleColH(') && !body.includes('colH: 13'), `colH derived in ${name}`);
-}
+const parkCarBody = extractTopLevel(netSource, 'netParkCar');
+ok(parkCarBody.includes('vehicleColH(') && !parkCarBody.includes('colH: 13'), 'colH derived in netParkCar');
+
+const remoteDecoder = loadSim('PVEH04');
+vm.runInContext(['var net = { players: new Map([[7, { shirt: "#fff" }]]), looseCars: new Map() };', 'function netApplyCops() {}', extractTopLevel(netSource, 'netApplyRemote')].join('\n'), remoteDecoder.context);
+const remoteCarColH = remoteDecoder.run(`(() => {
+  const message = car => ({ t: 's', x: 0, y: 0, a: 0, hp: 100, c: JSON.parse(JSON.stringify(carPayload(car))) });
+  const colHAfter = car => { netApplyRemote(7, message(car)); return net.players.get(7).car.colH; };
+  return {
+    saloon: colHAfter(makeCar(0, 0, 'traffic')),
+    bus: colHAfter(makeBus(makeCar(0, 0, 'traffic'))),
+    bike: colHAfter(makeMoto(makeCar(0, 0, 'traffic'))),
+  };
+})()`);
+ok(remoteCarColH.saloon === 13 && remoteCarColH.bus === 15 && remoteCarColH.bike === 8, `remote player car colH follows vehicle change (${JSON.stringify(remoteCarColH)})`);
+ok(!extractTopLevel(netSource, 'netApplyRemote').includes('colH: 13'), 'netApplyRemote has no fixed colH');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
