@@ -20,7 +20,7 @@ const TRAIN_HORN_NEAR = 300, TRAIN_HORN_FAR = 370;
 
 // Train state: rebuilt every frame in updateTrainKinematics(); `segs` are the oriented
 // boxes (locomotive + carriages) with centre, heading, length and a locomotive flag.
-const train = { isTrain: true, x: 0, y: 0, s: 0, segs: [] };
+const train = { x: 0, y: 0, s: 0, segs: [] };
 const railWrap = along => ((along % RAIL_LOOP_LEN) + RAIL_LOOP_LEN) % RAIL_LOOP_LEN;
 
 // Train position as a function of `trainClock` alone (default `frame`; a client rendering
@@ -34,7 +34,7 @@ function updateTrainKinematics(trainClock = frame) {
   let off = 0;
   const addSeg = (len, loco) => {
     const p = railPointAt(headS - (off + len / 2));
-    train.segs.push({ cx: p.x, cy: p.y, angle: p.angle, cos: Math.cos(p.angle), sin: Math.sin(p.angle), w: len, loco });
+    train.segs.push({ isTrainSegment: true, index: train.segs.length, cx: p.x, cy: p.y, y: p.y, angle: p.angle, cos: Math.cos(p.angle), sin: Math.sin(p.angle), w: len, loco });
     off += len + TRAIN_GAP;
   };
   addSeg(LOCO_L, true);
@@ -105,6 +105,24 @@ function trainCollide() {
 }
 
 // ---------- Drawing the railway (static, baked into the chunks by render.js) ----------
+function railAlongSpans(rx0, ry0, rx1, ry1) {
+  const { straights, arcLen, sideStarts } = railLoop, spans = [], pad = 1;
+  const axisRange = (start, direction, low, high) => direction > 0 ? [low - start, high - start]
+    : direction < 0 ? [start - high, start - low]
+    : start >= low && start <= high ? [-Infinity, Infinity] : [Infinity, -Infinity];
+  let along = 0;
+  for (let side = 0; side < 4; side++) {
+    const length = straights[side % 2], [sx, sy] = sideStarts[side], dx = [1, 0, -1, 0][side], dy = [0, 1, 0, -1][side];
+    const [xLow, xHigh] = axisRange(sx, dx, rx0, rx1), [yLow, yHigh] = axisRange(sy, dy, ry0, ry1);
+    const low = Math.max(0, xLow, yLow), high = Math.min(length, xHigh, yHigh);
+    if (low <= high) spans.push([along + low - pad, along + high + pad]);
+    along += length;
+    const ex = sx + dx * length, ey = sy + dy * length, [nx, ny] = sideStarts[(side + 1) % 4];
+    if (Math.min(ex, nx) <= rx1 && Math.max(ex, nx) >= rx0 && Math.min(ey, ny) <= ry1 && Math.max(ey, ny) >= ry0) spans.push([along - pad, along + arcLen + pad]);
+    along += arcLen;
+  }
+  return spans;
+}
 function drawRailway() {
   const { x0, y0, x1, y1 } = railLoop, r = RAIL_CORNER_R, b = RAIL_BALLAST;
   const touches = (ax0, ay0, ax1, ay1) => camX < ax1 && camX + vw > ax0 && camY < ay1 && camY + vh > ay0;
@@ -112,28 +130,32 @@ function drawRailway() {
     && !touches(x0 - b, y0 - b, x0 + r + b, y1 + b) && !touches(x1 - r - b, y0 - b, x1 + b, y1 + b)) return;   // track outside this chunk
   const loopPath = inset => roundRect(x0 + inset - camX, y0 + inset - camY, x1 - x0 - 2 * inset, y1 - y0 - 2 * inset, r - inset);
   const inChunk = p => p.x > camX - b && p.x < camX + vw + b && p.y > camY - b && p.y < camY + vh + b;
+  const spans = railAlongSpans(camX - b, camY - b, camX + vw + b, camY + vh + b);
+  const forEachRailStep = (step, visit) => {
+    let along = 0;
+    for (const [low, high] of spans)
+      for (along = Math.max(along, Math.ceil(low / step) * step); along <= high && along < RAIL_LOOP_LEN; along += step) visit(along, railPointAt(along));
+  };
   ctx.save();
   clipOutTiles((tx, ty) => tileAt(tx, ty) === ROAD);
   // Ballast (gravel).
   ctx.strokeStyle = '#484440'; ctx.lineWidth = b; loopPath(0); ctx.stroke();
   ctx.fillStyle = 'rgba(255,255,255,.05)';
-  for (let along = 0; along < RAIL_LOOP_LEN; along += 9) {
-    const p = railPointAt(along);
-    if (!inChunk(p)) continue;
+  forEachRailStep(9, (along, p) => {
+    if (!inChunk(p)) return;
     const h = hash2(along | 0, RAIL_INSET), side = (h >> 2) % b - b / 2, jitter = h & 3;
     ctx.fillRect(p.x - camX + Math.cos(p.angle) * jitter - Math.sin(p.angle) * side, p.y - camY + Math.sin(p.angle) * jitter + Math.cos(p.angle) * side, 2, 2);
-  }
+  });
   // Sleepers.
   ctx.fillStyle = '#5a3f2a';
   ctx.beginPath();
-  for (let along = 0; along < RAIL_LOOP_LEN; along += 16) {
-    const p = railPointAt(along);
-    if (!inChunk(p) || tileAt(Math.floor(p.x / T), Math.floor(p.y / T)) === ROAD) continue;
+  forEachRailStep(16, (along, p) => {
+    if (!inChunk(p) || tileAt(Math.floor(p.x / T), Math.floor(p.y / T)) === ROAD) return;
     const tx = Math.cos(p.angle) * 3, ty = Math.sin(p.angle) * 3, nx = -Math.sin(p.angle) * RAIL_TIE_H / 2, ny = Math.cos(p.angle) * RAIL_TIE_H / 2;
     const sx = p.x - camX, sy = p.y - camY;
     ctx.moveTo(sx - tx - nx, sy - ty - ny); ctx.lineTo(sx + tx - nx, sy + ty - ny);
     ctx.lineTo(sx + tx + nx, sy + ty + ny); ctx.lineTo(sx - tx + nx, sy - ty + ny); ctx.closePath();
-  }
+  });
   ctx.fill();
   ctx.restore();
   // The two steel rails, with a highlight along the top.
@@ -159,34 +181,37 @@ function drawRailway() {
 }
 
 // ---------- Drawing the train (dynamic entity, Y-sorted in render()) ----------
-function drawTrain() {
-  const hh = TRAIN_BODY_H / 2;
-  const offScreen = (x, y, hw) => x + hw < -20 || x - hw > vw + 20 || y + hw < -20 || y - hw > vh + 20;
+function trainSegmentVisible(s) {
+  const x = s.cx - camX, y = s.cy - camY, hw = s.w / 2;
+  return x + hw >= -20 && x - hw <= vw + 20 && y + hw >= -20 && y - hw <= vh + 20;
+}
+function pushTrainSegments(ents) {
+  for (const s of train.segs) ents.push(s);
+}
+function drawTrainShadows() {
   for (const s of train.segs) {
-    const x = s.cx - camX, y = s.cy - camY, hw = s.w / 2;
-    if (offScreen(x, y, hw)) continue;
-    ctx.save(); ctx.translate(x + 3, y + 5); ctx.rotate(s.angle);
-    drawShadow(0, 0, hw, hh);
+    if (!trainSegmentVisible(s)) continue;
+    ctx.save(); ctx.translate(s.cx - camX + 3, s.cy - camY + 5); ctx.rotate(s.angle);
+    drawShadow(0, 0, s.w / 2, TRAIN_BODY_H / 2);
     ctx.restore();
   }
-  for (let i = 0; i < train.segs.length; i++) {
-    const s = train.segs[i];
-    const x = s.cx - camX, y = s.cy - camY, hw = s.w / 2;
-    if (offScreen(x, y, hw)) continue;
-    ctx.save(); ctx.translate(x, y); ctx.rotate(s.angle);
-    // Body.
-    ctx.fillStyle = s.loco ? '#8a2f2f' : (i % 2 ? '#3f6a8c' : '#3a7a5a');
-    roundRect(-hw, -hh, s.w, TRAIN_BODY_H, 5); ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,.4)'; ctx.lineWidth = 1.5; roundRect(-hw, -hh, s.w, TRAIN_BODY_H, 5); ctx.stroke();
-    // Roof.
-    ctx.fillStyle = 'rgba(0,0,0,.22)'; roundRect(-hw + 6, -hh + 4, s.w - 12, TRAIN_BODY_H - 8, 3); ctx.fill();
-    // Windows.
-    ctx.fillStyle = 'rgba(150,210,255,.8)';
-    for (let wx = -hw + 11; wx < hw - 9; wx += 14) ctx.fillRect(wx, -4, 8, 8);
-    if (s.loco) {
-      ctx.fillStyle = '#ffe9a0'; ctx.beginPath(); ctx.arc(hw - 4, 0, 3, 0, TAU); ctx.fill();   // headlight
-      ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(-hw * 0.4, 0, 4, 0, TAU); ctx.fill();   // chimney
-    }
-    ctx.restore();
+}
+function drawTrainSegment(s) {
+  if (!trainSegmentVisible(s)) return;
+  const hw = s.w / 2, hh = TRAIN_BODY_H / 2;
+  ctx.save(); ctx.translate(s.cx - camX, s.cy - camY); ctx.rotate(s.angle);
+  // Body.
+  ctx.fillStyle = s.loco ? '#8a2f2f' : (s.index % 2 ? '#3f6a8c' : '#3a7a5a');
+  roundRect(-hw, -hh, s.w, TRAIN_BODY_H, 5); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,.4)'; ctx.lineWidth = 1.5; roundRect(-hw, -hh, s.w, TRAIN_BODY_H, 5); ctx.stroke();
+  // Roof.
+  ctx.fillStyle = 'rgba(0,0,0,.22)'; roundRect(-hw + 6, -hh + 4, s.w - 12, TRAIN_BODY_H - 8, 3); ctx.fill();
+  // Windows.
+  ctx.fillStyle = 'rgba(150,210,255,.8)';
+  for (let wx = -hw + 11; wx < hw - 9; wx += 14) ctx.fillRect(wx, -4, 8, 8);
+  if (s.loco) {
+    ctx.fillStyle = '#ffe9a0'; ctx.beginPath(); ctx.arc(hw - 4, 0, 3, 0, TAU); ctx.fill();   // headlight
+    ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(-hw * 0.4, 0, 4, 0, TAU); ctx.fill();   // chimney
   }
+  ctx.restore();
 }

@@ -45,6 +45,13 @@ const CHECK_ISLAND = `(() => {
     const tile = tileAt(x + outward.x * ring, y + outward.y * ring);
     if (tile !== ROAD && tile !== SIDEWALK) { failures.push('gate tile ' + x + ',' + y + ' is not fully on the deck (ring ' + ring + ')'); break; }
   }
+  const openingLane = opening.map(([x, y]) => horizontalFence ? x : y).join();
+  for (let ring = 1; ring < ISLAND_BANKS; ring++) {
+    const roadLane = [];
+    if (horizontalFence) { for (let x = x0; x <= x1; x++) if (tileAt(x, gateTileY + outward.y * ring) === ROAD) roadLane.push(x); }
+    else for (let y = y0; y <= y1; y++) if (tileAt(gateTileX + outward.x * ring, y) === ROAD) roadLane.push(y);
+    if (roadLane.join() !== openingLane) failures.push('deck road band at ring ' + ring + ' (' + roadLane.join() + ') is not the gate opening (' + openingLane + ')');
+  }
   let deckTiles = 0;
   for (let ring = 2; ring < ISLAND_BANKS; ring++) {
     if (horizontalFence) {
@@ -85,7 +92,7 @@ const CHECK_ISLAND = `(() => {
     if (opening.some(([x, y]) => horizontalFence ? x === tx : y === ty)) failures.push(name + ' stands in the lane of the gate opening');
     if (tx < x0 + 1 || tx > x1 - 1 || ty < y0 + 1 || ty > y1 - 1) failures.push(name + ' is not inside the yard');
   }
-  return JSON.stringify({ failures, clamped: bridge.x !== gateApproach.x || bridge.y !== gateApproach.y });
+  return JSON.stringify({ failures, clamped: Math.abs(bridge.x - gateApproach.x) > T / 2 || Math.abs(bridge.y - gateApproach.y) > T / 2 });
 })()`;
 
 const CHECK_PONDS = `(() => {

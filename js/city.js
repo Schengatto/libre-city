@@ -238,9 +238,10 @@ function reserveArmyIsland({ i, j }, armyNode) {
   addRoadEdge(armyNode + dj * NX + di, nodes.length - 1);
   const island = { x0: x0 - ISLAND_BANKS, y0: y0 - ISLAND_BANKS, x1: x1 + ISLAND_BANKS, y1: y1 + ISLAND_BANKS };
   const fenceCentreX = (x0 + ARMY_W / 2) * T, fenceCentreY = (y0 + ARMY_H / 2) * T;
+  const tileCentre = px => (Math.floor(px / T) + 0.5) * T;
   const bridge = di
-    ? { x: gateApproach.x, y: clamp(gateApproach.y, fenceCentreY - (ARMY_H / 2 - 4) * T, fenceCentreY + (ARMY_H / 2 - 4) * T) }
-    : { x: clamp(gateApproach.x, fenceCentreX - (ARMY_W / 2 - 4) * T, fenceCentreX + (ARMY_W / 2 - 4) * T), y: gateApproach.y };
+    ? { x: gateApproach.x, y: tileCentre(clamp(gateApproach.y, fenceCentreY - (ARMY_H / 2 - 4) * T, fenceCentreY + (ARMY_H / 2 - 4) * T)) }
+    : { x: tileCentre(clamp(gateApproach.x, fenceCentreX - (ARMY_W / 2 - 4) * T, fenceCentreX + (ARMY_W / 2 - 4) * T)), y: gateApproach.y };
   const tileInside = (line, offset) => Math.ceil(line / T - 0.5) + offset;
   const superblock = { x0: tileInside(colX[i - 1], 0), y0: tileInside(rowY[j - 1], 0), x1: tileInside(colX[i + 1], -1), y1: tileInside(rowY[j + 1], -1) };
   armyZone = { x0, y0, x1, y1, island, gateApproach, bridge, superblock };
