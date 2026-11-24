@@ -1,7 +1,7 @@
 import vm from 'node:vm';
 import runtime from './sim-runtime.js';
 import stubs from '../js/sim-stubs.js';
-import { readSource } from './render-test-kit.mjs';
+import { readSource, extractTopLevel } from './render-test-kit.mjs';
 const { BUNDLE } = runtime;
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ', msg); } else { fail++; console.log('  XX FAIL:', msg); } };
@@ -64,6 +64,40 @@ const struck = run(`(() => {
   return { rear: dentLevel(c.dents, DENT_ZONE.rear), front: dentLevel(c.dents, DENT_ZONE.front), health: c.health };
 })()`);
 ok(struck.rear === 2 && struck.front === 0 && struck.health === 70, `damageCar dents the struck side (${JSON.stringify(struck)})`);
+
+const netSource = readSource('net.js');
+const networkDecoder = loadSim('PVEH06');
+vm.runInContext([
+  'function interpFeed() {}',
+  'var net = { looseCars: new Map() };',
+  ...['netApplyCar', 'netMakeWorldCar', 'carNetPayload', 'netParkCar'].map(name => extractTopLevel(netSource, name)),
+].join('\n'), networkDecoder.context);
+const networked = networkDecoder.run(`(() => {
+  const wire = value => JSON.parse(JSON.stringify(value));
+  const saloon = makeCar(0, 0, 'traffic');
+  const bus = makeBus(makeCar(0, 0, 'traffic'));
+  addDent(bus, 30, Math.PI); addDent(bus, 10, Math.PI / 2);
+  const worldBus = netMakeWorldCar(wire(carPayload(bus)));
+  const decodedDents = worldBus.dents;
+  netApplyCar(worldBus, wire(carPayload(saloon)));
+  bus.netId = 5; saloon.netId = 6;
+  const parkedBus = { ...wire(carNetPayload(bus)), cid: 9 };
+  netParkCar(1, parkedBus);
+  const localPayload = carNetPayload(saloon);
+  return {
+    saloonJson: JSON.stringify(carPayload(saloon)),
+    localSaloonJson: JSON.stringify(localPayload),
+    busDents: bus.dents, decodedDents, resetDents: worldBus.dents,
+    localBusDents: carNetPayload(bus).dn, parkedDents: net.looseCars.get(9).dents,
+  };
+})()`);
+ok(!networked.saloonJson.includes('"dn"') && !networked.localSaloonJson.includes('"dn"'), 'dn omitted when undamaged');
+ok(networked.busDents === (2 | 1 << 4) && networked.decodedDents === networked.busDents, `dn round trip (${networked.decodedDents})`);
+ok(networked.resetDents === 0, 'an undamaged payload resets decoded dents to 0');
+ok(networked.localBusDents === networked.busDents, 'carNetPayload carries dn');
+ok(networked.parkedDents === networked.busDents, 'netParkCar decodes dn');
+ok(extractTopLevel(netSource, 'netReconcileMe').includes('me.car.dn'), 'netReconcileMe copies me.car.dn');
+ok(extractTopLevel(netSource, 'netApplyRemote').includes('m.c.dn'), 'netApplyRemote decodes m.c.dn');
 
 function splitTopLevelArguments(text) {
   const parts = [];

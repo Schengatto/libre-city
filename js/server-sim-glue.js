@@ -200,7 +200,7 @@ function carPayload(c) {
            bike: !!c.isBike, tank: !!c.isTank, taxi: !!c.isTaxi, del: !!c.isDelivery,
            liv: c.livery || null, pol: !!c.wasPolice, hel: c.helmet || null,
            tur: c.isTank ? c.turretA : null, siren: !!c.sirenOn, lp: c.lightPhase || 0,
-           burn: !!c.burning, smk: !!c.smoking,
+           burn: !!c.burning, smk: !!c.smoking, dn: c.dents || undefined,
            // Driving physics: the client needs it to PREDICT its own vehicle's motion.
            top: c.top, acc: c.accel, mass: c.mass, gears: c.gears };
 }

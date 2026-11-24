@@ -330,7 +330,7 @@ function carNetPayload(c) {
     cid: c.netId || null, x: c.x, y: c.y, an: c.angle, sp: c.speed, w: c.w, h: c.h, col: c.color,
     bike: !!c.isBike, tank: !!c.isTank, taxi: !!c.isTaxi, del: !!c.isDelivery,
     liv: c.livery || null, pol: !!c.wasPolice, hel: c.helmet || null,
-    tur: c.isTank ? c.turretA : null,
+    tur: c.isTank ? c.turretA : null, dn: c.dents || undefined,
   };
 }
 // Compact state of the local player (position, vehicle, statistics).
@@ -390,7 +390,7 @@ function netApplyRemote(id, m) {
       c.tx = m.c.x; c.ty = m.c.y; c.ta = m.c.an; c.speed = m.c.sp;
       c.w = m.c.w; c.h = m.c.h; c.colH = vehicleColH(m.c.bike, m.c.h); c.color = m.c.col;
       c.isBike = m.c.bike; c.isTank = m.c.tank; c.isTaxi = m.c.taxi; c.isDelivery = m.c.del;
-      c.livery = m.c.liv || null; c.wasPolice = m.c.pol;
+      c.livery = m.c.liv || null; c.wasPolice = m.c.pol; c.dents = m.c.dn || 0;
       c.helmet = m.c.hel || '#2a2a2e'; c.riderShirt = g.shirt;
       if (m.c.tur != null) c.turretA = m.c.tur;
       if (m.c.cid != null) { c.netId = m.c.cid; net.looseCars.delete(m.c.cid); }  // they are driving it: drop the parked shape
@@ -414,7 +414,7 @@ function netParkCar(owner, p) {
   c.x = p.x; c.y = p.y; c.angle = p.an; c.speed = p.sp || 0;
   c.w = p.w; c.h = p.h; c.colH = vehicleColH(p.bike, p.h); c.color = p.col;
   c.isBike = p.bike; c.isTank = p.tank; c.isTaxi = p.taxi; c.isDelivery = p.del;
-  c.livery = p.liv || null; c.wasPolice = p.pol;
+  c.livery = p.liv || null; c.wasPolice = p.pol; c.dents = p.dn || 0;
   c.helmet = p.hel || '#2a2a2e';
   if (p.tur != null) c.turretA = p.tur;
 }
@@ -619,7 +619,7 @@ function netApplyCar(c, cp) {
   c.speed = cp.sp;
   c.w = cp.w; c.h = cp.h; c.color = cp.col; c.role = cp.role;
   c.isBike = cp.bike; c.isTank = cp.tank; c.isTaxi = cp.taxi; c.isDelivery = cp.del;
-  c.livery = cp.liv || null; c.wasPolice = cp.pol; c.helmet = cp.hel || '#2a2a2e';
+  c.livery = cp.liv || null; c.wasPolice = cp.pol; c.helmet = cp.hel || '#2a2a2e'; c.dents = cp.dn || 0;
   if (cp.tur != null) c.turretA = cp.tur;
   c.sirenOn = cp.siren; c.lightPhase = cp.lp || 0; c.burning = cp.burn; c.smoking = cp.smk;
 }
@@ -756,7 +756,7 @@ function netReconcileMe() {
   // Car: create/remove following the authority.
   if (me.car && !player.car) { player.car = netMakePlayerCar(me.car); }
   else if (!me.car && player.car) { player.car = null; engineGain(0); }
-  else if (me.car && player.car) { player.car.sirenOn = me.car.siren; if (me.car.tur != null) player.car.turretA = me.car.tur; }
+  else if (me.car && player.car) { player.car.sirenOn = me.car.siren; player.car.dents = me.car.dn || 0; if (me.car.tur != null) player.car.turretA = me.car.tur; }
   // Out of play (dead/busted): overlay with the server's countdown.
   const bm = $('#bigMsg');
   if (me.down) {
