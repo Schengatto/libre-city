@@ -114,7 +114,7 @@ other livery (not army) -> drawVanCabin
 else   -> drawSaloonCabin
 ```
 
-- Spider driver shown when `c.driver || c.role === 'traffic' || c.role === 'police'` (same rule as the bike rider). Torso colour: `player.shirt` for the local player, else `c.riderShirt` with a fixed fallback (remote clients do not receive `riderShirt`).
+- Spider driver shown when the spider is driven or in traffic/police (`c.driver || c.role === 'traffic' || c.role === 'police'`), never for a parked spider unless the local player drives it (client world cars always carry `driver: 'net'`, so a parked one must not show a phantom driver). Torso colour: `player.shirt` for the local player, else `c.riderShirt` with a fixed fallback (remote clients do not receive `riderShirt`).
 - Bus and lorry get a third tyre pair (rear double axle) for length; the builder may tune positions.
 
 ### Network (`js/net.js`)

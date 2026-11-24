@@ -204,6 +204,12 @@ ok(playerSpider.fills.includes('#123456') && !playerSpider.fills.includes('#44aa
 
 const remoteSpider = carRenderer.draw({ ...spiders, role: 'traffic', driver: 'net', riderShirt: undefined });
 ok(remoteSpider.fills.includes('#3a72d2'), 'remote-player spider torso uses the fallback shirt');
+const parkedNetSpider = carRenderer.draw({ ...spiders, role: 'parked', driver: 'net' });
+ok(!parkedNetSpider.fills.includes('#44aa66') && !parkedNetSpider.fills.includes('#d23a3a') && !parkedNetSpider.fills.includes('#3a72d2'), 'parked spider with a net driver shows no torso or helmet');
+const rivalSpider = carRenderer.draw({ ...spiders, role: 'player', driver: 'net' });
+ok(rivalSpider.fills.includes('#44aa66') && rivalSpider.fills.includes('#d23a3a'), 'rival-driven spider still shows its driver');
+const parkedPlayerSpider = carRenderer.draw({ ...spiders, role: 'parked', driver: 'player' });
+ok(parkedPlayerSpider.fills.includes('#123456'), 'a spider the local player sits in shows the driver');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -198,6 +198,10 @@ ok(JSON.stringify(sideNotchX(1)) !== JSON.stringify(sideNotchX(2)), 'side notche
 const networkedSideNotchX = netId => pathPoints(dentRenderer.dents(dentSaloon([[LEFT, 2]], { id: undefined, netId })).calls).map(([x]) => x);
 ok(JSON.stringify(networkedSideNotchX('me#4')) !== JSON.stringify(networkedSideNotchX('rival#9')), 'cars without a numeric id differ by netId');
 ok(JSON.stringify(networkedSideNotchX('me#4')) === JSON.stringify(networkedSideNotchX('me#4')), 'a netId gives a stable notch');
+const numericNetIdSideNotchX = netId => pathPoints(dentRenderer.dents(dentSaloon([[LEFT, 2]], { id: undefined, netId })).calls).map(([x]) => x);
+ok(JSON.stringify(numericNetIdSideNotchX(5)) !== JSON.stringify(numericNetIdSideNotchX(6)), 'cars with a numeric netId differ by netId');
+const sharedNotchX = (idOwner, netIdRival) => JSON.stringify(pathPoints(dentRenderer.dents(dentSaloon([[LEFT, 2]], { id: idOwner, netId: netIdRival })).calls));
+ok(sharedNotchX(77, 5) === sharedNotchX(1, 5), 'netId wins over id so owner and rivals draw the same shape');
 const flatHalfHeight = HALF_HEIGHT - 6;
 const endNotchPoints = pathPoints(dentRenderer.dents(dentSaloon([[FRONT, 3], [REAR, 3]])).calls);
 ok(endNotchPoints.length > 0 && endNotchPoints.every(([, y]) => Math.abs(y) <= flatHalfHeight + 1e-9), 'front and rear notches stay inside the rounded corners');

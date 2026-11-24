@@ -2011,6 +2011,7 @@ function drawSpiderCockpit(c, hw, hh) {
   roundRect(-7, -hh + 3, 8, 6, 2); ctx.fill(); roundRect(-7, hh - 9, 8, 6, 2); ctx.fill();
   ctx.strokeStyle = '#9aa0ac'; ctx.lineWidth = 1.6;
   ctx.beginPath(); ctx.moveTo(-9, -hh + 2); ctx.lineTo(-9, hh - 2); ctx.stroke();
+  if (c.role === 'parked' && c.driver !== 'player') return;
   if (!(c.driver || c.role === 'traffic' || c.role === 'police')) return;
   const seatY = -hh + 6;
   ctx.fillStyle = c.driver === 'player' ? player.shirt : (c.riderShirt || '#3a72d2');
@@ -2038,7 +2039,8 @@ const DENT_DEPTH_PER_LEVEL = 2;
 const DENT_CORNER_RADIUS = 6;
 function drawCarDents(c, hw, hh) {
   if (!c.dents) return;
-  const seed = typeof c.id === 'number' ? c.id | 0 : (c.netId ? hashStr(c.netId) : 0);
+  const seedKey = c.netId != null ? c.netId : c.id;
+  const seed = typeof seedKey === 'number' ? seedKey | 0 : (seedKey ? hashStr(seedKey) : 0);
   const flatHalfHeight = hh - DENT_CORNER_RADIUS;
   const sideOffsetFraction = (seed * 0.6180339887) % 1;
   const sideLength = hw * 2 / 3;
