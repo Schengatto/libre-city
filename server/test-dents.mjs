@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import vm from 'node:vm';
 import runtime from './sim-runtime.js';
 import stubs from '../js/sim-stubs.js';
@@ -51,9 +53,11 @@ const ignored = run(`(() => {
   const plain = makeCar(0, 0, 'traffic');
   const noDirection = makeCar(0, 0, 'traffic');
   const notANumber = makeCar(0, 0, 'traffic');
+  const nonFiniteDamage = makeCar(0, 0, 'traffic');
   addDent(bike, 50, Math.PI); addDent(tank, 50, Math.PI); addDent(plain, 50, undefined);
   addDent(noDirection, 50, undefined); addDent(notANumber, 50, NaN);
-  return [bike, tank, plain, noDirection, notANumber].map(c => !c.dents);
+  addDent(nonFiniteDamage, NaN, Math.PI);
+  return [bike, tank, plain, noDirection, notANumber, nonFiniteDamage].map(c => !c.dents);
 })()`);
 ok(ignored.every(Boolean), 'no dents on bikes, tanks or without a finite direction');
 
@@ -126,7 +130,7 @@ function findDamageCarCalls(source) {
   }
   return calls;
 }
-const callFiles = ['gameplay.js', 'army.js', 'train.js', 'server-sim-glue.js', 'missions.js', 'input.js', 'net.js'];
+const callFiles = fs.readdirSync(path.join(import.meta.dirname, '..', 'js')).filter(file => file.endsWith('.js'));
 let callCount = 0;
 const undirectedCalls = [];
 for (const file of callFiles) {

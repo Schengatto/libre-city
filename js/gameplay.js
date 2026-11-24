@@ -950,7 +950,7 @@ function dentLevel(dents, zone) {
   return (dents >> (2 * zone)) & 3;
 }
 function addDent(c, dmg, impactAngle) {
-  if (c.isBike || c.isTank || !Number.isFinite(impactAngle)) return;
+  if (c.isBike || c.isTank || !Number.isFinite(impactAngle) || !Number.isFinite(dmg)) return;
   const zone = dentZone(c, impactAngle);
   if (!c.dentDamage) { c.dentDamage = [0, 0, 0, 0]; c.dents = 0; }
   c.dentDamage[zone] += dmg;
