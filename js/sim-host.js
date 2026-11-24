@@ -3,7 +3,7 @@ const SIM_HOST_LINK_PATH = '/hostlink';
 let simHostWorker = null;
 
 function simHostWorkerUrl() {
-  return document.querySelector('meta[name="lc-sim-worker"]').content + '#room=' + ROOM_CODE;
+  return document.querySelector('meta[name="lc-sim-worker"]').content;
 }
 
 function simHostLinkUrl() {
@@ -20,7 +20,7 @@ function simHostStart() {
   let worker, startMessage;
   try {
     startMessage = { type: 'start', code: ROOM_CODE, hostId: net.myId, url: simHostLinkUrl(), token: net.token };
-    worker = new Worker(simHostWorkerUrl());
+    worker = new Worker(simHostWorkerUrl(), { name: ROOM_CODE });
   } catch {
     simHostResign();
     return;
