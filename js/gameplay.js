@@ -753,8 +753,8 @@ function carHit(a, b) {
   return { pen, nx, ny, px: a.x + nx * (reachA - pen / 2), py: a.y + ny * (reachA - pen / 2) };
 }
 // Distance beyond which two vehicles cannot touch (broad-phase): half the diagonal of the
-// largest box in play (the tank, 56×30) ×2.
-const CAR_REACH = 64;
+// largest box in play (VEHICLE_MAX_W×VEHICLE_MAX_H, the bus), i.e. its diagonal.
+const CAR_REACH = Math.ceil(Math.hypot(VEHICLE_MAX_W, VEHICLE_MAX_H));
 // Applies a displacement to a car, respecting its kind of motion.
 function shoveCar(c, dx, dy) {
   if (c.role === 'traffic' && c.edge != null) {         // railed car: backs up along its lane

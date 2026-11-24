@@ -211,6 +211,8 @@ function asPlayer(v, fn) {
 }
 
 // ---------- Entity factories ----------
+const VEHICLE_MAX_W = 88, VEHICLE_MAX_H = 30;
+const vehicleColH = (isBike, h) => isBike ? 8 : Math.round(h / 2) + 1;
 let carSeq = 0;                                   // running id (priority at junctions)
 function makeCar(x, y, role, dir) {
   const isPolice = role === 'police';
@@ -219,7 +221,7 @@ function makeCar(x, y, role, dir) {
   return {
     id: carSeq++,
     x, y, angle: dir ? Math.atan2(dir.y, dir.x) : 0, speed: 0,
-    w: 46, h: 24, colH: 13, role,                 // role: traffic | police | parked
+    w: 46, h: 24, colH: vehicleColH(false, 24), role,               // role: traffic | police | parked
     color: isPolice ? '#f2f4f8' : pick(CAR_COLORS),
     dir: dir || pick(DIRS), turnCd: rndi(20, 60),
     maxSpeed: isPolice ? 4.6 : rnd(2.1, 3.0),
@@ -254,13 +256,45 @@ function makePed(x, y, role) {
 function makeTaxi(c) { c.isTaxi = true; c.color = pick(['#ffce2e','#ffc31f','#f5b81f']); c.hornF = 400 + rndi(-12, 12); return c; }
 // Turns a vehicle into a motorbike 🏍️ (narrow frame, nimble through traffic).
 function makeMoto(c) {
-  c.isBike = true; c.w = 34; c.h = 12; c.colH = 8;
+  c.isBike = true; c.w = 34; c.h = 12; c.colH = vehicleColH(true, 12);
   c.maxSpeed = rnd(2.6, 3.4);
   c.mass = 0.55; c.accel = rnd(0.16, 0.19); c.top = rnd(5.8, 6.4);   // light and quick
   c.gears = 5;                                                       // short bike gearbox
   c.hornKind = 'bike'; c.hornF = 520 + rndi(0, 90);                  // shrill scooter beep
   c.riderShirt = pick(CIV_SHIRTS);
   c.helmet = pick(['#e0e0e8','#d23a3a','#2a2a2e','#3a72d2']);
+  return c;
+}
+function makeBus(c) {
+  c.livery = 'bus'; c.w = 88; c.h = 28; c.colH = vehicleColH(false, 28);
+  c.color = pick(['#2f7bd6','#d6452f','#2fa36b','#e0a21f']);
+  c.mass = 3.0; c.accel = 0.05; c.top = 4.2; c.maxSpeed = 1.9; c.gears = 5;
+  c.hornKind = 'truck'; c.hornF = 150;
+  return c;
+}
+function makeLorry(c) {
+  c.livery = 'lorry'; c.w = 76; c.h = 28; c.colH = vehicleColH(false, 28);
+  c.color = pick(CAR_COLORS); c.cargo = '#e6e2d8';
+  c.mass = 2.6; c.accel = 0.06; c.top = 4.5; c.maxSpeed = 2.0; c.gears = 5;
+  c.hornKind = 'truck'; c.hornF = 175;
+  return c;
+}
+function makeSpider(c) {
+  c.livery = 'spider'; c.w = 42; c.h = 22; c.colH = vehicleColH(false, 22);
+  c.color = pick(['#e0201f','#ffcf1f','#1fa0e0','#f2f4f8']);
+  c.helmet = pick(['#e0e0e8','#d23a3a','#2a2a2e','#ffd23a']);
+  c.riderShirt = pick(CIV_SHIRTS);
+  c.mass = 0.8; c.accel = 0.22; c.top = 7.5; c.maxSpeed = 3.3; c.gears = 5;
+  c.hornKind = 'car'; c.hornF = 420;
+  return c;
+}
+function dressTrafficCar(c) {
+  const roll = Math.random();
+  if (roll < 0.04) return makeBus(c);
+  if (roll < 0.10) return makeLorry(c);
+  if (roll < 0.12) return makeSpider(c);
+  if (Math.random() < 0.18) return makeTaxi(c);
+  if (Math.random() < 0.14) return makeMoto(c);
   return c;
 }
 // Delivery bike 🍕: red top box and pizzeria livery.
@@ -278,7 +312,7 @@ function makeServiceCar(type, p) {
   c.serviceType = type;
   if (type === 'police')        { c.wasPolice = true; c.color = '#f2f4f8'; c.mass = 1.2; c.accel = 0.15; c.top = 5.8; c.gears = 5; }
   else if (type === 'hospital') { c.livery = 'ambulance'; c.color = '#f0f2f6'; c.mass = 1.4; c.accel = 0.13; c.top = 5.5; }
-  else if (type === 'fire')     { c.livery = 'fire'; c.color = '#c22822'; c.w = 54; c.h = 26; c.colH = 14;
+  else if (type === 'fire')     { c.livery = 'fire'; c.color = '#c22822'; c.w = 54; c.h = 26; c.colH = vehicleColH(false, 26);
                                   c.mass = 2.4; c.accel = 0.07; c.top = 4.2; c.gears = 3;   // a beast
                                   c.hornKind = 'truck'; c.hornF = 165; }         // deep air horn
   else if (type === 'bank')     { c.livery = 'armored'; c.color = '#8a8f9a'; c.w = 50; c.h = 25;
@@ -290,7 +324,7 @@ function makeServiceCar(type, p) {
   else if (type === 'gunshop')  { c.livery = 'gunshop'; c.color = '#3a3f4c'; c.mass = 1.5; c.accel = 0.10; c.top = 4.8;
                                   c.hornKind = 'truck'; c.hornF = 240; }
   else if (type === 'army')     { c.isTank = true; c.livery = 'tank'; c.color = '#556b3d';
-                                  c.w = 56; c.h = 30; c.colH = 16; c.health = 600;   // armoured!
+                                  c.w = 56; c.h = 30; c.colH = vehicleColH(false, 30); c.health = 600;   // armoured!
                                   c.mass = 4.0; c.accel = 0.05; c.top = 3.0; c.gears = 2;   // slow but unstoppable
                                   c.turretA = c.angle; c.gunCd = 0;
                                   c.hornKind = 'truck'; c.hornF = 130; }
@@ -372,12 +406,10 @@ function spawnTrafficNear(cx, cy, rmin, rmax) {
     const d = dist(mp.x, mp.y, cx, cy);
     if (d < rmin || d > rmax) continue;
     const ed = Math.random() < 0.5 ? 1 : -1;
-    const c = makeTrafficCar(ei, ed, ed > 0 ? rnd(0.05, 0.5) : rnd(0.5, 0.95));
+    const c = dressTrafficCar(makeTrafficCar(ei, ed, ed > 0 ? rnd(0.05, 0.5) : rnd(0.5, 0.95)));
     // Never spawn a car on top of another: they would stay glued together until the
     // safe-distance logic managed to prise them apart.
-    if (cars.some(o => o.role !== 'parked' && dist(o.x, o.y, c.x, c.y) < 70)) continue;
-    if (Math.random() < 0.18) makeTaxi(c);            // a few taxis in the traffic
-    else if (Math.random() < 0.14) makeMoto(c);       // and the odd motorbike
+    if (cars.some(o => o.role !== 'parked' && dist(o.x, o.y, c.x, c.y) < (o.w + c.w) / 2 + 24)) continue;
     return c;
   }
   return null;
