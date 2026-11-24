@@ -57,7 +57,7 @@ const random = mulberry32(hashStr(ROOM_CODE));
 // ---------- Violence filter: needed BEFORE the city is generated ----------
 // With violence off (SINGLE-PLAYER only) the city is peaceful and has NO military
 // zone: no barracks, no tanks, ordinary blocks where the base would be (see
-// reserveArmyZone in city.js). The choice must therefore be read BEFORE generating,
+// pickArmyIsland in city.js). The choice must therefore be read BEFORE generating,
 // and city.js already runs at load time — so we pull it from localStorage, where the
 // new-game panel just wrote it alongside the map code (spIntent in ui.js), or from
 // the save, which remembers its own game's filter (save.js). Comparing against the

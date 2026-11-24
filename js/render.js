@@ -81,6 +81,7 @@ function drawWorldStatic() {
     else drawAsphaltGrain(px, py, x, y);
     if (tileAt(x, y - 1) === BUILDING) { ctx.fillStyle = 'rgba(0,0,0,.20)'; ctx.fillRect(px, py, T, 5); }
     if (tileAt(x - 1, y) === BUILDING) { ctx.fillStyle = 'rgba(0,0,0,.14)'; ctx.fillRect(px, py, 5, T); }
+    drawBridgeParapets(px, py, x, y);
   }
   drawMarkings();
   drawCrosswalks();
@@ -89,7 +90,7 @@ function drawWorldStatic() {
   clipOutTiles((x, y) => tileAt(x, y) === BUILDING);
   drawTrees(x0, y0, x1, y1);
   ctx.restore();
-  drawRailway();                                 // the train track (a horizontal line)
+  drawRailway();                                 // the train track (a loop around the city)
   drawBuildingShadows();
   drawLandmarks();
 }
@@ -101,7 +102,7 @@ function roadAdjacent(x, y) {
   }
   return false;
 }
-// Traces a road edge's curve (Bézier) in screen coordinates.
+// Traces a road edge in screen coordinates.
 function traceEdge(e) {
   const A = nodes[e.a], B = nodes[e.b], steps = Math.max(6, Math.ceil(e.len / (T * 0.7)));
   for (let s = 0; s <= steps; s++) {
@@ -129,26 +130,19 @@ function clipOutTiles(isClippedOut) {
 function drawRoads() {
   const SWHALF = HALF_ROAD + SW_BAND, pad = SWHALF + 6;
   ctx.save();
-  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-  const nodeVisible = (n, r) => !(n.x + r < camX || n.x - r > camX + vw || n.y + r < camY || n.y - r > camY + vh);
+  ctx.lineJoin = 'miter'; ctx.lineCap = 'square';
   // --- Pavement band ---
   ctx.strokeStyle = '#9aa0a8'; ctx.lineWidth = 2 * SWHALF; ctx.beginPath();
-  for (const e of edges) if (!e.dead && edgeVisible(e, pad)) traceEdge(e);
+  for (const e of edges) if (edgeVisible(e, pad)) traceEdge(e);
   ctx.stroke();
-  ctx.fillStyle = '#9aa0a8';
-  for (const n of nodes) if (n.live !== false && nodeVisible(n, SWHALF)) { ctx.beginPath(); ctx.arc(n.x - camX, n.y - camY, HALF_ROAD * 1.05 + SW_BAND, 0, TAU); ctx.fill(); }
   // --- Kerb (dark ring between paving and asphalt) ---
   ctx.strokeStyle = '#767d87'; ctx.lineWidth = 2 * HALF_ROAD + 7; ctx.beginPath();
-  for (const e of edges) if (!e.dead && edgeVisible(e, pad)) traceEdge(e);
+  for (const e of edges) if (edgeVisible(e, pad)) traceEdge(e);
   ctx.stroke();
-  ctx.fillStyle = '#767d87';
-  for (const n of nodes) if (n.live !== false && nodeVisible(n, SWHALF)) { ctx.beginPath(); ctx.arc(n.x - camX, n.y - camY, HALF_ROAD * 1.05 + 3.5, 0, TAU); ctx.fill(); }
   // --- Asphalt ---
   ctx.strokeStyle = '#33363d'; ctx.lineWidth = 2 * HALF_ROAD; ctx.beginPath();
-  for (const e of edges) if (!e.dead && edgeVisible(e, pad)) traceEdge(e);
+  for (const e of edges) if (edgeVisible(e, pad)) traceEdge(e);
   ctx.stroke();
-  ctx.fillStyle = '#33363d';
-  for (const n of nodes) if (n.live !== false && nodeVisible(n, SWHALF)) { ctx.beginPath(); ctx.arc(n.x - camX, n.y - camY, HALF_ROAD * 1.05, 0, TAU); ctx.fill(); }
   ctx.restore();
 }
 function drawTile(t, px, py, x, y) {
@@ -314,6 +308,16 @@ function drawWaterTile(px, py, x, y) {
       ctx.fillStyle = '#b4b9c0'; edgeBand(px, py, dx, dy, 3);
       ctx.fillStyle = 'rgba(255,255,255,.35)'; edgeBand(px, py, dx, dy, 1);
     }
+  }
+}
+function drawBridgeParapets(px, py, x, y) {
+  const island = armyZone && armyZone.island;
+  if (!island || x < island.x0 || x > island.x1 || y < island.y0 || y > island.y1) return;
+  for (const [dx, dy] of WATER_SIDES) {
+    if (tileAt(x + dx, y + dy) !== WATER) continue;
+    ctx.fillStyle = 'rgba(0,0,0,.45)'; edgeBand(px, py, dx, dy, 8);
+    ctx.fillStyle = '#ddd6c6'; edgeBand(px, py, dx, dy, 5);
+    ctx.fillStyle = 'rgba(255,255,255,.55)'; edgeBand(px, py, dx, dy, 1.5);
   }
 }
 function treeInPlanter(x, y) {
@@ -1173,12 +1177,11 @@ function drawFacade(b, px, py, W, H, L) {
     // North/west: the door stays hidden behind the roof.
   }
 }
-// Dashed centre lines following the curve of each road.
+// Dashed centre lines along each road.
 function drawMarkings() {
   ctx.save();
   ctx.strokeStyle = '#e8c84a'; ctx.lineWidth = 2; ctx.setLineDash([12, 14]); ctx.lineCap = 'butt';
   for (const e of edges) {
-    if (e.dead) continue;                             // road suppressed by the military base
     const A = nodes[e.a], B = nodes[e.b];
     const minx = Math.min(A.x, B.x, e.cx) - 40, maxx = Math.max(A.x, B.x, e.cx) + 40;
     const miny = Math.min(A.y, B.y, e.cy) - 40, maxy = Math.max(A.y, B.y, e.cy) + 40;
@@ -2078,7 +2081,7 @@ function render() {
   for (const c of cars) ents.push(c);
   for (const p of peds) ents.push(p);
   if (!player.car) ents.push(player);          // on foot, draw the player; while driving the car covers them
-  if (train.active) ents.push(train);          // the passing train (Y-sorted like the cars)
+  ents.push(train);                            // the looping train (Y-sorted like the cars)
   if (netActive()) netPushEnts(ents);          // multiplayer: the rivals' ghosts
   ents.sort((a, b) => a.y - b.y);
   for (const e of ents) {
@@ -2124,9 +2127,12 @@ cityMini.width = MAP_W; cityMini.height = MAP_H;
     m.fillStyle = { police: '#4a6fd2', hospital: '#e84a4a', fire: '#e07a2a', bank: '#e0c04a', market: '#3ab0a0', pizzeria: '#ff8a3a', gunshop: '#c04ad2', army: '#6a8a3a' }[lm.type];
     m.fillRect(lm.x0, lm.y0, lm.x1 - lm.x0 + 1, lm.y1 - lm.y0 + 1);
   }
-  // The railway: a clearly visible horizontal line.
+  // The railway: a clearly visible loop.
   m.fillStyle = '#c9a24a';
-  m.fillRect(0, RAIL_TY, MAP_W, 1);
+  for (let along = 0; along < RAIL_LOOP_LEN; along += T / 2) {
+    const p = railPointAt(along);
+    m.fillRect(Math.floor(p.x / T), Math.floor(p.y / T), 1, 1);
+  }
 })();
 const miniEl = document.getElementById('mini');
 const mctx = miniEl ? miniEl.getContext('2d') : null;

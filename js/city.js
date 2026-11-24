@@ -1,7 +1,7 @@
-// LIBRE CITY · js/city.js — city generation: curved road graph, tiles and alleys,
+// LIBRE CITY · js/city.js — city generation: street grid graph, tiles and alleys,
 // landmarks (hospital, police, gun shop…), military base, buildings and street detail.
 
-// ---------- City: road network as a graph (roads that curve) ----------
+// ---------- City: road network as a graph (an orthogonal street grid) ----------
 const T = 32;                 // pixels per tile
 const PERIOD = 14;            // average region size (variety: parks, plazas, colours)
 // City SIZE is encoded in the 1st letter of the ROOM CODE (P=small, M=medium,
@@ -12,9 +12,8 @@ const PERIOD = 14;            // average region size (variety: parks, plazas, co
 // anonymous rooms, see core.js).
 const MAP_DIMS = { P: [184, 184], M: [184, 368], G: [368, 368] };
 const _mapDims = MAP_DIMS[String(ROOM_CODE).charAt(0)] || MAP_DIMS.P;
-const RIVER_W = 7, OUTSKIRTS_W = 36;
-const CITY_W = _mapDims[0];
-const MAP_W = CITY_W + (PEACE_CITY ? 0 : RIVER_W + OUTSKIRTS_W), MAP_H = _mapDims[1];
+const MAP_W = _mapDims[0], MAP_H = _mapDims[1];
+const CITY_W = MAP_W;
 const WORLD_W = MAP_W * T, WORLD_H = MAP_H * T;
 const HALF_ROAD = 2.1 * T;    // half carriageway width (px)
 const LANE = 18;              // right-lane offset from the road centreline
@@ -67,67 +66,62 @@ function bez(A, B, cx, cy, t) {
            y: mt * mt * A.y + 2 * mt * t * cy + t * t * B.y };
 }
 
-// ---------- Road graph: nodes (junctions) and edges (curved roads) ----------
-const nodes = [];   // { x, y, edges:[idx...], signal }
+// ---------- Road graph: nodes (junctions) and edges (straight roads) ----------
+const nodes = [];   // { x, y, edges:[idx...], signal, live }
 const edges = [];   // { a, b, cx, cy, len }
-const NX = 8, NY = 8, MARGIN = 8;
-function addRoadEdge(a, b, straight) {
+const MARGIN = 8, BLOCK_PITCH = 24;
+const NX = Math.round((MAP_W - 2 * MARGIN) / BLOCK_PITCH) + 1, NY = Math.round((MAP_H - 2 * MARGIN) / BLOCK_PITCH) + 1;
+const ROAD_SEED = hashStr(ROOM_CODE + ':ROADS');
+function gridLines(count, span, lineSalt, axisSalt) {
+  const pitch = span / (count - 1), lines = [];
+  for (let k = 0; k < count; k++) {
+    let jitter = k === 0 || k === count - 1 ? 0 : (hash2(k + lineSalt, axisSalt ^ ROAD_SEED) % 1000 / 1000 - 0.5) * pitch * 0.30;
+    if (k === 1) jitter = Math.max(0, jitter); else if (k === count - 2) jitter = Math.min(0, jitter);
+    lines.push(MARGIN * T + k * pitch + jitter);
+  }
+  return lines;
+}
+const colX = gridLines(NX, (MAP_W - 2 * MARGIN) * T, 11, 3), rowY = gridLines(NY, (MAP_H - 2 * MARGIN) * T, 5, 17);
+function addRoadEdge(a, b) {
   const A = nodes[a], B = nodes[b];
-  const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
-  const dx = B.x - A.x, dy = B.y - A.y, L = Math.hypot(dx, dy) || 1;
-  // Most streets are straight; only ~1 in 4 gets a gentle curve.
-  const curved = !straight && hash2(a + 7, b + 13) % 100 < 26;
-  const bow = curved ? ((hash2(a + 23, b + 5) % 1000 / 1000) - 0.5) * 0.30 : 0;
-  const cx = mx + (-dy / L) * L * bow, cy = my + (dx / L) * L * bow;
-  const e = { a, b, cx, cy, len: 0 };
-  let px = A.x, py = A.y;
-  for (let s = 1; s <= 16; s++) { const p = bez(A, B, cx, cy, s / 16); e.len += Math.hypot(p.x - px, p.y - py); px = p.x; py = p.y; }
+  const e = { a, b, cx: (A.x + B.x) / 2, cy: (A.y + B.y) / 2, len: Math.hypot(B.x - A.x, B.y - A.y) };
   const idx = edges.length; edges.push(e); A.edges.push(idx); B.edges.push(idx);
 }
 function buildGraph() {
-  const spanX = (CITY_W - 2 * MARGIN) * T, spanY = (MAP_H - 2 * MARGIN) * T;
-  const gx = spanX / (NX - 1), gy = spanY / (NY - 1);
   const idOf = (i, j) => j * NX + i;
+  for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) nodes.push({ x: colX[i], y: rowY[j], edges: [], signal: false, live: true });
+  const island = PEACE_CITY ? null : pickArmyIsland();
+  const armyNode = island ? idOf(island.i, island.j) : -1;
+  const streets = [];
   for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
-    const border = i === 0 || j === 0 || i === NX - 1 || j === NY - 1;
-    // Deterministic, bounded jitter on inner nodes → tidy grid without rigidity.
-    const jx = border ? 0 : (hash2(i + 11, j + 3) % 1000 / 1000 - 0.5) * gx * 0.26;
-    const jy = border ? 0 : (hash2(i + 5, j + 17) % 1000 / 1000 - 0.5) * gy * 0.26;
-    nodes.push({ x: MARGIN * T + i * gx + jx, y: MARGIN * T + j * gy + jy, edges: [], signal: false });
+    if (i < NX - 1) streets.push({ a: idOf(i, j), b: idOf(i + 1, j), ring: j === 0 || j === NY - 1, roll: hash2(i * 3 + 1, (j * 7 + 2) ^ ROAD_SEED) % 3 === 0 });
+    if (j < NY - 1) streets.push({ a: idOf(i, j), b: idOf(i, j + 1), ring: i === 0 || i === NX - 1, roll: hash2(i * 9 + 4, (j * 5 + 6) ^ ROAD_SEED) % 3 === 0 });
   }
-  for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
-    if (i < NX - 1) {                                 // horizontal road heading right
-      const onBorder = j === 0 || j === NY - 1;
-      if (onBorder || hash2(i * 3 + 1, j * 7 + 2) % 5 !== 0) addRoadEdge(idOf(i, j), idOf(i + 1, j), onBorder);
-    }
-    if (j < NY - 1) {                                 // vertical road heading down
-      const onBorder = i === 0 || i === NX - 1;
-      if (onBorder || hash2(i * 9 + 4, j * 5 + 6) % 5 !== 0) addRoadEdge(idOf(i, j), idOf(i, j + 1), onBorder);
-    }
+  const candidates = streets.filter(s => s.a !== armyNode && s.b !== armyNode);
+  const degree = new Uint8Array(nodes.length);
+  for (const s of candidates) { degree[s.a]++; degree[s.b]++; }
+  for (const s of candidates) {
+    if (!s.ring && s.roll && degree[s.a] >= 4 && degree[s.b] >= 4) { degree[s.a]--; degree[s.b]--; continue; }
+    addRoadEdge(s.a, s.b);
   }
+  if (island) reserveArmyIsland(island, armyNode);
   // Traffic lights only at some busy junctions, NOT at every one.
   for (let n = 0; n < nodes.length; n++)
     if (nodes[n].edges.length >= 3 && hash2(n * 3 + 2, n + 5) % 3 === 0) nodes[n].signal = true;
 }
 
-// ---------- Rasterising the curved roads onto tiles ----------
-function stampDisc(wx, wy, r, val) {
-  const x0 = Math.max(0, Math.floor((wx - r) / T)), x1 = Math.min(MAP_W - 1, Math.floor((wx + r) / T));
-  const y0 = Math.max(0, Math.floor((wy - r) / T)), y1 = Math.min(MAP_H - 1, Math.floor((wy + r) / T));
-  const r2 = r * r;
-  for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
-    const ex = (tx + 0.5) * T - wx, ey = (ty + 0.5) * T - wy;
-    if (ex * ex + ey * ey <= r2) grid[gi(tx, ty)] = val;
-  }
+// ---------- Rasterising the roads onto tiles ----------
+function stampRoadRect(x0, y0, x1, y1) {
+  const tx0 = Math.max(0, Math.ceil(x0 / T - 0.5)), tx1 = Math.min(MAP_W - 1, Math.floor(x1 / T - 0.5));
+  const ty0 = Math.max(0, Math.ceil(y0 / T - 0.5)), ty1 = Math.min(MAP_H - 1, Math.floor(y1 / T - 0.5));
+  for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) grid[gi(tx, ty)] = ROAD;
 }
 function bakeRoads() {
   grid.fill(BUILDING);
   for (const e of edges) {
-    if (e.dead) continue;                              // road suppressed by the military zone
-    const A = nodes[e.a], B = nodes[e.b], steps = Math.max(8, Math.ceil(e.len / (T * 0.5)));
-    for (let s = 0; s <= steps; s++) { const p = bez(A, B, e.cx, e.cy, s / steps); stampDisc(p.x, p.y, HALF_ROAD, ROAD); }
+    const A = nodes[e.a], B = nodes[e.b];
+    stampRoadRect(Math.min(A.x, B.x) - HALF_ROAD, Math.min(A.y, B.y) - HALF_ROAD, Math.max(A.x, B.x) + HALF_ROAD, Math.max(A.y, B.y) + HALF_ROAD);
   }
-  for (const n of nodes) if (n.live !== false) stampDisc(n.x, n.y, HALF_ROAD * 1.05, ROAD);   // junction apron
 }
 const walkableTile = t => t === ROAD || t === SIDEWALK || t === ALLEY;
 function bakeSidewalksAndBlocks() {
@@ -191,35 +185,100 @@ function carveAlleys() {
 // VIOLENCE FILTER (single-player, PEACE_CITY in core.js): a peaceful city has no army,
 // so nothing is reserved (armyZone stays null → placeArmyBase returns immediately, taking the
 // barracks, tanks, jeeps, guards and turrets with it).
-const ARMY_W = 26, ARMY_H = 20;
+const ARMY_W = 26, ARMY_H = 20, ISLAND_BANKS = 5;
 let armyZone = null;
 const inArmyZone = (tx, ty) => !!armyZone && tx >= armyZone.x0 && tx <= armyZone.x1 && ty >= armyZone.y0 && ty <= armyZone.y1;
-function reserveArmyZone() {
-  if (PEACE_CITY) return;
-  const cityEndIdx = rndi(1, NY - 2) * NX + NX - 1, cityEnd = nodes[cityEndIdx];
-  const x0 = CITY_W + RIVER_W + ((OUTSKIRTS_W - ARMY_W) >> 1);
-  const y0 = clamp(Math.floor(cityEnd.y / T) - (ARMY_H >> 1), 4, MAP_H - ARMY_H - 4);
-  const gateApproach = { x: (x0 - 3) * T, y: cityEnd.y, edges: [], signal: false };
-  nodes.push(gateApproach);
-  addRoadEdge(cityEndIdx, nodes.length - 1, true);
-  armyZone = { x0, y0, x1: x0 + ARMY_W - 1, y1: y0 + ARMY_H - 1, gateApproach };
+function pickArmyIsland() {
+  const clearance = HALF_ROAD + T;
+  const span = (lines, k) => (lines[k + 1] - lines[k - 1] - 2 * clearance) / T;
+  const superblocks = [];
+  for (let j = 2; j <= NY - 3; j++) for (let i = 2; i <= NX - 3; i++) superblocks.push({ i, j, w: span(colX, i), h: span(rowY, j) });
+  const fitting = superblocks.filter(s => s.w >= ARMY_W + 2 * ISLAND_BANKS + 3 && s.h >= ARMY_H + 2 * ISLAND_BANKS + 3);
+  return fitting.length ? fitting[rndi(0, fitting.length - 1)] : superblocks.reduce((best, s) => s.w * s.h > best.w * best.h ? s : best);
 }
-function bakeArmyOutskirts() {
-  if (!armyZone) return;
-  const touchesRoad = (x, y) => {
-    for (let ny = Math.max(0, y - 1); ny <= Math.min(MAP_H - 1, y + 1); ny++)
-      for (let nx = Math.max(0, x - 1); nx <= Math.min(MAP_W - 1, x + 1); nx++) if (grid[gi(nx, ny)] === ROAD) return true;
-    return false;
+function reserveArmyIsland({ i, j }, armyNode) {
+  nodes[armyNode].live = false;
+  const x0 = Math.round((colX[i - 1] + colX[i + 1]) / 2 / T - ARMY_W / 2), x1 = x0 + ARMY_W - 1;
+  const y0 = Math.round((rowY[j - 1] + rowY[j + 1]) / 2 / T - ARMY_H / 2), y1 = y0 + ARMY_H - 1;
+  const [di, dj] = [[0, -1], [1, 0], [0, 1], [-1, 0]][rndi(0, 3)];
+  const gateApproach = {
+    x: di ? (di < 0 ? x0 - 0.5 : x1 + 1.5) * T : colX[i],
+    y: dj ? (dj < 0 ? y0 - 0.5 : y1 + 1.5) * T : rowY[j],
+    edges: [], signal: false, live: true,
   };
-  const clearing = (x, y) => x >= armyZone.x0 - 3 && x <= armyZone.x1 + 3 && y >= armyZone.y0 - 3 && y <= armyZone.y1 + 3;
-  for (let y = 0; y < MAP_H; y++) for (let x = CITY_W; x < MAP_W; x++) {
-    if (touchesRoad(x, y)) continue;
-    if (x < CITY_W + RIVER_W) grid[gi(x, y)] = WATER;
-    else if (!clearing(x, y) && hash2(x >> 1, y >> 1) % 3 === 0 && hash2(x * 5, y * 7) % 4 !== 0) grid[gi(x, y)] = TREE;
-    else grid[gi(x, y)] = GRASS;
+  nodes.push(gateApproach);
+  addRoadEdge(armyNode + dj * NX + di, nodes.length - 1);
+  const island = { x0: x0 - ISLAND_BANKS, y0: y0 - ISLAND_BANKS, x1: x1 + ISLAND_BANKS, y1: y1 + ISLAND_BANKS };
+  armyZone = { x0, y0, x1, y1, island, gateApproach };
+}
+function bakeArmyIsland() {
+  if (!armyZone) return;
+  const { x0, y0, x1, y1, island, gateApproach } = armyZone;
+  const gateX = Math.floor(gateApproach.x / T), gateY = Math.floor(gateApproach.y / T), deckHalf = HALF_ROAD + T;
+  const verticalBridge = gateY < y0 || gateY > y1;
+  const beyondGateSide = (x, y) => gateY < y0 ? y < y0 : gateY > y1 ? y > y1 : gateX < x0 ? x < x0 : x > x1;
+  const offAxis = (x, y) => verticalBridge ? Math.abs((x + 0.5) * T - gateApproach.x) : Math.abs((y + 0.5) * T - gateApproach.y);
+  for (let y = island.y0; y <= island.y1; y++) for (let x = island.x0; x <= island.x1; x++) {
+    const ring = Math.max(x0 - x, x - x1, y0 - y, y - y1);
+    if (ring < 1 || (beyondGateSide(x, y) && offAxis(x, y) <= deckHalf)) continue;
+    grid[gi(x, y)] = ring === 1 ? GRASS : ring < ISLAND_BANKS ? WATER : SIDEWALK;
   }
 }
-function genCity() { buildGraph(); reserveArmyZone(); bakeRoads(); bakeSidewalksAndBlocks(); bakeArmyOutskirts(); carveAlleys(); }
+const RAIL_INSET = Math.floor((MARGIN + Math.min(colX[1], rowY[1], MAP_W * T - colX[NX - 2], MAP_H * T - rowY[NY - 2]) / T) / 2);
+const RAIL_CORNER_R = Math.min(6 * T, (RAIL_INSET - MARGIN) * T / 2);
+const railLoop = (() => {
+  const x0 = RAIL_INSET * T, y0 = RAIL_INSET * T, x1 = WORLD_W - RAIL_INSET * T, y1 = WORLD_H - RAIL_INSET * T, r = RAIL_CORNER_R;
+  return {
+    x0, y0, x1, y1,
+    straights: [x1 - x0 - 2 * r, y1 - y0 - 2 * r],
+    arcLen: r * TAU / 4,
+    sideStarts: [[x0 + r, y0], [x1, y0 + r], [x1 - r, y1], [x0, y1 - r]],
+    arcCentres: [[x1 - r, y0 + r], [x1 - r, y1 - r], [x0 + r, y1 - r], [x0 + r, y0 + r]],
+  };
+})();
+const RAIL_LOOP_LEN = 2 * (railLoop.straights[0] + railLoop.straights[1]) + 4 * railLoop.arcLen;
+const railCrossings = [];
+function railPointAt(s) {
+  let along = ((s % RAIL_LOOP_LEN) + RAIL_LOOP_LEN) % RAIL_LOOP_LEN;
+  for (let side = 0; side < 4; side++) {
+    const heading = side * TAU / 4, straight = railLoop.straights[side % 2];
+    if (along < straight) {
+      const [sx, sy] = railLoop.sideStarts[side];
+      return { x: sx + Math.cos(heading) * along, y: sy + Math.sin(heading) * along, angle: heading };
+    }
+    along -= straight;
+    if (along < railLoop.arcLen || side === 3) {
+      const [cx, cy] = railLoop.arcCentres[side], turn = Math.min(along, railLoop.arcLen) / RAIL_CORNER_R;
+      return { x: cx + RAIL_CORNER_R * Math.cos(heading - TAU / 4 + turn), y: cy + RAIL_CORNER_R * Math.sin(heading - TAU / 4 + turn), angle: heading + turn };
+    }
+    along -= railLoop.arcLen;
+  }
+}
+function railCentrelineDistance(x, y) {
+  const { x0, y0, x1, y1 } = railLoop, r = RAIL_CORNER_R;
+  const qx = Math.abs(x - (x0 + x1) / 2) - ((x1 - x0) / 2 - r), qy = Math.abs(y - (y0 + y1) / 2) - ((y1 - y0) / 2 - r);
+  return Math.abs(Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - r);
+}
+function bakeRailCorridor() {
+  for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
+    const t = grid[gi(x, y)];
+    if (t !== ROAD && t !== SIDEWALK && railCentrelineDistance((x + 0.5) * T, (y + 0.5) * T) <= 1.5 * T) grid[gi(x, y)] = GRASS;
+  }
+  const step = T / 4, samples = Math.floor(RAIL_LOOP_LEN / step), runs = [];
+  let runStart = -1;
+  for (let k = 0; k <= samples; k++) {
+    const p = k < samples ? railPointAt(k * step) : null;
+    const onRoad = !!p && grid[gi(Math.floor(p.x / T), Math.floor(p.y / T))] === ROAD;
+    if (onRoad && runStart < 0) runStart = k;
+    else if (!onRoad && runStart >= 0) { runs.push([runStart * step, (k - 1) * step]); runStart = -1; }
+  }
+  if (runs.length > 1 && runs[0][0] === 0 && runs[runs.length - 1][1] === (samples - 1) * step) runs[0][0] = runs.pop()[0] - RAIL_LOOP_LEN;
+  for (const [startS, endS] of runs) {
+    const s = (((startS + endS) / 2) % RAIL_LOOP_LEN + RAIL_LOOP_LEN) % RAIL_LOOP_LEN, p = railPointAt(s);
+    railCrossings.push({ s, x: p.x, y: p.y });
+  }
+}
+function genCity() { buildGraph(); bakeRoads(); bakeSidewalksAndBlocks(); bakeRailCorridor(); bakeArmyIsland(); carveAlleys(); }
 genCity();
 
 const tileAt = (tx, ty) => (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) ? BUILDING : grid[gi(tx, ty)];
@@ -348,7 +407,10 @@ function placeArmyBase() {
   const { x0, y0, x1, y1 } = armyZone;
   const lm = { type: 'army', x0, y0, x1, y1,
                cx: (x0 + (x1 - x0 + 1) / 2) * T, cy: (y0 + (y1 - y0 + 1) / 2) * T };
-  lm.door = { x: armyZone.gateApproach.x, y: armyZone.gateApproach.y - T };
+  const { gateApproach } = armyZone, gateTileX = Math.floor(gateApproach.x / T), gateTileY = Math.floor(gateApproach.y / T);
+  lm.door = gateTileY < y0 || gateTileY > y1
+    ? { x: gateApproach.x - T, y: gateApproach.y + (gateTileY < y0 ? T : -T) }
+    : { x: gateApproach.x + (gateTileX < x0 ? T : -T), y: gateApproach.y - T };
   const id = landmarks.length; landmarks.push(lm);
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) lmGrid[gi(x, y)] = id;
   carveArmyBase(lm);
@@ -433,9 +495,8 @@ const roadDeco = [];     // { x, y, a, kind } — 0 manhole · 1 patch · 2 oil 
 (function bakeRoadDetails() {
   for (const n of nodes) {
     if (n.live === false) continue;                    // junction suppressed by the military zone
-    const liveEdges = n.edges.filter(ei => !edges[ei].dead);
-    if (liveEdges.length < 3) continue;                // no crossings at plain bends
-    for (const ei of liveEdges) {
+    if (n.edges.length < 3) continue;                  // no crossings at plain bends
+    for (const ei of n.edges) {
       const e = edges[ei], fromA = nodes[e.a] === n;
       // Walk along the edge from the node until clear of the junction apron.
       const target = HALF_ROAD * 1.05 + 16, steps = Math.max(10, Math.ceil(e.len / 8));
@@ -452,7 +513,6 @@ const roadDeco = [];     // { x, y, a, kind } — 0 manhole · 1 patch · 2 oil 
   }
   for (let i = 0; i < edges.length; i++) {
     const e = edges[i], count = Math.floor(e.len / 240);
-    if (e.dead) continue;                              // suppressed road: no manholes
     for (let k = 1; k <= count; k++) {
       const t = k / (count + 1), p = edgePos(e, t), tan = edgeTangent(e, t);
       const h = hash2(i * 31 + k, k * 7 + 3);
