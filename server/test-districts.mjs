@@ -257,6 +257,17 @@ ok(residentialStats.length > 0 && residentialStats.every(s => s.buildings > 0) &
   `residential: houses >= 60% of buildings (${residentialStats.length} codes, ${shareRange(houseShares)})`);
 ok(residentialStats.every(s => s.apartments > 0), 'every residential code has apartments');
 ok(residentialStats.every(s => s.wrongApartments === 0), 'residential apartments all at lift 11');
+const STOREY_LIFT_AUDIT = `(() => {
+  const baseLift = { apartment: 11, tower: 16 }, audit = { tall: 0, wrong: 0 };
+  for (const b of bldgs) {
+    if (b.district === RESIDENTIAL || !(b.style in baseLift)) continue;
+    audit.tall++;
+    if (![0, 4, 8].includes(b.lift - baseLift[b.style])) audit.wrong++;
+  }
+  return audit;
+})()`;
+const storeyAudits = Object.values(loaded).map(({ run }) => run(STOREY_LIFT_AUDIT));
+ok(storeyAudits.some(a => a.tall > 0) && storeyAudits.every(a => a.wrong === 0), 'apartment and tower storey variation is always 0, 4 or 8');
 ok(residentialStats.every(s => s.trees + s.courts > 0) && treeShares.every(share => share >= 0.18 && share <= 0.32),
   `residential courts: trees 18-32% (${shareRange(treeShares)})`);
 ok(industrialStats.length > 0 && industrialStats.every(s => s.wrongIndustrial === 0 && s.industrialBuildings > 0),

@@ -632,7 +632,7 @@ function bakeBuildings() {
     else if (b.kind === OFF_KIND) b.style = area >= 20 ? 'tower' : 'shop';
     else if (b.kind === CHINA_KIND) b.style = area >= 20 ? 'pagoda' : 'chinashop';
     else b.style = area >= 20 ? 'warehouse' : 'workshop';
-    const storeyVariation = b.district !== RESIDENTIAL && (b.style === 'apartment' || b.style === 'tower') ? (b.h >> 4) % 3 * 4 : 0;
+    const storeyVariation = b.district !== RESIDENTIAL && (b.style === 'apartment' || b.style === 'tower') ? (b.h >>> 4) % 3 * 4 : 0;
     b.lift = { house: 7, apartment: 11, shop: 9, tower: 16, warehouse: 9, workshop: 8, pagoda: 10, chinashop: 9 }[b.style] + storeyVariation;
     const pal = [RES_COLORS, OFF_COLORS, IND_COLORS, CHINA_COLORS][b.kind];
     b.col = pal[b.h % pal.length];
