@@ -24,8 +24,8 @@ const SNAPSHOT_CODEC_TAG = Object.freeze({
 });
 const SNAPSHOT_CODEC_REJECT = Object.freeze({ rejected: true });
 
-const snapshotCodecTextEncoder = new TextEncoder();
-const snapshotCodecTextDecoder = new TextDecoder();
+let snapshotCodecTextEncoder = null;
+let snapshotCodecTextDecoder = null;
 
 let snapshotCodecBuffer = new Uint8Array(16384);
 let snapshotCodecView = new DataView(snapshotCodecBuffer.buffer);
@@ -81,6 +81,7 @@ function snapshotCodecWriteString(text) {
     return;
   }
   snapshotCodecStringIndexes.set(text, snapshotCodecStringIndexes.size);
+  if (snapshotCodecTextEncoder === null) snapshotCodecTextEncoder = new TextEncoder();
   const utf8 = snapshotCodecTextEncoder.encode(text);
   snapshotCodecWriteByte(SNAPSHOT_CODEC_TAG.NEW_STRING);
   snapshotCodecWriteVarint(utf8.length);
@@ -229,6 +230,7 @@ function snapshotCodecReadNewString() {
   if (byteLength > snapshotCodecBytesLeft()) snapshotCodecReject();
   const start = snapshotCodecPosition;
   snapshotCodecPosition += byteLength;
+  if (snapshotCodecTextDecoder === null) snapshotCodecTextDecoder = new TextDecoder('utf-8', { ignoreBOM: true });
   const text = snapshotCodecTextDecoder.decode(snapshotCodecInput.subarray(start, snapshotCodecPosition));
   snapshotCodecDecodedStrings.push(text);
   return text;
@@ -321,7 +323,7 @@ function snapshotDecode(bytes) {
     if (snapshotCodecReadByte() !== SNAPSHOT_CODEC_MAGIC || snapshotCodecReadByte() !== SNAPSHOT_CODEC_VERSION) return null;
     const value = snapshotCodecReadValue(0);
     return snapshotCodecBytesLeft() === 0 ? value : null;
-  } catch (error) {
+  } catch {
     return null;
   } finally {
     snapshotCodecInput = null;
