@@ -124,6 +124,7 @@ function netDial(done) {
     let ws;
     try { ws = new WebSocket(net.url); }
     catch (e) { if (!settled) { settled = true; clearTimeout(timer); netShutdown(); done('offline'); } return; }
+    ws.binaryType = 'arraybuffer';
     net.sock = ws;
     ws.onopen = () => {
       net.reconnDelay = 0;
@@ -135,6 +136,11 @@ function netDial(done) {
       ws.send(JSON.stringify({ ...hello, ...netClientInfo() }));
     };
     ws.onmessage = ev => {
+      if (ev.data instanceof ArrayBuffer) {
+        const snapshot = settled ? netDecodeBinarySnapshot(ev.data) : null;
+        if (snapshot) onServerMessage(snapshot);
+        return;
+      }
       let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
       if (!m || typeof m !== 'object' || netForgedSnapshotFrame(ev.data, m)) return;
       if (!settled) {                            // awaiting the outcome of the first entry
@@ -164,6 +170,10 @@ function netClientInfo() {
   return { dev: usingTouch ? 'touch' : 'desktop', build: window.LC_BUILD || null };
 }
 const NET_SNAPSHOT_FRAME_PREFIX = '{"t":"w"';
+function netDecodeBinarySnapshot(data) {
+  const decoded = snapshotDecode(new Uint8Array(data));
+  return decoded && typeof decoded === 'object' && decoded.t === 'w' ? decoded : null;
+}
 function netForgedSnapshotFrame(raw, m) {
   return typeof raw === 'string' && raw.startsWith(NET_SNAPSHOT_FRAME_PREFIX) && m.t !== 'w';
 }

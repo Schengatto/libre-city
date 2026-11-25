@@ -69,6 +69,7 @@ const RTC_MAX_ICE_PER_OFFER = 32;
 const FORWARDED_INPUT_NUMBER_FIELDS = ['seq', 'ax', 'ay', 'aim', 'b', 'px', 'py', 'cx', 'cy', 'ca', 'csp', 'w', 'vr', 'lg'];
 const SNAPSHOT_FRAME_BYTE = 0x57;
 const FRAME_SEPARATOR_BYTE = 0x7c;
+const SNAPSHOT_CODEC_HEADER = [0xB5, 0x01];
 const SNAPSHOT_PAYLOAD_PREFIX = Buffer.from('{"t":"w"');
 const HEARTBEAT_MS = 30_000;      // application-level ping to spot dead sockets
 // ABSOLUTE room lifetime cap: any instance is torn down 35 min after creation, regardless
@@ -526,13 +527,23 @@ function startsWithSnapshotPayload(data, payloadStart) {
   return data.length >= payloadEnd
     && data.compare(SNAPSHOT_PAYLOAD_PREFIX, 0, SNAPSHOT_PAYLOAD_PREFIX.length, payloadStart, payloadEnd) === 0;
 }
+function sendSnapshotToGuest(room, guestId, payload, binary) {
+  const target = room.players.get(guestId);
+  if (!target || target.gone || !target.ws || target.ws.readyState !== 1) return;
+  if (target.ws.bufferedAmount > MAX_RELAY_BUFFERED_BYTES) return;
+  try { target.ws.send(payload, { binary }); } catch {}
+}
 function relaySnapshot(room, data) {
   const separatorAt = data.indexOf(FRAME_SEPARATOR_BYTE, 2);
   if (separatorAt < 0 || !startsWithSnapshotPayload(data, separatorAt + 1)) return;
-  const target = room.players.get(data.toString('utf8', 2, separatorAt));
-  if (!target || target.gone || !target.ws || target.ws.readyState !== 1) return;
-  if (target.ws.bufferedAmount > MAX_RELAY_BUFFERED_BYTES) return;
-  try { target.ws.send(data.subarray(separatorAt + 1), { binary: false }); } catch {}
+  sendSnapshotToGuest(room, data.toString('utf8', 2, separatorAt), data.subarray(separatorAt + 1), false);
+}
+function relayBinarySnapshot(room, data) {
+  const idLength = data[1];
+  const payloadStart = 2 + idLength;
+  if (!idLength || data.length <= payloadStart + SNAPSHOT_CODEC_HEADER.length) return;
+  if (data[payloadStart] !== SNAPSHOT_CODEC_HEADER[0] || data[payloadStart + 1] !== SNAPSHOT_CODEC_HEADER[1]) return;
+  sendSnapshotToGuest(room, data.toString('utf8', 2, payloadStart), data.subarray(payloadStart), true);
 }
 function onHostLinkHello(ws, data) {
   let m = null;
@@ -559,9 +570,14 @@ function roomHostRows(room, rows) {
   return rows.filter(row => row && typeof row.id === 'string' && room.players.has(row.id))
     .map(row => plausibleHostRow(row, elapsedMs));
 }
-function onHostLinkMessage(ws, data) {
+function onHostLinkMessage(ws, data, isBinary) {
   const room = ws._hostRoom;
   if (room.hostLink !== ws) return;
+  if (isBinary) {
+    room.hostLastFrameAt = now();
+    relayBinarySnapshot(room, data);
+    return;
+  }
   const isSnapshot = data[0] === SNAPSHOT_FRAME_BYTE && data[1] === FRAME_SEPARATOR_BYTE;
   if (!isSnapshot && data.length > MAX_PAYLOAD) return;
   room.hostLastFrameAt = now();
@@ -929,8 +945,9 @@ hostLinkWss.on('connection', ws => {
   const helloTimer = setTimeout(() => { if (!ws._hostRoom) ws.terminate(); }, HOST_LINK_HELLO_MS);
   ws.on('pong', () => { ws.isAlive = true; });
   ws.on('message', (data, isBinary) => {
-    if (isBinary || !withinHostLinkRate(ws)) { ws.terminate(); return; }
-    if (ws._hostRoom) onHostLinkMessage(ws, data);
+    const binaryAllowed = ws._hostRoom && data[0] === SNAPSHOT_FRAME_BYTE;
+    if ((isBinary && !binaryAllowed) || !withinHostLinkRate(ws)) { ws.terminate(); return; }
+    if (ws._hostRoom) onHostLinkMessage(ws, data, isBinary);
     else onHostLinkHello(ws, data);
   });
   ws.on('close', () => { clearTimeout(helloTimer); onHostLinkClose(ws); });

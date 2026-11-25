@@ -111,6 +111,21 @@ ok(check('{"t":"w","\\u0074":"host","id":"p9"}') === true, 'escaped t key behind
 ok(check('{"t":"w","cars":[]}') === false, 'genuine w snapshot accepted');
 ok(check('{"t":"end"}') === false && check('{"t":"host","id":"p2"}') === false, 'other server messages untouched');
 ok(/netForgedSnapshotFrame\(ev\.data, m\)\) return;/.test(netSource), 'socket dispatch drops forged frames before handling');
+ok(/ws\.binaryType = 'arraybuffer';/.test(netSource), 'the game socket receives binary frames as ArrayBuffer');
+const binaryBranchAt = netSource.indexOf('ev.data instanceof ArrayBuffer');
+const textBranchAt = netSource.indexOf('JSON.parse(ev.data)');
+ok(binaryBranchAt > 0 && binaryBranchAt < textBranchAt
+  && /ev\.data instanceof ArrayBuffer\) \{[^}]*netDecodeBinarySnapshot\(ev\.data\)[^}]*onServerMessage\(snapshot\);\s*return;/.test(netSource),
+  'binary socket frames go through netDecodeBinarySnapshot into the same dispatch as text and never reach the text path');
+
+const codecContext = vm.createContext({ TextEncoder, TextDecoder });
+vm.runInContext(fs.readFileSync(path.join(JS_DIR, 'snapshot-codec.js'), 'utf8') + '\n' + extractTopLevel(netSource, 'netDecodeBinarySnapshot'), codecContext);
+const decodeBinary = value => vm.runInContext('netDecodeBinarySnapshot(snapshotEncode(' + JSON.stringify(value) + ').buffer)', codecContext);
+const worldSnapshot = decodeBinary({ t: 'w', cars: [] });
+ok(worldSnapshot && worldSnapshot.t === 'w' && Array.isArray(worldSnapshot.cars), 'a binary world snapshot decodes to its object');
+ok(decodeBinary({ t: 'ok' }) === null && decodeBinary({ t: 'end' }) === null && decodeBinary({ x: 1 }) === null, 'binary frames that are not world snapshots are rejected');
+ok(decodeBinary(5) === null && decodeBinary(null) === null && decodeBinary([1, 2]) === null, 'binary frames that are not objects are rejected');
+ok(vm.runInContext('netDecodeBinarySnapshot(new Uint8Array([1, 2, 3, 4]).buffer)', codecContext) === null, 'garbage binary bytes are rejected');
 
 function createNetGuestHarness({ guestSendResult = false, hostActive = false } = {}) {
   const calls = { netSend: [], simHostSendInput: [], rtcGuestSendInput: [], rtcGuestConnect: [], rtcGuestClose: 0, rtcHostSignal: [], rtcGuestSignal: [] };
