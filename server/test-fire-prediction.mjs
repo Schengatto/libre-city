@@ -10,6 +10,7 @@ const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ', msg); } els
 const CORE_NAMES = ['clamp'];
 const ENTITY_NAMES = ['LAG_COMP_MAX_MS', 'LAG_HISTORY_TICKS', 'SIM_STEP_MS', 'createBodyHistory', 'bodyHistoryRecord', 'bodyHistoryLookup', 'lagMsToTicks'];
 const NET_NAMES = ['NET_PREDICTED_SHOT_TTL_MS', 'netLagCompMs', 'netPredictedShotPush', 'netPredictedShotConsume'];
+const PREDICTION_NAMES = ['netApplyFx', 'netWorldBulletsFrom', 'netStepPredictedBullets', 'netPredictFire'];
 
 function loadHelpers() {
   const sources = [['core.js', CORE_NAMES], ['entities.js', ENTITY_NAMES], ['net.js', NET_NAMES]];
@@ -203,12 +204,155 @@ function testShooterTags() {
   ok(seenHostileBullets.every(entry => !('o' in entry)), 'hostile bullets have no shooter id');
 }
 
+function createPredictionContext() {
+  const calls = { muzzle: [], copShoot: 0, shoot: 0, smg: 0 };
+  const net = { myId: 'me', authoritative: true, predBullets: [], predictedShots: [] };
+  const sandbox = {
+    net, calls, downT: 0, mDownL: false, mClicked: false, now: 1000,
+    player: { x: 500, y: 700, aim: 0, shootCd: 0, car: null, weaponIdx: 1 },
+    peaceMode: () => false, T: 32, solidTile: () => false, rnd: () => 0,
+    WEAPONS: [
+      { k: 'fists', melee: true, cd: 22 },
+      { k: 'pistol', cd: 20, auto: false, spd: 13, life: 52, spread: 0.03, sfx: 'shoot' },
+      { k: 'smg', cd: 8, auto: true, spd: 13, life: 44, spread: 0.09, sfx: 'smg' },
+      { k: 'shotgun', cd: 46, auto: false, spd: 11, life: 26, spread: 0.22, pellets: 6, sfx: 'shotgun' },
+      { k: 'rocket', cd: 60, rocket: true },
+      { k: 'grenade', cd: 60, grenade: true },
+      { k: 'flamer', cd: 3, auto: true, spd: 5.5, life: 8, spread: 0.3, pellets: 3, fire: true, sfx: 'flame' },
+    ],
+    spawnMuzzle: (x, y, a) => calls.muzzle.push({ x, y, a }),
+    hear: () => 1,
+    sfx: { copShoot: () => { calls.copShoot++; }, shoot: () => { calls.shoot++; }, smg: () => { calls.smg++; } },
+    performance: { now: () => sandbox.now },
+  };
+  const context = vm.createContext(sandbox);
+  const source = readSource('net.js');
+  const names = ['NET_PREDICTED_SHOT_TTL_MS', 'netPredictedShotPush', 'netPredictedShotConsume', ...PREDICTION_NAMES];
+  const declarations = names.map(name => extractTopLevel(source, name)).join('\n');
+  vm.runInContext(declarations + '\n;globalThis.api = { ' + names.join(', ') + ' };', context);
+  return { api: context.api, sandbox, net, calls };
+}
+
+function testOwnMuzzleSuppression() {
+  const fresh = createPredictionContext();
+  fresh.api.netPredictedShotPush(fresh.net.predictedShots, 900);
+  fresh.api.netApplyFx({ k: 0, x: 1, y: 2, a: 0, o: 'me' });
+  ok(fresh.calls.muzzle.length === 0 && fresh.calls.copShoot === 0, 'own muzzle with a fresh predicted shot is not replayed');
+  ok(fresh.net.predictedShots.length === 0, 'the predicted shot is consumed');
+
+  const empty = createPredictionContext();
+  empty.api.netApplyFx({ k: 0, x: 1, y: 2, a: 0, o: 'me' });
+  ok(empty.calls.muzzle.length === 1 && empty.calls.copShoot === 1, 'own muzzle with an empty queue plays late');
+
+  const expired = createPredictionContext();
+  expired.api.netPredictedShotPush(expired.net.predictedShots, 0);
+  expired.sandbox.now = 5000;
+  expired.api.netApplyFx({ k: 0, x: 1, y: 2, a: 0, o: 'me' });
+  ok(expired.calls.muzzle.length === 1 && expired.calls.copShoot === 1, 'own muzzle with only an expired entry plays');
+  ok(expired.net.predictedShots.length === 0, 'the expired entry is dropped');
+
+  for (const owner of ['rival', undefined]) {
+    const foreign = createPredictionContext();
+    foreign.api.netPredictedShotPush(foreign.net.predictedShots, 900);
+    foreign.api.netApplyFx(owner === undefined ? { k: 0, x: 1, y: 2, a: 0 } : { k: 0, x: 1, y: 2, a: 0, o: owner });
+    ok(foreign.calls.muzzle.length === 1 && foreign.calls.copShoot === 1, 'foreign muzzle (' + owner + ') always plays');
+    ok(foreign.net.predictedShots.length === 1, 'foreign muzzle (' + owner + ') leaves the queue untouched');
+  }
+}
+
+function testWorldBulletsFilter() {
+  const { api } = createPredictionContext();
+  const incoming = [
+    { x: 1, y: 2, a: 0, hostile: false, fl: 0, o: 'me' },
+    { x: 3, y: 4, a: 0, hostile: false, fl: 1, o: 'rival' },
+    { x: 5, y: 6, a: Math.PI, hostile: true, fl: 0 },
+  ];
+  const mapped = api.netWorldBulletsFrom(incoming, 'me');
+  ok(mapped.length === 2, 'own bullets are dropped from the snapshot mapping');
+  ok(mapped[0].x === 3 && mapped[0].vx === 12 && mapped[0].flame === true && mapped[0].fromPlayer === true, 'rival bullet kept with speed 12 and player tint');
+  ok(mapped[1].hostile === true && !mapped[1].fromPlayer && Math.abs(mapped[1].vx + 12) < 1e-9, 'hostile bullet kept without player tint');
+  ok(api.netWorldBulletsFrom(incoming, null).length === 3, 'no own id filters nothing');
+}
+
+function testPredictedBulletStep() {
+  const { api, sandbox, net, calls } = createPredictionContext();
+  net.predBullets.push({ x: 10, y: 20, vx: 13, vy: 0, life: 2 }, { x: 0, y: 0, vx: 1, vy: 1, life: 10 });
+  api.netStepPredictedBullets();
+  ok(net.predBullets[0].x === 23 && net.predBullets[0].life === 1 && net.predBullets[1].y === 1, 'predicted bullets advance and age');
+  api.netStepPredictedBullets();
+  ok(net.predBullets.length === 1 && net.predBullets[0].life === 8, 'bullet is removed at life 0');
+  sandbox.solidTile = () => true;
+  api.netStepPredictedBullets();
+  ok(net.predBullets.length === 0, 'bullet is removed on a solid tile');
+  ok(calls.muzzle.length === 0, 'removal spawns no fx');
+}
+
+function testPredictFire() {
+  const pistol = createPredictionContext();
+  pistol.sandbox.mClicked = true;
+  pistol.api.netPredictFire();
+  ok(pistol.net.predBullets.length === 1 && pistol.net.predictedShots.length === 1, 'pistol click predicts one bullet and one shot entry');
+  ok(pistol.sandbox.player.shootCd === 20, 'prediction starts the weapon cooldown');
+  const bullet = pistol.net.predBullets[0];
+  ok(bullet.x === 514 && bullet.y === 700 && bullet.vx === 13 && bullet.life === 52 && bullet.fromPlayer === true, 'bullet starts 14 px ahead with weapon speed and life');
+  ok(pistol.calls.muzzle.length === 1 && pistol.calls.shoot === 1, 'prediction plays the local muzzle flash and sound');
+  pistol.api.netPredictFire();
+  ok(pistol.net.predBullets.length === 1, 'cooldown blocks a second prediction');
+
+  const shotgun = createPredictionContext();
+  shotgun.sandbox.player.weaponIdx = 3;
+  shotgun.sandbox.mClicked = true;
+  shotgun.api.netPredictFire();
+  ok(shotgun.net.predBullets.length === 6 && shotgun.net.predictedShots.length === 1 && shotgun.calls.muzzle.length === 1, 'shotgun predicts 6 pellets, one shot entry, one flash');
+
+  const flamer = createPredictionContext();
+  flamer.sandbox.player.weaponIdx = 6;
+  flamer.sandbox.mDownL = true;
+  flamer.api.netPredictFire();
+  ok(flamer.net.predBullets.length === 3 && flamer.net.predBullets[0].flame === true, 'flamer fires on held button with 3 flamelets');
+
+  const smg = createPredictionContext();
+  smg.sandbox.player.weaponIdx = 2;
+  smg.sandbox.mDownL = true;
+  smg.api.netPredictFire();
+  ok(smg.net.predBullets.length === 1 && smg.calls.smg === 1, 'automatic weapon fires while held');
+
+  const blockers = {
+    'melee weapon': context => { context.player.weaponIdx = 0; },
+    'rocket launcher': context => { context.player.weaponIdx = 4; },
+    'grenade': context => { context.player.weaponIdx = 5; },
+    'down': context => { context.downT = 30; },
+    'in a car': context => { context.player.car = {}; },
+    'peace mode': context => { context.peaceMode = () => true; },
+    'not authoritative': (context, net) => { net.authoritative = false; },
+    'cooldown running': context => { context.player.shootCd = 3; },
+    'no click': context => { context.mClicked = false; },
+  };
+  for (const [name, block] of Object.entries(blockers)) {
+    const blocked = createPredictionContext();
+    blocked.sandbox.mClicked = true;
+    block(blocked.sandbox, blocked.net);
+    blocked.api.netPredictFire();
+    ok(blocked.net.predBullets.length === 0 && blocked.net.predictedShots.length === 0 && blocked.calls.muzzle.length === 0, 'no prediction: ' + name);
+  }
+}
+
+function testNetShutdownResetsPrediction() {
+  const shutdown = extractTopLevel(readSource('net.js'), 'netShutdown');
+  ok(/predBullets\.length = 0/.test(shutdown) && /predictedShots\.length = 0/.test(shutdown), 'netShutdown clears predicted bullets and shots');
+}
+
 testBodyHistory();
 testLagMsToTicks();
 testNetLagCompMs();
 testPredictedShotQueue();
 testHostRewind();
 testShooterTags();
+testOwnMuzzleSuppression();
+testWorldBulletsFilter();
+testPredictedBulletStep();
+testPredictFire();
+testNetShutdownResetsPrediction();
 
 console.log(`\nfire prediction: ${pass} ok, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -45,6 +45,7 @@ const net = {
   firePending: false, enterEdge: false, hornEdge: false, weaponReq: null,  // one-shot actions → server
   wcars: new Map(), wpeds: new Map(),   // id → world entities (interpolated)
   wbullets: [], wrockets: [],           // bullets/rockets (extrapolated between snapshots)
+  predBullets: [], predictedShots: [],  // own shots simulated locally + their pending host confirmations
 };
 const netActive = () => net.mode !== null;
 
@@ -293,6 +294,7 @@ function netShutdown() {
   net.players.clear(); net.looseCars.clear(); net.remoteCops.clear();
   net.mode = null; net.myId = null; net.token = null; net.clockLeft = null;
   net.trainTick = null;
+  net.predBullets.length = 0; net.predictedShots.length = 0;
   net.stats = createNetStats();
   net.score = 0; net.streak = 0; net.bounty = 0; updateBountyHud(0);
   policeOn = true;
@@ -843,7 +845,7 @@ function netOnSnapshot(m) {
   }
   for (const id of net.wpeds.keys()) if (!seenP.has(id)) net.wpeds.delete(id);
   // --- Bullets and rockets (extrapolated locally between snapshots) ---
-  net.wbullets = m.bul.map(b => ({ x: b.x, y: b.y, vx: Math.cos(b.a) * 12, vy: Math.sin(b.a) * 12, hostile: b.hostile, flame: !!b.fl }));
+  net.wbullets = netWorldBulletsFrom(m.bul, net.myId);
   net.wrockets = m.rkt.map(r => ({ x: r.x, y: r.y, vx: Math.cos(r.a) * 6.5, vy: Math.sin(r.a) * 6.5, grenade: !!r.gr }));
   // --- Coins and fires (static: rebuilt on every snapshot) ---
   coins.length = 0; for (const k of m.coins) coins.push({ x: k.x, y: k.y, val: k.v, spin: rnd(0, TAU), bob: rnd(0, TAU) });
@@ -876,8 +878,44 @@ function netOnSnapshot(m) {
 }
 
 // Recreates a cosmetic effect received from the server (existing particles + audio).
+function netWorldBulletsFrom(bul, myId) {
+  const worldBullets = [];
+  for (const b of bul) {
+    if (b.o != null && b.o === myId) continue;
+    const bullet = { x: b.x, y: b.y, vx: Math.cos(b.a) * 12, vy: Math.sin(b.a) * 12, hostile: b.hostile, flame: !!b.fl };
+    if (b.o != null) bullet.fromPlayer = true;
+    worldBullets.push(bullet);
+  }
+  return worldBullets;
+}
+function netPredictFire() {
+  if (!net.authoritative || downT > 0 || player.car || peaceMode()) return;
+  const w = WEAPONS[player.weaponIdx];
+  if (!w || w.melee || w.rocket || w.grenade || player.shootCd > 0) return;
+  if (!(w.auto ? mDownL : mClicked)) return;
+  player.shootCd = w.cd;
+  for (let i = 0; i < (w.pellets || 1); i++) {
+    const a = player.aim + rnd(-w.spread, w.spread);
+    net.predBullets.push({ x: player.x + Math.cos(a) * 14, y: player.y + Math.sin(a) * 14,
+                           vx: Math.cos(a) * w.spd, vy: Math.sin(a) * w.spd, life: w.life, fromPlayer: true, flame: w.fire });
+  }
+  spawnMuzzle(player.x + Math.cos(player.aim) * 14, player.y + Math.sin(player.aim) * 14, player.aim);
+  (sfx[w.sfx] || sfx.shoot)();
+  netPredictedShotPush(net.predictedShots, performance.now());
+}
+function netStepPredictedBullets() {
+  const predicted = net.predBullets;
+  for (let i = predicted.length - 1; i >= 0; i--) {
+    const b = predicted[i];
+    b.x += b.vx; b.y += b.vy; b.life--;
+    if (b.life <= 0 || solidTile(Math.floor(b.x / T), Math.floor(b.y / T))) predicted.splice(i, 1);
+  }
+}
 function netApplyFx(e) {
-  if (e.k === 0) { spawnMuzzle(e.x, e.y, e.a); const h = hear(e.x, e.y, 850); if (h) sfx.copShoot(h); }   // gunshot
+  if (e.k === 0) {
+    if (e.o != null && e.o === net.myId && netPredictedShotConsume(net.predictedShots, performance.now())) return;
+    spawnMuzzle(e.x, e.y, e.a); const h = hear(e.x, e.y, 850); if (h) sfx.copShoot(h);   // gunshot
+  }
   else if (e.k === 1) spawnBlood(e.x, e.y);
   else if (e.k === 2) spawnSparks(e.x, e.y, e.n || 3);
   else if (e.k === 3) { spawnExplosion(e.x, e.y); const h = hear(e.x, e.y, 1100); if (h) sfx.boom(); }     // explosion
@@ -909,6 +947,7 @@ function netRebuildArrays() {
   peds.length = 0;
   for (const p of net.wpeds.values()) peds.push(p);
   bullets.length = 0; for (const b of net.wbullets) bullets.push(b);
+  for (const b of net.predBullets) bullets.push(b);
   rockets.length = 0; for (const r of net.wrockets) rockets.push(r);
 }
 
@@ -988,8 +1027,10 @@ function netSendInput() {
 function updateNetClient() {
   applyTouchInput();                                   // mobile: pours the sticks into virtual keys/aim/fire (no-op on desktop)
   if (mClicked) net.firePending = true;                // remember the click (the server does the firing)
+  netPredictFire();                                    // local tracer/flash/sound now; the host still decides the hit
   updateTrainKinematics(netTrainClock());              // train: kinematics only, on the sim's clock (the server rules on impacts)
   netInterpWorld();                                    // world (traffic/pedestrians) from the snapshots
+  netStepPredictedBullets();
   netRebuildArrays();                                  // populates cars[]/peds[] (world + your own vehicle)
   netReconcileMe();                                    // health/cash/weapon/car/death from the server (NOT the position)
   // The player is CLIENT-AUTHORITATIVE: a full local simulation (movement + collisions with
