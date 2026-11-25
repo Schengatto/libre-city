@@ -120,8 +120,11 @@ function buildGraph() {
   }
   if (island) reserveArmyIsland(island, armyNode);
   // Traffic lights only at some busy junctions, NOT at every one.
-  for (let n = 0; n < nodes.length; n++)
-    if (nodes[n].edges.length >= 3 && hash2(n * 3 + 2, n + 5) % 3 === 0) nodes[n].signal = true;
+  for (let n = 0; n < nodes.length; n++) {
+    const node = nodes[n];
+    if (node.sharesSignalOf !== undefined) node.signal = nodes[node.sharesSignalOf].signal;
+    else if (node.edges.length >= 3 && hash2(n * 3 + 2, n + 5) % 3 === 0) node.signal = true;
+  }
 }
 
 // ---------- Rasterising the roads onto tiles ----------
@@ -149,6 +152,18 @@ function bakeSidewalksAndBlocks() {
     }
     if (adj) grid[gi(x, y)] = SIDEWALK;                // pavement ringing the roads
   }
+  const pondRadiusOf = (bx, by) => 2.0 + (hash2(bx + 4, by + 6) % 100) / 100;
+  const shoreIsAllBuilding = (bx, by) => {
+    const cxr = (bx + 0.5) * PERIOD, cyr = (by + 0.5) * PERIOD, reach = pondRadiusOf(bx, by) + 1;
+    for (let y = Math.floor(cyr - reach); y <= Math.ceil(cyr + reach); y++) for (let x = Math.floor(cxr - reach); x <= Math.ceil(cxr + reach); x++) {
+      if (Math.hypot(x - cxr, y - cyr) > reach) continue;
+      if (x < 0 || y < 0 || x >= MAP_W || y >= MAP_H || grid[gi(x, y)] !== BUILDING) return false;
+    }
+    return true;
+  };
+  const pondCells = new Uint8Array(DISTRICT_COLS * DISTRICT_ROWS);
+  for (let by = 0; by < DISTRICT_ROWS; by++) for (let bx = 0; bx < DISTRICT_COLS; bx++)
+    pondCells[by * DISTRICT_COLS + bx] = blockHasPond(bx, by) && !cellTouchesRail(bx, by) && shoreIsAllBuilding(bx, by) ? 1 : 0;
   // Fill the blocks: buildings, parks or plazas depending on the region.
   for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
     if (grid[gi(x, y)] !== BUILDING) continue;
@@ -158,8 +173,8 @@ function bakeSidewalksAndBlocks() {
     if (cat === PARK_CAT) {
       // A "designed" park: oval pond, cross-shaped paths leading to the exits,
       // dense trees along the shore and scattered copses on the lawn.
-      const pond = blockHasPond(bx, by);
-      const pr = 2.0 + (hash2(bx + 4, by + 6) % 100) / 100;            // pond radius 2.0–3.0
+      const pond = pondCells[by * DISTRICT_COLS + bx] === 1;
+      const pr = pondRadiusOf(bx, by);            // pond radius 2.0–3.0
       if (pond && (dxr * dxr) / (pr * pr) + (dyr * dyr) / (pr * pr * 0.56) < 1) grid[gi(x, y)] = WATER;
       else if (Math.abs(dxr) < 0.8 || Math.abs(dyr) < 0.8) grid[gi(x, y)] = SIDEWALK;  // paths
       else if (pond && dc < pr + 1.7) grid[gi(x, y)] = hash2(x + 3, y + 11) % 3 === 0 ? TREE : GRASS;
@@ -209,34 +224,61 @@ function pickArmyIsland() {
   const superblocks = [];
   for (let j = 2; j <= NY - 3; j++) for (let i = 2; i <= NX - 3; i++) superblocks.push({ i, j, w: span(colX, i), h: span(rowY, j) });
   const fitting = superblocks.filter(s => s.w >= ARMY_W + 2 * ISLAND_BANKS + 3 && s.h >= ARMY_H + 2 * ISLAND_BANKS + 3);
-  return fitting.length ? fitting[rndi(0, fitting.length - 1)] : superblocks.reduce((best, s) => s.w * s.h > best.w * best.h ? s : best);
+  if (!fitting.length) throw new Error('no superblock fits the army island');
+  return fitting[rndi(0, fitting.length - 1)];
 }
 function reserveArmyIsland({ i, j }, armyNode) {
   nodes[armyNode].live = false;
   const x0 = Math.round((colX[i - 1] + colX[i + 1]) / 2 / T - ARMY_W / 2), x1 = x0 + ARMY_W - 1;
   const y0 = Math.round((rowY[j - 1] + rowY[j + 1]) / 2 / T - ARMY_H / 2), y1 = y0 + ARMY_H - 1;
   const [di, dj] = [[0, -1], [1, 0], [0, 1], [-1, 0]][rndi(0, 3)];
+  const tileCentre = px => (Math.floor(px / T) + 0.5) * T;
+  const gateAxis = di
+    ? tileCentre(clamp(rowY[j], (y0 + 4) * T, (y0 + ARMY_H - 4) * T))
+    : tileCentre(clamp(colX[i], (x0 + 4) * T, (x0 + ARMY_W - 4) * T));
   const gateApproach = {
-    x: di ? (di < 0 ? x0 - 0.5 : x1 + 1.5) * T : colX[i],
-    y: dj ? (dj < 0 ? y0 - 0.5 : y1 + 1.5) * T : rowY[j],
+    x: di ? (di < 0 ? x0 - 0.5 : x1 + 1.5) * T : gateAxis,
+    y: dj ? (dj < 0 ? y0 - 0.5 : y1 + 1.5) * T : gateAxis,
     edges: [], signal: false, live: true,
   };
   nodes.push(gateApproach);
-  addRoadEdge(armyNode + dj * NX + di, nodes.length - 1);
+  const approachIndex = nodes.length - 1, streetIndex = armyNode + dj * NX + di, street = nodes[streetIndex];
+  if ((di ? street.y : street.x) === gateAxis) addRoadEdge(streetIndex, approachIndex);
+  else {
+    nodes.push({ x: di ? street.x : gateAxis, y: di ? gateAxis : street.y, edges: [], signal: false, live: true, sharesSignalOf: streetIndex });
+    addRoadEdge(streetIndex, nodes.length - 1);
+    addRoadEdge(nodes.length - 1, approachIndex);
+  }
   const island = { x0: x0 - ISLAND_BANKS, y0: y0 - ISLAND_BANKS, x1: x1 + ISLAND_BANKS, y1: y1 + ISLAND_BANKS };
-  armyZone = { x0, y0, x1, y1, island, gateApproach };
+  const bridge = { x: gateApproach.x, y: gateApproach.y };
+  const tileInside = (line, offset) => Math.ceil(line / T - 0.5) + offset;
+  const superblock = { x0: tileInside(colX[i - 1], 0), y0: tileInside(rowY[j - 1], 0), x1: tileInside(colX[i + 1], -1), y1: tileInside(rowY[j + 1], -1) };
+  armyZone = { x0, y0, x1, y1, island, gateApproach, bridge, superblock };
 }
 function bakeArmyIsland() {
   if (!armyZone) return;
-  const { x0, y0, x1, y1, island, gateApproach } = armyZone;
-  const gateX = Math.floor(gateApproach.x / T), gateY = Math.floor(gateApproach.y / T), deckHalf = HALF_ROAD + T;
+  const { x0, y0, x1, y1, island, bridge, superblock } = armyZone;
+  const gateX = Math.floor(bridge.x / T), gateY = Math.floor(bridge.y / T), deckHalf = HALF_ROAD + T;
   const verticalBridge = gateY < y0 || gateY > y1;
   const beyondGateSide = (x, y) => gateY < y0 ? y < y0 : gateY > y1 ? y > y1 : gateX < x0 ? x < x0 : x > x1;
-  const offAxis = (x, y) => verticalBridge ? Math.abs((x + 0.5) * T - gateApproach.x) : Math.abs((y + 0.5) * T - gateApproach.y);
+  const bridgeAxis = verticalBridge ? bridge.x : bridge.y;
+  const offDeck = (x, y) => beyondGateSide(x, y) ? Math.abs(((verticalBridge ? x : y) + 0.5) * T - bridgeAxis) : Infinity;
   for (let y = island.y0; y <= island.y1; y++) for (let x = island.x0; x <= island.x1; x++) {
     const ring = Math.max(x0 - x, x - x1, y0 - y, y - y1);
-    if (ring < 1 || (beyondGateSide(x, y) && offAxis(x, y) <= deckHalf)) continue;
-    grid[gi(x, y)] = ring === 1 ? GRASS : ring < ISLAND_BANKS ? WATER : SIDEWALK;
+    if (ring < 1) continue;
+    const deckOffset = offDeck(x, y);
+    grid[gi(x, y)] = deckOffset <= HALF_ROAD ? ROAD : deckOffset <= deckHalf ? SIDEWALK
+      : ring === 1 ? GRASS : ring < ISLAND_BANKS ? WATER : SIDEWALK;
+  }
+  const besideRoad = (x, y) => {
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (grid[gi(x + dx, y + dy)] === ROAD) return true;
+    return false;
+  };
+  for (let y = superblock.y0; y <= superblock.y1; y++) for (let x = superblock.x0; x <= superblock.x1; x++) {
+    const bankDistance = Math.max(island.x0 - x, x - island.x1, island.y0 - y, y - island.y1);
+    const tile = grid[gi(x, y)];
+    if (bankDistance < 1 || tile === ROAD || (tile === SIDEWALK && besideRoad(x, y)) || railCentrelineDistance((x + 0.5) * T, (y + 0.5) * T) <= 1.5 * T) continue;
+    grid[gi(x, y)] = bankDistance === 1 ? SIDEWALK : GRASS;
   }
 }
 const RAIL_INSET = Math.floor((MARGIN + Math.min(colX[1], rowY[1], MAP_W * T - colX[NX - 2], MAP_H * T - rowY[NY - 2]) / T) / 2);
@@ -474,7 +516,7 @@ function landmarkDoor(lm) {
 }
 // The BARRACKS is not a building but a fenced compound: the inner yard is walkable
 // (jeeps and tanks park there) while the perimeter becomes a solid fence with a
-// 3-tile gate opening towards the nearest street.
+// 5-tile gate opening towards the nearest street.
 function carveArmyBase(lm) {
   // The reserved zone may contain lawns/alleys, so the fence must be walled explicitly.
   for (let x = lm.x0; x <= lm.x1; x++) { grid[gi(x, lm.y0)] = BUILDING; grid[gi(x, lm.y1)] = BUILDING; }
@@ -491,11 +533,11 @@ function carveArmyBase(lm) {
   const m = Math.min(dl, dr, dt, db);
   let g, out;                                         // gate tiles + outward direction
   if (m === dt || m === db) {
-    const gy = m === dt ? lm.y0 : lm.y1, gx = clamp(dtx, lm.x0 + 1, lm.x1 - 3);
-    g = [[gx, gy], [gx + 1, gy], [gx + 2, gy]]; out = { x: 0, y: m === dt ? -1 : 1 };
+    const gy = m === dt ? lm.y0 : lm.y1, gx = clamp(dtx - 2, lm.x0 + 1, lm.x1 - 5);
+    g = Array.from({ length: 5 }, (_, k) => [gx + k, gy]); out = { x: 0, y: m === dt ? -1 : 1 };
   } else {
-    const gx = m === dl ? lm.x0 : lm.x1, gy = clamp(dty, lm.y0 + 1, lm.y1 - 3);
-    g = [[gx, gy], [gx, gy + 1], [gx, gy + 2]]; out = { x: m === dl ? -1 : 1, y: 0 };
+    const gx = m === dl ? lm.x0 : lm.x1, gy = clamp(dty - 2, lm.y0 + 1, lm.y1 - 5);
+    g = Array.from({ length: 5 }, (_, k) => [gx, gy + k]); out = { x: m === dl ? -1 : 1, y: 0 };
   }
   for (const [x, y] of g) {
     grid[gi(x, y)] = SIDEWALK;
@@ -507,7 +549,7 @@ function carveArmyBase(lm) {
       cx += out.x; cy += out.y;
     }
   }
-  lm.gate = { x: (g[0][0] + g[2][0] + 1) / 2 * T, y: (g[0][1] + g[2][1] + 1) / 2 * T };
+  lm.gate = { x: (g[0][0] + g[4][0] + 1) / 2 * T, y: (g[0][1] + g[4][1] + 1) / 2 * T };
   lm.guardDuties = armyGuardDuties(lm, out);
 }
 function armyBaseLayout(lm) {
@@ -534,7 +576,7 @@ function armyGuardDuties(lm, gateOutward) {
     x: lm.gate.x - gateOutward.x * depth * T + lateral.x * towardCentre * side * T,
     y: lm.gate.y - gateOutward.y * depth * T + lateral.y * towardCentre * side * T,
   });
-  const sentry = { ...besideGate(1.5, 2), facing: Math.atan2(gateOutward.y, gateOutward.x), booth: besideGate(1.1, 3) };
+  const sentry = { ...besideGate(1.5, 3), facing: Math.atan2(gateOutward.y, gateOutward.x), booth: besideGate(1.1, 4) };
   const near = 2.5 * T;
   const left = lm.x0 * T + near, right = (lm.x1 + 1) * T - near;
   const top = lm.y0 * T + near, bottom = (lm.y1 + 1) * T - near;
@@ -564,10 +606,10 @@ function placeArmyBase() {
   const { x0, y0, x1, y1 } = armyZone;
   const lm = { type: 'army', x0, y0, x1, y1,
                cx: (x0 + (x1 - x0 + 1) / 2) * T, cy: (y0 + (y1 - y0 + 1) / 2) * T };
-  const { gateApproach } = armyZone, gateTileX = Math.floor(gateApproach.x / T), gateTileY = Math.floor(gateApproach.y / T);
-  lm.door = gateTileY < y0 || gateTileY > y1
-    ? { x: gateApproach.x - T, y: gateApproach.y + (gateTileY < y0 ? T : -T) }
-    : { x: gateApproach.x + (gateTileX < x0 ? T : -T), y: gateApproach.y - T };
+  const { bridge } = armyZone, bridgeTileX = Math.floor(bridge.x / T), bridgeTileY = Math.floor(bridge.y / T);
+  lm.door = bridgeTileY < y0 || bridgeTileY > y1
+    ? { x: (bridgeTileX + 0.5) * T, y: bridge.y + (bridgeTileY < y0 ? T : -T) }
+    : { x: bridge.x + (bridgeTileX < x0 ? T : -T), y: (bridgeTileY + 0.5) * T };
   const id = landmarks.length; landmarks.push(lm);
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) lmGrid[gi(x, y)] = id;
   carveArmyBase(lm);

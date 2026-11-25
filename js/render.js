@@ -1502,12 +1502,41 @@ function drawLandmarks() {
         ctx.moveTo(sx + 3, sy); ctx.lineTo(sx + 3, sy + T); ctx.stroke();
         ctx.fillStyle = '#5a5f66'; ctx.fillRect(sx - 6, sy + T / 2 - 2, 12, 4);   // post
       }
+      drawArmyGate(lm);
       lmLabel(cx, py + 12, t('lm.army'), '#d6e0b8');
     } else {                                          // market: ribbon skylights
       ctx.fillStyle = 'rgba(150,220,235,.28)';
       for (let i = 0; i < 3; i++) ctx.fillRect(px + 12 + i * ((w - 24) / 3), py + 22, (w - 24) / 3 - 6, h - 34);
       lmLabel(cx, py + 12, t('lm.market'), '#dff5ef');
     }
+  }
+}
+function drawArmyGate(lm) {
+  const gateTileX = Math.floor(lm.gate.x / T), gateTileY = Math.floor(lm.gate.y / T);
+  const horizontalFence = gateTileY === lm.y0 || gateTileY === lm.y1;
+  const alongFence = horizontalFence ? { x: 1, y: 0 } : { x: 0, y: 1 };
+  const inward = horizontalFence ? { x: 0, y: gateTileY === lm.y0 ? 1 : -1 } : { x: gateTileX === lm.x0 ? 1 : -1, y: 0 };
+  const halfOpening = 2.5 * T, leafLength = halfOpening - 6, swing = 0.21 * TAU, railOffset = 3;
+  const pavingHalfX = horizontalFence ? HALF_ROAD : T / 2, pavingHalfY = horizontalFence ? T / 2 : HALF_ROAD;
+  ctx.fillStyle = '#33363d';
+  ctx.fillRect(lm.gate.x - camX - pavingHalfX, lm.gate.y - camY - pavingHalfY, 2 * pavingHalfX, 2 * pavingHalfY);
+  for (const end of [-1, 1]) {
+    const hingeX = lm.gate.x - camX + alongFence.x * end * halfOpening, hingeY = lm.gate.y - camY + alongFence.y * end * halfOpening;
+    const leafX = -alongFence.x * end * Math.cos(swing) + inward.x * Math.sin(swing);
+    const leafY = -alongFence.y * end * Math.cos(swing) + inward.y * Math.sin(swing);
+    const railX = -leafY * railOffset, railY = leafX * railOffset;
+    ctx.strokeStyle = '#9aa0a8'; ctx.lineWidth = 2; ctx.beginPath();
+    for (const rail of [-1, 1]) {
+      ctx.moveTo(hingeX + railX * rail, hingeY + railY * rail);
+      ctx.lineTo(hingeX + leafX * leafLength + railX * rail, hingeY + leafY * leafLength + railY * rail);
+    }
+    for (let bar = 8; bar <= leafLength; bar += 8) {
+      const barX = hingeX + leafX * bar, barY = hingeY + leafY * bar;
+      ctx.moveTo(barX - railX, barY - railY); ctx.lineTo(barX + railX, barY + railY);
+    }
+    ctx.stroke();
+    ctx.fillStyle = '#3e4247'; ctx.fillRect(hingeX - 5, hingeY - 5, 10, 10);
+    ctx.fillStyle = '#c9b458'; ctx.fillRect(hingeX - 5, hingeY - 5, 10, 3);
   }
 }
 function armyScreenRect(r) {
@@ -1829,7 +1858,7 @@ function drawCoins() {
 function drawTrafficLights() {
   const col = { green: '#37e05a', yellow: '#ffd23a', red: '#ff4040' }, o = HALF_ROAD * 0.72;
   for (const nd of nodes) {
-    if (!nd.signal) continue;
+    if (!nd.signal || nd.sharesSignalOf !== undefined) continue;
     const x = nd.x - camX, y = nd.y - camY;
     if (x < -30 || y < -30 || x > vw + 30 || y > vh + 30) continue;
     signalHead(x - o, y, hState, col, true);    // heads for the horizontal axis (E/W)
@@ -2361,12 +2390,13 @@ function render() {
   for (const c of cars) ents.push(c);
   for (const p of peds) ents.push(p);
   if (!player.car) ents.push(player);          // on foot, draw the player; while driving the car covers them
-  ents.push(train);                            // the looping train (Y-sorted like the cars)
+  pushTrainSegments(ents);                     // the looping train (Y-sorted like the cars)
   if (netActive()) netPushEnts(ents);          // multiplayer: the rivals' ghosts
   ents.sort((a, b) => a.y - b.y);
+  drawTrainShadows();
   for (const e of ents) {
     if (e === player) drawPlayer();
-    else if (e.isTrain) drawTrain();
+    else if (e.isTrainSegment) drawTrainSegment(e);
     else if (e.netG) drawNetPlayer(e.netG);
     else if (e.role === 'traffic' || e.role === 'police' || e.role === 'armycar' || e.role === 'parked' || e.role === 'player') drawCar(e);
     else drawPed(e);

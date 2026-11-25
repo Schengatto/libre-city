@@ -33,17 +33,32 @@ function lagMsToTicks(lagMs) {
 // "Pedestrian-friendly" tiles: where passers-by are happy to be.
 const pedFriendly = t => t === SIDEWALK || t === GRASS || t === ALLEY || t === SAND || t === QUAY;
 const tileTypeAt = (wx, wy) => tileAt(Math.floor(wx / T), Math.floor(wy / T));
+function armyIslandDepthAt(wx, wy) {
+  if (!armyZone) return -1;
+  const { island } = armyZone, tx = Math.floor(wx / T), ty = Math.floor(wy / T);
+  return Math.min(tx - island.x0, island.x1 - tx, ty - island.y0, island.y1 - ty);
+}
+function walkEntersArmyIsland(p, dir) {
+  if (armyIslandDepthAt(p.x, p.y) >= 0) return false;
+  const aheadX = p.x + dir.x * 22, aheadY = p.y + dir.y * 22;
+  return armyIslandDepthAt(aheadX, p.y) >= 0 || armyIslandDepthAt(p.x, aheadY) >= 0 || armyIslandDepthAt(aheadX, aheadY) >= 0;
+}
 // Direction choice from standstill: prefers pavements, avoids the carriageway.
 function pickWalkDir(p) {
-  const soft = [], road = [];
+  const depthHere = armyIslandDepthAt(p.x, p.y);
+  const soft = [], road = [], open = [], exits = [];
   for (const d of DIRS) {
+    if (walkEntersArmyIsland(p, d)) continue;
+    open.push(d);
     const t = tileTypeAt(p.x + d.x * 22, p.y + d.y * 22);
     if (t === BUILDING || t === TREE || t === WATER || t === PROP) continue;   // obstacles: discarded
+    if (depthHere >= 0 && armyIslandDepthAt(p.x + d.x * T, p.y + d.y * T) < depthHere) exits.push(d);
     (t === ROAD ? road : soft).push(d);
   }
+  if (exits.length) return pick(exits);
   if (soft.length && (road.length === 0 || Math.random() < 0.9)) return pick(soft);
   if (road.length) return pick(road);
-  return pick(DIRS);
+  return open.length ? pick(open) : { x: 0, y: 0 };
 }
 // Cardinal direction towards the nearest pavement, for a pedestrian stuck on the road.
 function toNearestSidewalk(wx, wy) {

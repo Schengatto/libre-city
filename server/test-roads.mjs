@@ -13,15 +13,17 @@ for (const [code, [columns, rows]] of Object.entries(GRID_SIZES)) {
   const gridCount = columns * rows, gateApproach = gridCount;
   const corners = new Set([0, columns - 1, gridCount - columns, gridCount - 1]);
 
-  ok(nodes.length === gridCount + 1, `${code}: ${columns} x ${rows} junctions plus the gate approach (${nodes.length})`);
+  const gateNodes = nodes.length - gridCount;
+  ok(gateNodes === 1 || gateNodes === 2, `${code}: ${columns} x ${rows} junctions plus the gate approach and its optional jog onto the gate axis (${nodes.length})`);
+  ok(gateNodes === 1 || nodes[gridCount + 1].edges.length === 2, `${code}: the jog node only links the street to the gate approach`);
   ok(edges.every(e => nodes[e.a].x === nodes[e.b].x || nodes[e.a].y === nodes[e.b].y), `${code}: every street is straight and axis-aligned`);
   ok(nodes.every(n => n.live !== false || n.edges.length === 0), `${code}: junctions that are not live have no streets`);
-  const fullGridEdges = columns * (rows - 1) + rows * (columns - 1), islandEdgesRemoved = 4, bridgeEdges = 1;
+  const fullGridEdges = columns * (rows - 1) + rows * (columns - 1), islandEdgesRemoved = 4, bridgeEdges = gateNodes;
   const pruned = fullGridEdges - islandEdgesRemoved + bridgeEdges - edges.length;
   ok(pruned >= 2, `${code}: pruning merges some blocks (${pruned} streets removed)`);
 
   const badJunctions = nodes.filter((n, idx) => {
-    if (n.live === false || idx === gateApproach) return false;
+    if (n.live === false || idx >= gateApproach) return false;
     return corners.has(idx) ? n.edges.length !== 2 : n.edges.length < 3 || n.edges.length > 4;
   });
   ok(badJunctions.length === 0, `${code}: every live junction is a T or an X, ring corners are bends (${badJunctions.length} wrong)`);
