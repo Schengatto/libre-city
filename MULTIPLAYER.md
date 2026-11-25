@@ -114,6 +114,22 @@ La colonna "prima" è rimisurata su adc6bb8: i 183 / 239 KB/s della tabella sopr
 un main precedente, con un mondo diverso. Il raw conta ora perché il canale `fast` P2P
 (LIBRE-33) invia senza deflate.
 
+**LIBRE-34 fase 2** (snapshot binari: codec `js/snapshot-codec.js`, tabella delle stringhe
+ripetute e interi varint al posto del JSON; sull'hostlink il frame è `0x57`, lunghezza id,
+id, codec). Stessa misura, livello 6, seed 1-5, media / max, con `.tmp/host-bandwidth.mjs`
+adattato a contare i frame binari davvero inviati:
+
+| Metrica | fase 1 | fase 2 |
+|---|---|---|
+| raw | 1771 / 2114 KB/s | 349 / 409 KB/s |
+| byte medi per frame raw | 20154 / 24053 B | 3975 / 4656 B |
+| senza context takeover | 211 / 243 KB/s | 184 / 211 KB/s |
+| con context takeover | 56 / 71 KB/s | 32 / 36 KB/s |
+
+Il raw cala di circa 5 volte e conta per il canale `fast` P2P, che invia senza deflate. Il
+deflate guadagna meno sul binario che sul JSON (senza context takeover solo -13%), perché il
+codec ha già tolto la ridondanza che deflate sfruttava; con context takeover resta un -44%.
+
 ### Trasporto P2P (WebRTC)
 
 Snapshot e input dei guest non passano più dal VPS: viaggiano su un DataChannel WebRTC
