@@ -688,6 +688,20 @@ function netStatsOnAck(stats, ack, now) {
   stats.inputRtt = netStatsSmooth(stats.inputRtt, stats.inputRttLast);
   pending.splice(0, ackedCount);
 }
+const NET_PREDICTED_SHOT_TTL_MS = 1000;
+function netLagCompMs(stats) {
+  if (stats.inputRtt == null) return 0;
+  return clamp(Math.round((stats.inputRtt + stats.interpDelay) / 5) * 5, 0, LAG_COMP_MAX_MS);
+}
+function netPredictedShotPush(queue, now) {
+  queue.push(now);
+}
+function netPredictedShotConsume(queue, now) {
+  while (queue.length && queue[0] < now - NET_PREDICTED_SHOT_TTL_MS) queue.shift();
+  if (!queue.length) return false;
+  queue.shift();
+  return true;
+}
 function netStatsOnTick(stats, tick, now) {
   if (!Number.isFinite(tick)) return;
   const samples = stats.tickSamples;
