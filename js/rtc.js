@@ -43,6 +43,8 @@ function rtcCreatePeer() {
   const pc = new RTCPeerConnection({ iceServers: RTC_ICE_SERVERS });
   const fast = pc.createDataChannel('fast', RTC_FAST_CHANNEL_OPTIONS);
   const rel = pc.createDataChannel('rel', RTC_REL_CHANNEL_OPTIONS);
+  fast.binaryType = 'arraybuffer';
+  rel.binaryType = 'arraybuffer';
   return { pc, fast, rel, remoteReady: false, pendingCandidates: [], reportedUsable: false };
 }
 
@@ -79,6 +81,7 @@ function rtcMarkRemoteReady(peer) {
 }
 
 function rtcParseMessage(data) {
+  if (data instanceof ArrayBuffer) return typeof netDecodeBinarySnapshot === 'function' ? netDecodeBinarySnapshot(data) : null;
   if (typeof data !== 'string') return null;
   try { return JSON.parse(data); } catch { return null; }
 }

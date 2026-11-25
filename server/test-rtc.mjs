@@ -2,9 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
+import { extractTopLevel } from './render-test-kit.mjs';
 
 const JS_DIR = path.join(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), 'js');
 const RTC_SOURCE = fs.readFileSync(path.join(JS_DIR, 'rtc.js'), 'utf8');
+const CODEC_SOURCE = fs.readFileSync(path.join(JS_DIR, 'snapshot-codec.js'), 'utf8');
+const NET_DECODER_SOURCE = extractTopLevel(fs.readFileSync(path.join(JS_DIR, 'net.js'), 'utf8'), 'netDecodeBinarySnapshot');
 
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ', msg); } else { fail++; console.log('  XX FAIL:', msg); } };
@@ -59,8 +62,10 @@ function createHarness(search = '') {
     setTimeout: (fn, ms) => { const id = nextTimerId++; timers.push({ id, fn, at: now + ms }); return id; },
     clearTimeout: id => { const index = timers.findIndex(timer => timer.id === id); if (index >= 0) timers.splice(index, 1); },
     JSON,
+    TextEncoder,
+    TextDecoder,
   });
-  vm.runInContext(RTC_SOURCE, context);
+  vm.runInContext(CODEC_SOURCE + '\n' + NET_DECODER_SOURCE + '\n' + RTC_SOURCE, context);
 
   const advance = async ms => {
     const target = now + ms;
@@ -156,6 +161,9 @@ console.log('host role');
   h.context.rtcHostSendFrame('p2', 'snapshot-3', null);
   ok(fast.sent.length === 2, 'a congested fast channel skips the snapshot');
   fast.bufferedAmount = 0;
+  const binarySnapshot = new Uint8Array([0xB5, 0x01, 0x08, 0x01, 0x41]);
+  h.context.rtcHostSendFrame('p2', binarySnapshot, null);
+  ok(fast.sent[fast.sent.length - 1] === binarySnapshot, 'a binary snapshot reaches fast unchanged');
 
   peer.connectionState = 'failed';
   peer.onconnectionstatechange();
@@ -215,6 +223,16 @@ console.log('guest role');
   fast.onmessage({ data: '{"t":"w","tick":4}' });
   fast.onmessage({ data: '{"t":"w","tick":6}' });
   ok(same(h.snapshots.map(snapshot => snapshot.tick), [5, 6]), 'only fresh snapshots reach netOnSnapshot');
+  const binaryFast = message => fast.onmessage({ data: h.context.snapshotEncode(message).buffer });
+  binaryFast({ t: 'w', tick: 7, cars: [] });
+  binaryFast({ t: 'w', tick: 7, cars: [] });
+  binaryFast({ t: 'w', tick: 3, cars: [] });
+  binaryFast({ t: 'we', tick: 9, ev: [1], fx: [2] });
+  binaryFast({ t: 'ok' });
+  fast.onmessage({ data: vm.runInContext('new Uint8Array([0xB5, 0x01, 0xFF]).buffer', h.context) });
+  fast.onmessage({ data: vm.runInContext('new Uint8Array([1, 2, 3]).buffer', h.context) });
+  ok(same(h.snapshots.map(snapshot => snapshot.tick), [5, 6, 7]) && h.snapshots[2].t === 'w', 'a binary snapshot on fast is decoded, deduplicated and ordered like a text one');
+  ok(h.worldEvents.length === 0, 'non snapshot and garbage binary frames on fast are dropped');
   rel.onmessage({ data: '{"t":"we","tick":6,"ev":[1],"fx":[2]}' });
   ok(same(h.worldEvents, [{ fx: [2], ev: [1] }]), 'reliable world events reach netApplyWorldEvents');
 

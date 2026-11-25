@@ -375,8 +375,10 @@ try {
   foreignLink.send(Buffer.from([0x58, 1, 0x61, 0xB5, 0x01, 0x00]));
   check(await waitFor(() => foreignLink.closed) && foreignLink.closeCode === ABNORMAL_CLOSE_CODE, 'a binary frame not starting with 0x57 terminates the hostlink');
   const earlyBinaryLink = await open(PORT, HOST_LINK_PATH);
+  const earlyBinarySentAt = Date.now();
   earlyBinaryLink.send(Buffer.from([BINARY_SNAPSHOT_FRAME_BYTE, 1, 0x61, 0xB5, 0x01, 0x00]));
   check(await waitFor(() => earlyBinaryLink.closed) && earlyBinaryLink.closeCode === ABNORMAL_CLOSE_CODE, 'a binary frame before the hostlink hello terminates it');
+  check(Date.now() - earlyBinarySentAt < HOST_LINK_HELLO_MS / 2, 'the early binary frame is rejected before the hello timeout');
   closeAll([foreignHost.ws]);
   }
 

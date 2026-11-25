@@ -24,7 +24,7 @@
   const memberIds = new Set();
   const p2pGuestIds = new Set();
 
-  function post(message) { self.postMessage(message); }
+  function post(message, transfer) { self.postMessage(message, transfer); }
 
   function accumulateSimTime(currentAccumulatorMs, elapsedMs) {
     return currentAccumulatorMs + Math.min(elapsedMs, MAX_CATCHUP_MS);
@@ -74,7 +74,7 @@
     snapshot.me.ev = null;
     snapshot.fx = [];
     const frame = snapshotEncode(snapshot);
-    self.postMessage({ type: 'guestFrame', id, snapshot: frame, events }, [frame.buffer]);
+    post({ type: 'guestFrame', id, snapshot: frame, events }, [frame.buffer]);
   }
 
   function sendBinarySnapshot(id, snapshot) {

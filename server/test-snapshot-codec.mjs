@@ -40,7 +40,7 @@ console.log('3) values table');
 const valueTable = [
   0, 191, 192, -1, -0, 2 ** 31, 2 ** 52 - 1, 2 ** 52, -(2 ** 52), -(2 ** 52) - 1, 2 ** 53 - 1, -(2 ** 53 - 1), -(2 ** 40),
   0.01, -1.99, 7.12, 1 / 3, 0.1 + 0.2, 1e300, 1e-9, 12345678.91, NaN, Infinity, -Infinity,
-  '', 'é漢😀', '﻿x', 'a'.repeat(300), null, true, false, [], {}, [undefined, () => 1], { a: undefined, b: 1 },
+  '', 'é漢😀', '\uFEFFx', 'a'.repeat(300), null, true, false, [], {}, [undefined, () => 1], { a: undefined, b: 1 },
   { f: () => 1, s: Symbol('x'), k: 'kept' },
   [{ x: 1, y: 2 }, { x: 3, y: 4 }, { y: 5, x: 6 }],
   { '': 1, 'a\u0000b': 2, c: 3 },
