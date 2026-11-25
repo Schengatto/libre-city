@@ -122,9 +122,12 @@ function testHostRate() {
 function testOverlayLines() {
   const stats = api.createNetStats();
   const lines = api.netStatsLines(stats, api.INTERP_MS, 0).split('\n');
-  const labels = ['RTT', 'input RTT', 'snap/s', 'interval', 'jitter', 'max gap 5s', 'host Hz', 'interp delay'];
+  const labels = ['transport', 'RTT', 'input RTT', 'snap/s', 'interval', 'jitter', 'max gap 5s', 'host Hz', 'interp delay'];
   ok(lines.length === labels.length && labels.every((label, k) => lines[k].startsWith(label + ' ')), 'overlay lists every stat label in order');
-  ok(lines[7].includes(api.INTERP_MS.toFixed(1)), 'overlay shows the interpolation delay');
+  ok(lines[8].includes(api.INTERP_MS.toFixed(1)), 'overlay shows the interpolation delay');
+  ok(stats.transport === 'WS' && lines[0].endsWith(' WS'), 'transport starts as WS');
+  stats.transport = 'P2P';
+  ok(api.netStatsLines(stats, api.INTERP_MS, 0).split('\n')[0].trim() === 'transport    P2P', 'overlay shows transport P2P');
 }
 
 function windowFrom(times) {
