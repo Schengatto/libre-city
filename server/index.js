@@ -61,6 +61,9 @@ const HOST_LINK_MESSAGES_PER_SECOND = 400;
 const HOST_LINK_MESSAGE_BURST = 800;
 const MAX_RELAY_BUFFERED_BYTES = 1024 * 1024;
 const MAX_HOST_INPUT_BUFFERED_BYTES = 256 * 1024;
+const RTC_SIGNAL_KINDS = new Set(['offer', 'answer', 'ice']);
+const MAX_RTC_SDP_CHARS = 16384;
+const MAX_RTC_ICE_CHARS = 2048;
 const FORWARDED_INPUT_NUMBER_FIELDS = ['seq', 'ax', 'ay', 'aim', 'b', 'px', 'py', 'cx', 'cy', 'ca', 'csp', 'w', 'vr', 'lg'];
 const SNAPSHOT_FRAME_BYTE = 0x57;
 const FRAME_SEPARATOR_BYTE = 0x7c;
@@ -583,6 +586,18 @@ function forwardInputToHost(room, m, id) {
   if (!link || link.bufferedAmount > MAX_HOST_INPUT_BUFFERED_BYTES) return;
   sendRaw(link, forwardedInput(m, id));
 }
+function relayRtcSignal(room, sender, m) {
+  if (!hostModeActive(room) || !room.hostId || !RTC_SIGNAL_KINDS.has(m.k)) return;
+  if ((sender.id === room.hostId) === (m.to === room.hostId)) return;
+  const target = room.players.get(m.to);
+  if (!target || target.gone || !target.ws || target.ws.readyState !== 1) return;
+  const payload = m.d;
+  const payloadFits = m.k === 'ice'
+    ? payload !== null && typeof payload === 'object' && !Array.isArray(payload) && JSON.stringify(payload).length <= MAX_RTC_ICE_CHARS
+    : typeof payload === 'string' && payload.length <= MAX_RTC_SDP_CHARS;
+  if (!payloadFits) return;
+  sendRaw(target.ws, { t: 'rtc', from: sender.id, k: m.k, d: payload });
+}
 function onHostLinkClose(ws) {
   const room = ws._hostRoom;
   if (!room || room.hostLink !== ws) return;
@@ -722,6 +737,9 @@ function onGameMessage(ws, m) {
       if (!hostModeActive(room) || room.hostId !== p.id) break;
       room.resigned.add(p.id);
       electHost(room, p.id);
+      break;
+    case 'rtc':
+      relayRtcSignal(room, p, m);
       break;
     // Phase 1 (compat): state and events relayed to the others, signed with the sender's id.
     case 's': case 'shot': case 'punch': case 'rocket': case 'park': case 'gone':
