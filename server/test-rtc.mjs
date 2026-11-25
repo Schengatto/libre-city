@@ -140,6 +140,7 @@ console.log('host role');
   peer.onicecandidate({ candidate: { toJSON: () => ({ candidate: 'local' }) } });
   ok(same(h.sentSignals[1], { t: 'rtc', to: 'p2', k: 'ice', d: { candidate: 'local' } }), 'a local candidate is relayed to the guest');
 
+  ok(peer.channels.length === 2 && peer.channels.every(channel => channel.binaryType === 'arraybuffer'), 'fast and rel deliver binary messages as ArrayBuffer');
   ok(h.p2pChanges.length === 0, 'no p2p change before the link opens');
   h.connectPeer(peer);
   ok(same(h.p2pChanges, [{ id: 'p2', open: true }]), 'open channels on a connected peer mark the guest p2p');
@@ -233,6 +234,11 @@ console.log('guest role');
   fast.onmessage({ data: vm.runInContext('new Uint8Array([1, 2, 3]).buffer', h.context) });
   ok(same(h.snapshots.map(snapshot => snapshot.tick), [5, 6, 7]) && h.snapshots[2].t === 'w', 'a binary snapshot on fast is decoded, deduplicated and ordered like a text one');
   ok(h.worldEvents.length === 0, 'non snapshot and garbage binary frames on fast are dropped');
+  const oversizedBinary = vm.runInContext('new Uint8Array(256 * 1024 + 1).buffer', h.context);
+  ok(h.context.rtcParseMessage(oversizedBinary) === null, 'an oversized binary message is rejected before decoding');
+  ok(h.context.rtcParseMessage('x'.repeat(256 * 1024 + 1)) === null, 'an oversized text message is rejected');
+  ok(h.context.rtcParseMessage(JSON.stringify({ t: 'w', pad: 'x'.repeat(200 * 1024) })).t === 'w', 'a text snapshot under the cap still parses');
+  ok(h.context.rtcParseMessage(h.context.snapshotEncode({ t: 'w', tick: 8 }).buffer).tick === 8, 'a normal binary snapshot still decodes');
   rel.onmessage({ data: '{"t":"we","tick":6,"ev":[1],"fx":[2]}' });
   ok(same(h.worldEvents, [{ fx: [2], ev: [1] }]), 'reliable world events reach netApplyWorldEvents');
 

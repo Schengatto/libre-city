@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { createRequire } from 'node:module';
 import { isDeepStrictEqual } from 'node:util';
 import runtime from './sim-runtime.js';
@@ -133,6 +135,11 @@ ok(({}).polluted === undefined, 'Object.prototype is not polluted');
 ok(Object.getPrototypeOf(decodedHostile) === Object.prototype && !Object.prototype.hasOwnProperty.call(decodedHostile, '__proto__'), 'decoded object keeps a plain prototype and drops __proto__');
 const nestedHostile = snapshotDecode(snapshotEncode(JSON.parse('{"a":[{"__proto__":{"polluted":2},"b":1}]}')));
 ok(nestedHostile.a[0].b === 1 && ({}).polluted === undefined && nestedHostile.a[0].polluted === undefined, 'nested __proto__ is discarded too');
+
+const serverHeaderSource = fs.readFileSync(path.join(JS_DIR, '..', 'server', 'index.js'), 'utf8').match(/^const SNAPSHOT_CODEC_HEADER = \[(0x[0-9A-Fa-f]+), (0x[0-9A-Fa-f]+)\];$/m);
+const encodedHeader = snapshotEncode({ t: 'w' });
+ok(!!serverHeaderSource && Number(serverHeaderSource[1]) === encodedHeader[0] && Number(serverHeaderSource[2]) === encodedHeader[1],
+  'the relay header in server/index.js equals the codec magic and version');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

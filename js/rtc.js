@@ -6,6 +6,7 @@ const RTC_RETRY_BASE_MS = 5000;
 const RTC_RETRY_MAX_MS = 60000;
 const RTC_MAX_BUFFERED_BYTES = 262144;
 const RTC_MAX_INPUT_BYTES = 2048;
+const RTC_MAX_SNAPSHOT_BYTES = 256 * 1024;
 const RTC_INPUT_NUMBER_FIELDS = ['seq', 'ax', 'ay', 'aim', 'b', 'px', 'py', 'cx', 'cy', 'ca', 'csp', 'w', 'vr', 'lg'];
 const RTC_DEAD_CONNECTION_STATES = ['failed', 'closed'];
 
@@ -81,8 +82,11 @@ function rtcMarkRemoteReady(peer) {
 }
 
 function rtcParseMessage(data) {
-  if (data instanceof ArrayBuffer) return typeof netDecodeBinarySnapshot === 'function' ? netDecodeBinarySnapshot(data) : null;
-  if (typeof data !== 'string') return null;
+  if (data instanceof ArrayBuffer) {
+    if (data.byteLength > RTC_MAX_SNAPSHOT_BYTES) return null;
+    return typeof netDecodeBinarySnapshot === 'function' ? netDecodeBinarySnapshot(data) : null;
+  }
+  if (typeof data !== 'string' || data.length > RTC_MAX_SNAPSHOT_BYTES) return null;
   try { return JSON.parse(data); } catch { return null; }
 }
 
