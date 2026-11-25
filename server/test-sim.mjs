@@ -64,7 +64,9 @@ const X = sim2.addPlayer('X', 0), Y = sim2.addPlayer('Y', 1);
 const px = sim2._player(X), py = sim2._player(Y);
 px.owned[1] = true; px.weaponIdx = 1;               // X draws the pistol
 py.x = px.x + 24; py.y = px.y; py.health = 8;        // Y adjacent and already badly hurt
-const aim = 0;                                       // X aims to the right (towards Y)
+const duelPeds = sim2._peds();
+for (let i = duelPeds.length - 1; i >= 0; i--) if (Math.hypot(duelPeds[i].x - px.x, duelPeds[i].y - px.y) < 120) duelPeds.splice(i, 1);
+const aim = 0;                                     // X aims to the right (towards Y)
 let killed = false;
 for (let i = 0; i < 20 && !killed; i++) {
   sim2.applyInput(X, { aim, b: 2 });                 // fireEdge (semi-auto)

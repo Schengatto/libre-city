@@ -196,10 +196,10 @@ console.log('client train clock');
   });
   for (const name of ['applyTouchInput', 'netInterpWorld', 'netRebuildArrays', 'netReconcileMe', 'netSendInput', 'updateParts', 'updateCamera',
                       'netApplyCar', 'interpFeed', 'netApplyFx', 'toast', 'netPredictFire', 'netStepPredictedBullets', 'netStatsOnSnapshot',
-                      'netWorldBulletsFrom']) netClient[name] = () => {};
+                      'netWorldBulletsFrom', 'netApplyWorldEvents']) netClient[name] = () => {};
   Object.assign(netClient, {
     updateTrainKinematics: clock => netClient.trainClocks.push(clock), playerSirenOn: () => false,
-    netMakeWorldCar: () => ({}), makeGhost: () => ({}), evText: () => ' ',
+    netMakeWorldCar: () => ({}), makeGhost: () => ({}), evText: () => ' ', rtcFreshSnapshot: () => true,
   });
   vm.runInContext([clockSource, ...['NET_SHIRTS', 'netOnSnapshot', 'updateNetClient'].map(name => extractTopLevel(netSource, name))].join('\n'), netClient);
   vm.runInContext('updateNetClient()', netClient);
