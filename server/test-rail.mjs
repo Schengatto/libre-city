@@ -191,11 +191,12 @@ console.log('client train clock');
 
   const netClient = vm.createContext({
     net: { trainOffset: null, trainOffsetTarget: 0, trainSlewFrame: 0, wcars: new Map(), wpeds: new Map(), players: new Map(), myId: 'p1' },
-    frame: 800, trainClocks: [], cars: [], peds: [], coins: [], fires: [], TAU: Math.PI * 2, rnd: () => 0,
+    frame: 800, trainClocks: [], cars: [], peds: [], coins: [], fires: [], TAU: Math.PI * 2, rnd: () => 0, performance,
     sfx: new Proxy({}, { get: () => () => {} }), player: { car: null }, downT: 1, wanted: 0, mClicked: false, ladderEl: null,
   });
   for (const name of ['applyTouchInput', 'netInterpWorld', 'netRebuildArrays', 'netReconcileMe', 'netSendInput', 'updateParts', 'updateCamera',
-                      'netApplyCar', 'interpFeed', 'netApplyFx', 'toast']) netClient[name] = () => {};
+                      'netApplyCar', 'interpFeed', 'netApplyFx', 'toast', 'netPredictFire', 'netStepPredictedBullets', 'netStatsOnSnapshot',
+                      'netWorldBulletsFrom']) netClient[name] = () => {};
   Object.assign(netClient, {
     updateTrainKinematics: clock => netClient.trainClocks.push(clock), playerSirenOn: () => false,
     netMakeWorldCar: () => ({}), makeGhost: () => ({}), evText: () => ' ',
