@@ -869,6 +869,7 @@ function resolveRemoteCarCollisions() {
 }
 
 // ---------- Bullets ----------
+const REWIND_SPOT = { x: 0, y: 0 };
 function updateBullets() {
   for (let i = bullets.length - 1; i >= 0; i--) {
     const b = bullets[i];
@@ -890,17 +891,20 @@ function updateBullets() {
         }
       }
       // PvP (authoritative server only): the shot can floor ANOTHER player.
+      const lagTicks = !hit && MP && b.owner && b.owner.input ? lagMsToTicks(b.owner.input.lagMs) : 0;
       if (!hit && MP) for (const v of MP) {
         if (v === b.owner || v.downT > 0) continue;
+        const rewound = lagTicks > 0 && bodyHistoryLookup(v.hist, frame - lagTicks, REWIND_SPOT);
+        const spotX = rewound ? REWIND_SPOT.x : (v.car || v).x, spotY = rewound ? REWIND_SPOT.y : (v.car || v).y;
         if (v.car) {
           const c = v.car;
-          if (Math.abs(b.x - c.x) < c.w / 2 && Math.abs(b.y - c.y) < c.h / 2 + 4) {
+          if (Math.abs(b.x - spotX) < c.w / 2 && Math.abs(b.y - spotY) < c.h / 2 + 4) {
             const wasDown = v.downT > 0, vb = v.bounty | 0;
             asPlayer(v, () => { damageCar(c, b.dmg || 10, Math.atan2(b.vy, b.vx)); hurtPlayer(3); });
             if (!wasDown && v.downT > 0 && b.owner) creditKill(b.owner, v, vb);
             spawnSparks(b.x, b.y, 2); hit = true; break;
           }
-        } else if (dist(b.x, b.y, v.x, v.y) < v.r + 3) {
+        } else if (dist(b.x, b.y, spotX, spotY) < v.r + 3) {
           const wasDown = v.downT > 0, vb = v.bounty | 0;
           asPlayer(v, () => hurtPlayer(b.pvp || 8, Math.atan2(b.vy, b.vx)));
           if (!wasDown && v.downT > 0 && b.owner) creditKill(b.owner, v, vb);

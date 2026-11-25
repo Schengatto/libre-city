@@ -966,7 +966,8 @@ function netSendInput() {
   if (net.enterEdge) { b |= 4; net.enterEdge = false; }
   if (net.hornEdge) { b |= 8; net.hornEdge = false; }
   const cmd = { t: 'i', seq: ++net.inSeq, ax, ay, aim: Math.round(aim * 256) / 256, b,
-                px: Math.round(player.x), py: Math.round(player.y) };   // client-authoritative position
+                px: Math.round(player.x), py: Math.round(player.y),   // client-authoritative position
+                lg: netLagCompMs(net.stats) };
   const c = player.car;
   if (c) { cmd.cx = Math.round(c.x); cmd.cy = Math.round(c.y);
            cmd.ca = Math.round(c.angle * 256) / 256; cmd.csp = Math.round(c.speed * 100) / 100; }

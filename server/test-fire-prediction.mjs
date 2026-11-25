@@ -1,5 +1,8 @@
 import vm from 'node:vm';
 import { readSource, extractTopLevel } from './render-test-kit.mjs';
+import runtime from './sim-runtime.js';
+
+const { createRoomSim } = runtime;
 
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ', msg); } else { fail++; console.log('  XX FAIL:', msg); } };
@@ -78,10 +81,100 @@ function testPredictedShotQueue() {
   ok(mixed.length === 0, 'queue drained after consuming the survivor');
 }
 
+const SHOOTER_SETTLE_TICKS = 20;
+const RIVAL_OFFSET_X = 100;
+const RIVAL_JUMP_Y = 400;
+const SHOT_TICKS = 12;
+
+function findClearRowOrigin(sim) {
+  const kinds = sim._tileKinds();
+  const tileSize = sim._tileSize();
+  const walkable = tile => tile === kinds.ROAD || tile === kinds.SIDEWALK;
+  for (const node of sim._roadGraph().nodes) {
+    const tileY = Math.floor(node.y / tileSize);
+    const firstTileX = Math.floor((node.x - 40) / tileSize);
+    const lastTileX = Math.floor((node.x + RIVAL_OFFSET_X + 80) / tileSize);
+    let clear = true;
+    for (let tileX = firstTileX; tileX <= lastTileX && clear; tileX++) clear = walkable(sim._tileAt(tileX, tileY));
+    if (clear) return { x: node.x, y: node.y };
+  }
+  throw new Error('no clear row found');
+}
+
+function createDuel(code, rivalJoinsLate) {
+  const sim = createRoomSim(code);
+  const shooterId = sim.addPlayer('Shooter', 0);
+  const origin = findClearRowOrigin(sim);
+  sim._peds().length = 0;
+  sim._cars().length = 0;
+  const shooter = sim._player(shooterId);
+  shooter.owned[1] = true;
+  shooter.weaponIdx = 1;
+  let rivalId = null;
+  const reportBoth = (rivalDx, rivalDy) => {
+    sim.applyInput(shooterId, { px: origin.x, py: origin.y });
+    if (rivalId) sim.applyInput(rivalId, { px: origin.x + rivalDx, py: origin.y + rivalDy });
+  };
+  const settle = ticks => { for (let i = 0; i < ticks; i++) { reportBoth(RIVAL_OFFSET_X, 0); sim.tick(); } };
+  if (!rivalJoinsLate) { rivalId = sim.addPlayer('Rival', 1); settle(SHOOTER_SETTLE_TICKS); }
+  else settle(SHOOTER_SETTLE_TICKS);
+  return {
+    sim, shooterId, shooter, origin,
+    addRival() { rivalId = sim.addPlayer('Rival', 1); return rivalId; },
+    rival: () => sim._player(rivalId),
+    settle,
+    shoot(lagField, rivalDy) {
+      reportBoth(RIVAL_OFFSET_X, rivalDy);
+      sim.applyInput(shooterId, Object.assign({ aim: 0, b: 2, px: origin.x, py: origin.y, seq: 1 }, lagField));
+      sim.tick();
+      for (let i = 1; i < SHOT_TICKS; i++) { reportBoth(RIVAL_OFFSET_X, rivalDy); sim.tick(); }
+    },
+  };
+}
+
+function testHostRewind() {
+  const baseline = createDuel('LAGC01');
+  baseline.rival().health = 100;
+  baseline.shoot({}, 0);
+  ok(baseline.rival().health < 100, 'baseline shot at a stationary rival lands');
+
+  const uncompensated = createDuel('LAGC02');
+  uncompensated.shoot({}, RIVAL_JUMP_Y);
+  ok(uncompensated.rival().health === 100, 'no lg: shot misses a rival that just moved away');
+
+  const compensated = createDuel('LAGC03');
+  compensated.shoot({ lg: 150 }, RIVAL_JUMP_Y);
+  ok(compensated.rival().health < 100, 'lg 150: shot lands on the rewound rival position');
+  ok(compensated.sim._player(compensated.shooterId).input.lagMs === 150, 'lg 150 is stored as lagMs');
+
+  const bounded = createDuel('LAGC04');
+  for (let i = 0; i < 20; i++) { bounded.sim.applyInput(bounded.shooterId, { px: bounded.origin.x, py: bounded.origin.y }); bounded.sim.applyInput(bounded.rival().id, { px: bounded.origin.x + RIVAL_OFFSET_X, py: bounded.origin.y + RIVAL_JUMP_Y }); bounded.sim.tick(); }
+  bounded.shoot({ lg: 99999 }, RIVAL_JUMP_Y);
+  ok(bounded.sim._player(bounded.shooterId).input.lagMs === 250, 'huge lg is clamped to 250');
+  ok(bounded.rival().health === 100, 'clamped rewind stays inside history and still misses');
+
+  for (const garbage of [NaN, -50, 'x', '150', null, Infinity]) {
+    const duel = createDuel('LAGC05');
+    let threw = null;
+    try { duel.shoot({ lg: garbage }, RIVAL_JUMP_Y); } catch (error) { threw = error; }
+    ok(!threw, 'lg ' + String(garbage) + ' does not throw');
+    if (garbage !== null) ok(duel.sim._player(duel.shooterId).input.lagMs === 0, 'lg ' + String(garbage) + ' gives lagMs 0');
+  }
+
+  const late = createDuel('LAGC06', true);
+  late.addRival();
+  late.sim.applyInput(late.rival().id, { px: late.origin.x + RIVAL_OFFSET_X, py: late.origin.y });
+  let threw = null;
+  try { late.shoot({ lg: 250 }, 0); } catch (error) { threw = error; }
+  ok(!threw, 'rival with no history does not throw');
+  ok(late.rival().health < 100, 'rival with no history is tested at the current position');
+}
+
 testBodyHistory();
 testLagMsToTicks();
 testNetLagCompMs();
 testPredictedShotQueue();
+testHostRewind();
 
 console.log(`\nfire prediction: ${pass} ok, ${fail} failed`);
 process.exit(fail ? 1 : 0);

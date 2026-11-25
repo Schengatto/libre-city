@@ -58,7 +58,8 @@ function makeSimPlayer(name, shirtIdx) {
     wanted: 0, wantedHeat: 0, crimeCd: 0,         // PER-PLAYER wanted level
     cash: 0, downT: 0, downKind: null, kills: 0, deaths: 0,
     score: 0, streak: 0, bounty: 0, events: [],   // score/streak/bounty + the player's queued toast messages
-    input: { ax: 0, ay: 0, aim: 0, fireHeld: false, fireEdge: false, enterExit: false, horn: false, weapon: null },
+    input: { ax: 0, ay: 0, aim: 0, fireHeld: false, fireEdge: false, enterExit: false, horn: false, weapon: null, lagMs: 0 },
+    hist: createBodyHistory(),
   };
 }
 function playerById(id) { for (const p of players) if (p.id === id) return p; return null; }
@@ -168,6 +169,7 @@ function tickWorld() {
     else if (wantedHeat > 0) { wantedHeat = Math.max(0, wantedHeat - 0.0016); wanted = Math.floor(wantedHeat); }
     pl.input.fireEdge = false;
     saveP(pl);
+    bodyHistoryRecord(pl.hist, frame, (pl.car || pl).x, (pl.car || pl).y);
   }
   // The SHARED world (police density, pedestrian reactions) responds to the MOST wanted
   // player present: set the room globals to the maximum across the players.
@@ -280,6 +282,7 @@ var __sim = {
     if (cmd.b != null) { i.fireHeld = !!(cmd.b & 1); if (cmd.b & 2) i.fireEdge = true; if (cmd.b & 4) i.enterExit = true; if (cmd.b & 8) i.horn = true; }
     if (cmd.drive) { touchDrive.active = !!cmd.drive.active; touchDrive.angle = cmd.drive.angle || 0; }
     if (cmd.w != null) i.weapon = cmd.w;
+    if (cmd.lg != null) i.lagMs = Number.isFinite(cmd.lg) ? Math.min(LAG_COMP_MAX_MS, Math.max(0, cmd.lg)) : 0;
     // CLIENT-AUTHORITATIVE POSITION: the player owns their own movement. We store it here
     // and tickWorld applies it after the player's sim (firing/interactions stay server-side,
     // from the position the client reported).
