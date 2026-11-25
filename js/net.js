@@ -40,6 +40,7 @@ const net = {
   // ---- Phase 2: client of an AUTHORITATIVE SERVER ----
   authoritative: false,   // true = the server owns the world; here we only render it
   snap: null,             // last 'w' snapshot received
+  lastSnapTick: -1,
   trainOffset: null, trainOffsetTarget: 0, trainSlewFrame: 0,
   inSeq: 0,               // running id of the input sent
   firePending: false, enterEdge: false, hornEdge: false, weaponReq: null,  // one-shot actions → server
@@ -209,6 +210,7 @@ function netOnJoined(m) {
   if (m.token) net.token = m.token;
   net.authoritative = !!m.sim;                       // Phase 2: the server simulates the world
   net.hostId = m.host ?? null;
+  net.lastSnapTick = -1;
   netSyncHostRole();
   player.shirt = NET_SHIRTS[m.shirtIdx % NET_SHIRTS.length];
   if (m.minutes != null) gameMinutes = m.minutes;   // the server sets the match's pace
@@ -230,8 +232,15 @@ function netOnJoined(m) {
   if (m.build && window.LC_BUILD && m.build !== window.LC_BUILD) netUpdatePrompt();
 }
 function netSyncHostRole() {
-  if (net.hostId !== null && net.hostId === net.myId) { if (!simHostActive()) simHostStart(); }
-  else simHostStop();
+  if (net.hostId !== null && net.hostId === net.myId) {
+    if (!simHostActive()) simHostStart();
+    rtcGuestClose();
+    net.stats.transport = 'host';
+  } else {
+    simHostStop();
+    if (net.hostId !== null) rtcGuestConnect(net.hostId);
+    else rtcGuestClose();
+  }
 }
 
 // Shows a persistent notice when the running client is older than the server (typically: a
@@ -265,8 +274,10 @@ function onServerMessage(m) {
       netRefreshBadge();
       break;
     }
+    case 'rtc': if (simHostActive()) rtcHostOnSignal(m.from, m.k, m.d); else rtcGuestOnSignal(m.from, m.k, m.d); break;
     case 'host':
       net.hostId = m.id ?? null;
+      net.lastSnapTick = -1;
       netSyncHostRole();
       if (net.hostId !== null && net.hostId !== net.myId) toast(t('net.newHost', { name: m.name }));
       break;
@@ -284,7 +295,7 @@ function onServerMessage(m) {
 // Shuts everything down and returns to single-player mode (ghosts included).
 function netShutdown() {
   net.wantOpen = false; net.dropped = false;
-  simHostStop(); net.hostId = null;
+  simHostStop(); rtcGuestClose(); net.hostId = null; net.lastSnapTick = -1;
   clearTimeout(net.reconnT); net.reconnT = null;
   clearInterval(net.queueT); net.queueT = null; net.queue = null; net.qtoken = null;
   try { if (net.wake) net.wake.release(); } catch (e) {}
@@ -666,6 +677,7 @@ function createNetStats() {
     snapshotTimes: [], snapshotWindow: null,
     hostHz: null, tickSamples: [],
     interpDelay: INTERP_MS,
+    transport: 'WS',
   };
 }
 function netStatsSmooth(previous, sample) {
@@ -749,6 +761,7 @@ function netStatsLines(stats, interpDelay, now) {
   const ms = (value, digits = 0) => value === null ? '-' : value.toFixed(digits) + ' ms';
   const withLast = (smoothed, last) => last === null ? ms(smoothed) : ms(smoothed) + ' (last ' + ms(last) + ')';
   return [
+    ['transport', stats.transport],
     ['RTT', withLast(stats.rtt, stats.rttLast)],
     ['input RTT', withLast(stats.inputRtt, stats.inputRttLast)],
     ['snap/s', snapshotWindow.rate.toFixed(1)],
@@ -831,8 +844,17 @@ function netTrainClock() {
   netSlewTrainOffset();
   return frame + net.trainOffset;
 }
+function netApplyWorldEvents(fx, ev) {
+  if (fx) for (const e of fx) netApplyFx(e);
+  if (Array.isArray(ev)) for (const event of ev) {
+    const txt = evText(event); toast(txt);
+    if (txt[0] === '💀' || txt[0] === '🎯') sfx.coin();
+  }
+}
 // A snapshot arrives: update the interpolation targets for the world and the ghosts.
 function netOnSnapshot(m) {
+  if (!rtcFreshSnapshot(net.lastSnapTick, m.tick)) { netApplyWorldEvents(m.fx, m.me && m.me.ev); return; }
+  if (Number.isFinite(m.tick)) net.lastSnapTick = m.tick;
   net.snap = m;
   netNoteTrainTick(m);
   netStatsOnSnapshot(net.stats, m, performance.now());
@@ -863,8 +885,7 @@ function netOnSnapshot(m) {
   // --- Coins and fires (static: rebuilt on every snapshot) ---
   coins.length = 0; for (const k of m.coins) coins.push({ x: k.x, y: k.y, val: k.v, spin: rnd(0, TAU), bob: rnd(0, TAU) });
   fires.length = 0; for (const f of m.fires) fires.push({ x: f.x, y: f.y, r: 20, hp: 100 });
-  // --- Cosmetic effects from the server: particles + positional audio ---
-  if (m.fx) for (const e of m.fx) netApplyFx(e);
+  netApplyWorldEvents(m.fx, m.me && m.me.ev);
   // --- Remote players' ghosts (AOI positions; the roster still comes from join/leave) ---
   for (const pv of m.players) {
     let g = net.players.get(pv.id);
@@ -877,11 +898,6 @@ function netOnSnapshot(m) {
       else { netApplyCar(g.car, pv.car); interpFeed(g.car, pv.car.x, pv.car.y, pv.car.an); }
       g.car.riderShirt = g.shirt;
     } else { g.car = null; interpFeed(g, pv.x, pv.y, pv.aim); }
-  }
-  // --- Server messages for me (kills, bounties): toast ONCE per snapshot ---
-  if (m.me && Array.isArray(m.me.ev)) for (const ev of m.me.ev) {
-    const txt = evText(ev); toast(txt);
-    if (txt[0] === '💀' || txt[0] === '🎯') sfx.coin();
   }
   // --- Scoreboard from the snapshot (authoritative stats) ---
   if (Array.isArray(m.sc)) for (const s of m.sc) {
@@ -1034,7 +1050,7 @@ function netSendInput() {
   if (vr !== net.lastVR) { cmd.vr = vr; net.lastVR = vr; }
   netStatsOnInputSent(net.stats, cmd.seq, performance.now());
   if (simHostActive()) simHostSendInput(cmd);
-  else netSend(cmd);
+  else if (!rtcGuestSendInput(cmd)) netSend(cmd);
 }
 
 // The authoritative client's loop (called by update() in place of the simulation).

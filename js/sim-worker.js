@@ -19,6 +19,7 @@
   let lastTickAt = 0;
   let tickCount = 0;
   const memberIds = new Set();
+  const p2pGuestIds = new Set();
 
   function post(message) { self.postMessage(message); }
 
@@ -64,6 +65,14 @@
     }
   }
 
+  function postGuestFrame(id, snapshot) {
+    const hasEvents = snapshot.me.ev !== null || snapshot.fx.length > 0;
+    const events = hasEvents ? JSON.stringify({ t: 'we', tick: snapshot.tick, ev: snapshot.me.ev, fx: snapshot.fx }) : null;
+    snapshot.me.ev = null;
+    snapshot.fx = [];
+    post({ type: 'guestFrame', id, snapshot: JSON.stringify(snapshot), events });
+  }
+
   function sendSnapshots() {
     const scores = sim.scores();
     for (const id of memberIds) {
@@ -71,6 +80,7 @@
       if (!snapshot) continue;
       snapshot.sc = scores;
       if (id === hostId) post({ type: 'snapshot', snapshot });
+      else if (p2pGuestIds.has(id)) postGuestFrame(id, snapshot);
       else sendToServer('W|' + id + '|' + JSON.stringify(snapshot));
     }
     sim.clearFx();
@@ -121,9 +131,20 @@
         if (sim && typeof message.id === 'string') addMember(message.id, message.name, message.shirtIdx);
         break;
       case 'leave':
+        p2pGuestIds.delete(message.id);
         if (sim && memberIds.delete(message.id)) sim.removePlayer(message.id);
         break;
     }
+  }
+
+  function setGuestP2P(id, open) {
+    if (typeof id !== 'string') return;
+    if (open) p2pGuestIds.add(id);
+    else p2pGuestIds.delete(id);
+  }
+
+  function applyGuestInput(id, input) {
+    if (sim && input && typeof id === 'string' && id !== hostId && memberIds.has(id)) sim.applyInput(id, input);
   }
 
   function openHostLink(url, roomCode, token) {
@@ -149,6 +170,7 @@
     hostStateTimer = null;
     sim = null;
     memberIds.clear();
+    p2pGuestIds.clear();
     if (socket) {
       const closingSocket = socket;
       socket = null;
@@ -178,6 +200,8 @@
     if (!message) return;
     if (message.type === 'start') start(message);
     else if (message.type === 'input') { if (sim && message.input) sim.applyInput(hostId, message.input); }
+    else if (message.type === 'p2p') setGuestP2P(message.id, message.open === true);
+    else if (message.type === 'guestInput') applyGuestInput(message.id, message.input);
     else if (message.type === 'stop') stopRoom();
   };
 })();

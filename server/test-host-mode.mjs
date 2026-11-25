@@ -600,6 +600,52 @@ try {
     'server sim with the police off: knockouts bring no stars and no cops');
   closeAll([serverPoliceOn.ws, serverPoliceOff.ws]);
 
+  console.log('webrtc signaling relay');
+  const rtcHost = await createRoom('RTC001', 'Rita');
+  const rtcGuestB = await joinRoom('RTC001', 'Bob');
+  const rtcGuestC = await joinRoom('RTC001', 'Cleo');
+  const isRtcFrom = (senderId, kind) => message => message.t === 'rtc' && message.from === senderId && message.k === kind;
+  send(rtcGuestB.ws, { t: 'rtc', to: rtcHost.id, k: 'offer', d: 'v=0 offer' });
+  const relayedOffer = await waitFor(() => findMessage(rtcHost.ws, isRtcFrom(rtcGuestB.id, 'offer')));
+  check(relayedOffer && relayedOffer.d === 'v=0 offer', 'the host receives the guest offer signed with the sender id');
+  send(rtcHost.ws, { t: 'rtc', to: rtcGuestB.id, k: 'ice', d: { candidate: 'c', sdpMid: '0' } });
+  const relayedIce = await waitFor(() => findMessage(rtcGuestB.ws, isRtcFrom(rtcHost.id, 'ice')));
+  check(relayedIce && relayedIce.d.candidate === 'c' && relayedIce.d.sdpMid === '0', 'the guest receives the host ICE candidate signed with the host id');
+  send(rtcGuestB.ws, { t: 'rtc', to: rtcGuestC.id, k: 'offer', d: 'v=0 guest to guest' });
+  send(rtcGuestB.ws, { t: 'rtc', to: rtcGuestB.id, k: 'offer', d: 'v=0 to self' });
+  send(rtcHost.ws, { t: 'rtc', to: 'p99', k: 'offer', d: 'v=0 unknown target' });
+  await wait(SILENCE_MS);
+  check(!findType(rtcGuestC.ws, 'rtc'), 'a guest to guest signal is dropped');
+  check(!findMessage(rtcGuestB.ws, message => message.t === 'rtc' && message.k === 'offer'), 'a signal addressed to the sender is dropped');
+  const rtcHostInboxBefore = rtcHost.ws.inbox.filter(message => message.t === 'rtc').length;
+  send(rtcGuestB.ws, { t: 'rtc', to: rtcHost.id, k: 'bogus', d: 'v=0' });
+  send(rtcGuestB.ws, { t: 'rtc', to: rtcHost.id, k: 'offer', d: 'x'.repeat(16385) });
+  send(rtcGuestB.ws, { t: 'rtc', to: rtcHost.id, k: 'ice', d: { candidate: 'x'.repeat(2048) } });
+  send(rtcGuestB.ws, { t: 'rtc', to: rtcHost.id, k: 'ice', d: 'not an object' });
+  await wait(SILENCE_MS);
+  check(rtcHost.ws.inbox.filter(message => message.t === 'rtc').length === rtcHostInboxBefore, 'unknown kinds and oversized or malformed payloads are dropped');
+  closeAll([rtcHost.ws, rtcGuestB.ws, rtcGuestC.ws]);
+
+  console.log('webrtc signaling budget');
+  const budgetHost = await createRoom('RTC002', 'Hana');
+  const budgetGuest = await joinRoom('RTC002', 'Ben');
+  const relayedFromGuest = kind => budgetHost.ws.inbox.filter(isRtcFrom(budgetGuest.id, kind)).length;
+  send(budgetGuest.ws, { t: 'rtc', to: budgetHost.id, k: 'offer', d: 'v=0 first' });
+  send(budgetGuest.ws, { t: 'rtc', to: budgetHost.id, k: 'offer', d: 'v=0 second' });
+  await wait(SILENCE_MS);
+  check(relayedFromGuest('offer') === 1 && findMessage(budgetHost.ws, isRtcFrom(budgetGuest.id, 'offer')).d === 'v=0 first',
+    'two offers within 1000 ms: only the first is relayed');
+  for (let n = 0; n < 33; n++) send(budgetGuest.ws, { t: 'rtc', to: budgetHost.id, k: 'ice', d: { candidate: 'c' + n } });
+  await wait(SILENCE_MS);
+  check(relayedFromGuest('ice') === 32, '33 ICE candidates after one offer: 32 are relayed');
+  for (let n = 0; n < 32; n++) send(budgetHost.ws, { t: 'rtc', to: budgetGuest.id, k: 'ice', d: { candidate: 'h' + n } });
+  send(budgetHost.ws, { t: 'rtc', to: budgetGuest.id, k: 'answer', d: 'v=0 answer' });
+  send(budgetHost.ws, { t: 'rtc', to: budgetGuest.id, k: 'ice', d: { candidate: 'after-answer' } });
+  await wait(SILENCE_MS);
+  check(budgetGuest.ws.inbox.some(message => message.t === 'rtc' && message.k === 'ice' && message.d.candidate === 'after-answer'),
+    'the host ICE after its answer is still relayed');
+  closeAll([budgetHost.ws, budgetGuest.ws]);
+
   await wait(200);
   console.log(failures ? `\n${failures} host-mode checks FAILED` : '\nall host-mode checks passed');
 } catch (error) {

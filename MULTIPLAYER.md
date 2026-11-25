@@ -100,6 +100,36 @@ reale: i browser comprimono con il livello zlib di default, il livello 3 della c
 solo per ciò che comprime il server. Decisione: basta il context takeover (~183 KB/s reali,
 max 239); delta e frequenza più bassa degli snapshot non servono per ora.
 
+### Trasporto P2P (WebRTC)
+
+Snapshot e input dei guest non passano più dal VPS: viaggiano su un DataChannel WebRTC
+direttamente tra guest e host. Il VPS fa solo da signaling (`{t:'rtc', to, k, d}` rimbalzato
+come `{t:'rtc', from, k, d}`) e da fallback.
+
+```
+guest ⇄ host            (P2P, DataChannel)
+guest ⇄ VPS ⇄ host      (solo signaling e fallback WS)
+```
+
+- Due canali per guest. `fast`: non ordinato, senza ritrasmissioni (`maxRetransmits: 0`),
+  per snapshot e input di movimento. `rel`: ordinato e affidabile, per gli eventi del mondo
+  e per gli input a fronte (sparo, entra/esci, clacson, cambio arma, area di interesse).
+- Fallback: finché il canale non è utilizzabile gli input e gli snapshot restano sul WS.
+  Se la connessione cade o non si apre, il guest riprova con backoff da 5 s a 60 s; il
+  ritorno su P2P azzera il backoff. Ogni input va su un solo trasporto.
+- Solo STUN, nessun TURN: dove il NAT simmetrico impedisce il P2P il guest resta su WS.
+- `?rtc=off` disattiva il P2P sul client (guest sempre su WS), utile per confronti.
+- Cambio host: alla migrazione il guest chiude il link, azzera il tick dell'ultimo snapshot
+  (`net.lastSnapTick`) e si connette al nuovo host; chi viene eletto host chiude il lato guest.
+- Overlay `?netstats` (o F3): la riga `transport` vale `P2P`, `WS` oppure `host`.
+- Solo STUN: host e guest vedono l'IP pubblico l'uno dell'altro (candidate srflx), come in
+  Fase 1 con PeerJS. `?rtc=off` lo evita per un guest; nasconderlo richiederebbe un relay TURN (non usato).
+- Race accettata: gli eventi one-shot (toast, fx) che il worker ha già estratto per un guest
+  nei 1-2 frame in cui il suo canale si chiude vanno persi; punteggi e stato si riallineano
+  dagli snapshot successivi (`sc`, `me`).
+- Misurare: aprire il guest con `?netstats` (P2P) e poi con `?netstats&rtc=off` (WS) e
+  confrontare RTT, `input RTT`, `snap/s`, jitter e `max gap 5s`.
+
 ---
 
 ## Avvio in locale

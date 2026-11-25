@@ -31,13 +31,23 @@ function simHostStart() {
     const message = event.data;
     if (!message) return;
     if (message.type === 'snapshot') netOnSnapshot(message.snapshot);
+    else if (message.type === 'guestFrame') rtcHostSendFrame(message.id, message.snapshot, message.events);
     else if (message.type === 'error') simHostResign();
   };
   worker.onerror = () => { if (worker === simHostWorker) simHostResign(); };
   worker.postMessage(startMessage);
 }
 
+function simHostSetP2P(id, open) {
+  if (simHostWorker) simHostWorker.postMessage({ type: 'p2p', id, open });
+}
+
+function simHostForwardGuestInput(id, input) {
+  if (simHostWorker) simHostWorker.postMessage({ type: 'guestInput', id, input });
+}
+
 function simHostStop() {
+  rtcHostCloseAll();
   const worker = simHostWorker;
   if (!worker) return;
   simHostWorker = null;
