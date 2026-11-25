@@ -100,6 +100,18 @@ reale: i browser comprimono con il livello zlib di default, il livello 3 della c
 solo per ciò che comprime il server. Decisione: basta il context takeover (~183 KB/s reali,
 max 239); delta e frequenza più bassa degli snapshot non servono per ora.
 
+**LIBRE-34 fase 1** (snapshot JSON più snelli: la fisica di guida viaggia solo per l'auto del
+giocatore, angoli e `aim` arrotondati a 0,01). Stessa misura, livello 6, seed 1-5, media / max:
+
+| Metrica | prima (adc6bb8) | dopo |
+|---|---|---|
+| raw | 2171 / 2587 KB/s | 1771 / 2114 KB/s |
+| byte medi per frame raw | 24700 / 29432 B | 20154 / 24053 B |
+| senza context takeover | 341 / 393 KB/s | 211 / 243 KB/s |
+| con context takeover | 128 / 225 KB/s | 56 / 71 KB/s |
+
+Il raw conta ora perché il canale `fast` P2P (LIBRE-33) invia senza deflate.
+
 ### Trasporto P2P (WebRTC)
 
 Snapshot e input dei guest non passano più dal VPS: viaggiano su un DataChannel WebRTC
