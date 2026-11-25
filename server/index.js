@@ -29,7 +29,7 @@ const http = require('node:http');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const { performance } = require('node:perf_hooks');
+const { performance, monitorEventLoopDelay, PerformanceObserver } = require('node:perf_hooks');
 const { WebSocketServer } = require('ws');
 // Shared leaderboard across every room, persisted to disk: see server/leaderboard.js.
 const leaderboard = require('./leaderboard');
@@ -61,7 +61,7 @@ const HOST_LINK_MESSAGES_PER_SECOND = 400;
 const HOST_LINK_MESSAGE_BURST = 800;
 const MAX_RELAY_BUFFERED_BYTES = 1024 * 1024;
 const MAX_HOST_INPUT_BUFFERED_BYTES = 256 * 1024;
-const FORWARDED_INPUT_NUMBER_FIELDS = ['seq', 'ax', 'ay', 'aim', 'b', 'px', 'py', 'cx', 'cy', 'ca', 'csp', 'w', 'vr'];
+const FORWARDED_INPUT_NUMBER_FIELDS = ['seq', 'ax', 'ay', 'aim', 'b', 'px', 'py', 'cx', 'cy', 'ca', 'csp', 'w', 'vr', 'lg'];
 const SNAPSHOT_FRAME_BYTE = 0x57;
 const FRAME_SEPARATOR_BYTE = 0x7c;
 const SNAPSHOT_PAYLOAD_PREFIX = Buffer.from('{"t":"w"');
@@ -211,6 +211,9 @@ function broadcast(room, msg, exceptId) {
 }
 function sendRaw(ws, msg) {
   if (ws && ws.readyState === 1) { try { ws.send(JSON.stringify(msg)); } catch {} }
+}
+function pongFor(ping) {
+  return Number.isFinite(ping.c) ? { t: 'pong', c: ping.c } : { t: 'pong' };
 }
 // When the minutes run out the server notifies EVERYONE: nobody is left behind.
 function scheduleEnd(room) {
@@ -731,7 +734,7 @@ function onGameMessage(ws, m) {
       break;
     }
     case 'ping':
-      sendRaw(ws, { t: 'pong' });
+      sendRaw(ws, pongFor(m));
       break;
   }
 }
@@ -802,6 +805,33 @@ function sendFile(res, full, rel, method) {
   stream.on('error', () => { if (!res.headersSent) res.writeHead(500); res.end(); });
 }
 
+const EVENT_LOOP_WINDOW_MS = 10_000;
+const eventLoopDelay = monitorEventLoopDelay({ resolution: 10 });
+eventLoopDelay.enable();
+let gcPauseMaxMs = 0;
+let gcPauseTotalMs = 0;
+new PerformanceObserver(list => {
+  for (const entry of list.getEntries()) {
+    gcPauseMaxMs = Math.max(gcPauseMaxMs, entry.duration);
+    gcPauseTotalMs += entry.duration;
+  }
+}).observe({ entryTypes: ['gc'] });
+const nanosecondsToMs = nanoseconds => Math.round(nanoseconds / 1e5) / 10;
+const roundMs = milliseconds => Math.round(milliseconds * 10) / 10;
+let eventLoopReport = { p50: 0, p99: 0, max: 0, gcMax: 0, gcTotal: 0 };
+setInterval(() => {
+  eventLoopReport = {
+    p50: nanosecondsToMs(eventLoopDelay.percentile(50)),
+    p99: nanosecondsToMs(eventLoopDelay.percentile(99)),
+    max: nanosecondsToMs(eventLoopDelay.max),
+    gcMax: roundMs(gcPauseMaxMs),
+    gcTotal: roundMs(gcPauseTotalMs),
+  };
+  eventLoopDelay.reset();
+  gcPauseMaxMs = 0;
+  gcPauseTotalMs = 0;
+}, EVENT_LOOP_WINDOW_MS).unref();
+
 // ---------- HTTP + WebSocket ------------------------------------------------
 const server = http.createServer((req, res) => {
   const [route, qs] = req.url.split('?');
@@ -809,7 +839,7 @@ const server = http.createServer((req, res) => {
     const players = [...rooms.values()].reduce((n, r) => n + activeCount(r), 0);
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ ok: true, rooms: rooms.size, live: liveRooms(), max: MAX_ROOMS,
-                             queue: queue.length, players }));
+                             queue: queue.length, players, loop: eventLoopReport }));
     return;
   }
   // Shared leaderboard. Plain HTTP rather than a WebSocket message because it is read from
@@ -880,7 +910,7 @@ wss.on('connection', ws => {
     let m;
     try { m = JSON.parse(data); } catch { return; }
     if (!m || typeof m !== 'object') return;
-    if (m.t === 'ping') { sendRaw(ws, { t: 'pong' }); return; }   // application-level keepalive
+    if (m.t === 'ping') { sendRaw(ws, pongFor(m)); return; }   // application-level keepalive
     if (!ws._pid) {                                // not in a room yet: only create/join/leave-queue
       if (m.t === 'create') handleCreate(ws, m);
       else if (m.t === 'join') handleJoin(ws, m);

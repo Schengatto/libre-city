@@ -45,6 +45,7 @@ const net = {
   firePending: false, enterEdge: false, hornEdge: false, weaponReq: null,  // one-shot actions → server
   wcars: new Map(), wpeds: new Map(),   // id → world entities (interpolated)
   wbullets: [], wrockets: [],           // bullets/rockets (extrapolated between snapshots)
+  predBullets: [], predictedShots: [],
 };
 const netActive = () => net.mode !== null;
 
@@ -275,7 +276,7 @@ function onServerMessage(m) {
       break;
     case 'kill': netScoreKill(m.id); break;
     case 'w': netOnSnapshot(m); break;             // Phase 2: authoritative world snapshot
-    case 'pong': break;
+    case 'pong': netStatsOnPong(net.stats, m.c, performance.now()); break;
     default: if (m.id && m.id !== net.myId) netApplyRemote(m.id, m);
   }
 }
@@ -293,6 +294,8 @@ function netShutdown() {
   net.players.clear(); net.looseCars.clear(); net.remoteCops.clear();
   net.mode = null; net.myId = null; net.token = null; net.clockLeft = null;
   net.trainOffset = null;
+  net.predBullets.length = 0; net.predictedShots.length = 0;
+  net.stats = createNetStats();
   net.score = 0; net.streak = 0; net.bounty = 0; updateBountyHud(0);
   policeOn = true;
   document.body.classList.remove('mp');
@@ -330,7 +333,7 @@ function carNetPayload(c) {
     cid: c.netId || null, x: c.x, y: c.y, an: c.angle, sp: c.speed, w: c.w, h: c.h, col: c.color,
     bike: !!c.isBike, tank: !!c.isTank, taxi: !!c.isTaxi, del: !!c.isDelivery,
     liv: c.livery || null, pol: !!c.wasPolice, hel: c.helmet || null,
-    tur: c.isTank ? c.turretA : null,
+    tur: c.isTank ? c.turretA : null, dn: c.dents || undefined,
   };
 }
 // Compact state of the local player (position, vehicle, statistics).
@@ -353,7 +356,7 @@ function netCopPayloads() {
     if (c.role !== 'police') continue;
     if (!c.netId) c.netId = net.myId + '#c' + (net.copSeq++);
     (out || (out = [])).push({ cid: c.netId, x: Math.round(c.x), y: Math.round(c.y),
-      an: c.angle, sp: c.speed, w: c.w, h: c.h, col: c.color, lp: c.lightPhase || 0 });
+      an: c.angle, sp: c.speed, w: c.w, h: c.h, col: c.color, lp: c.lightPhase || 0, dn: c.dents || undefined });
   }
   return out;   // null when there are none: the receiver removes mine
 }
@@ -383,14 +386,14 @@ function netApplyRemote(id, m) {
     g.gun = !!m.g; g.hp = m.hp; g.down = !!m.dn;
     if (m.st) g.stats = m.st;
     if (m.c) {
-      if (!g.car) g.car = { role: 'traffic', driver: 'net', colH: 13, speed: 0, gear: 1,
+      if (!g.car) g.car = { role: 'traffic', driver: 'net', speed: 0, gear: 1,
                             kvx: 0, kvy: 0, lightPhase: 0, x: m.c.x, y: m.c.y, angle: m.c.an, tx: null };
       const c = g.car;
       if (c.tx == null || dist(c.x, c.y, m.c.x, m.c.y) > 280) { c.x = m.c.x; c.y = m.c.y; c.angle = m.c.an; }  // teleport
       c.tx = m.c.x; c.ty = m.c.y; c.ta = m.c.an; c.speed = m.c.sp;
-      c.w = m.c.w; c.h = m.c.h; c.color = m.c.col;
+      c.w = m.c.w; c.h = m.c.h; c.colH = vehicleColH(m.c.bike, m.c.h); c.color = m.c.col;
       c.isBike = m.c.bike; c.isTank = m.c.tank; c.isTaxi = m.c.taxi; c.isDelivery = m.c.del;
-      c.livery = m.c.liv || null; c.wasPolice = m.c.pol;
+      c.livery = m.c.liv || null; c.wasPolice = m.c.pol; c.dents = m.c.dn || 0;
       c.helmet = m.c.hel || '#2a2a2e'; c.riderShirt = g.shirt;
       if (m.c.tur != null) c.turretA = m.c.tur;
       if (m.c.cid != null) { c.netId = m.c.cid; net.looseCars.delete(m.c.cid); }  // they are driving it: drop the parked shape
@@ -409,12 +412,12 @@ function netApplyRemote(id, m) {
 function netParkCar(owner, p) {
   if (!p || p.cid == null) return;
   let c = net.looseCars.get(p.cid);
-  if (!c) { c = { netId: p.cid, role: 'parked', driver: null, colH: 13, speed: 0, gear: 1, lightPhase: 0, kvx: 0, kvy: 0 }; net.looseCars.set(p.cid, c); }
+  if (!c) { c = { netId: p.cid, role: 'parked', driver: null, speed: 0, gear: 1, lightPhase: 0, kvx: 0, kvy: 0 }; net.looseCars.set(p.cid, c); }
   c.owner = owner;
   c.x = p.x; c.y = p.y; c.angle = p.an; c.speed = p.sp || 0;
-  c.w = p.w; c.h = p.h; c.color = p.col;
+  c.w = p.w; c.h = p.h; c.colH = vehicleColH(p.bike, p.h); c.color = p.col;
   c.isBike = p.bike; c.isTank = p.tank; c.isTaxi = p.taxi; c.isDelivery = p.del;
-  c.livery = p.liv || null; c.wasPolice = p.pol;
+  c.livery = p.liv || null; c.wasPolice = p.pol; c.dents = p.dn || 0;
   c.helmet = p.hel || '#2a2a2e';
   if (p.tur != null) c.turretA = p.tur;
 }
@@ -432,7 +435,7 @@ function netApplyCops(owner, list) {
       net.remoteCops.set(p.cid, c);
     } else if (dist(c.x, c.y, p.x, p.y) > 280) { c.x = p.x; c.y = p.y; c.angle = p.an; }  // teleport
     c.tx = p.x; c.ty = p.y; c.ta = p.an; c.speed = p.sp;
-    c.w = p.w; c.h = p.h; c.color = p.col;
+    c.w = p.w; c.h = p.h; c.color = p.col; c.dents = p.dn || 0;
   }
   for (const [cid, c] of net.remoteCops) if (c.owner === owner && (!seen || !seen.has(cid))) net.remoteCops.delete(cid);
 }
@@ -446,7 +449,10 @@ function netSolidCars(out) {
   // it (the server owns and pushes it): my car simply bounces off it. That keeps traffic
   // collision O(n) on the player's car alone rather than O(n²) over all pairs, and it does
   // not fight the traffic interpolation.
-  if (net.authoritative) for (const c of net.wcars.values()) out.push(c);
+  if (net.authoritative) {
+    const leadFrames = netTrafficLeadFrames(net.stats);
+    for (const c of net.wcars.values()) out.push(netTrafficCollider(c, leadFrames));
+  }
   return out;
 }
 // A rival left the match: remove the vehicles they abandoned and their patrol cars too.
@@ -580,12 +586,26 @@ function netTick() {
 // vehicles and pedestrians "dance" at every correction). To cut the delay, raise the
 // snapshot RATE (server side) rather than extrapolate. The local player does NOT come
 // through here: they are predicted (updateNetClient) to stay responsive.
-// Render delay = ~1.5 snapshot intervals: renderT ALWAYS falls between two real samples →
+// Render delay = measured mean snapshot interval + 2 × jitter (~1.5 intervals on a steady
+// stream): renderT ALWAYS falls between two real samples →
 // pure interpolation (smooth, no extrapolation or jumps). The rival's "position in the past"
 // lag drops by raising the server-side snapshot RATE (SNAP_EVERY): at 30/s (33ms) a 50ms
 // delay is enough, half the 100ms needed at 15/s — same smoothness, half the lag.
-const INTERP_MS = 50;                     // render delay (~1.5 snapshot intervals @30Hz)
-const INTERP_KEEP = 6;                    // states kept per entity (~200ms of history = jitter margin)
+const INTERP_MS = 50;                     // default render delay until enough intervals are measured (~1.5 snapshot intervals @30Hz)
+const INTERP_KEEP = 8;                    // states kept per entity (~230ms of history @30Hz = max delay + one interval)
+const INTERP_MIN_MS = 35;
+const INTERP_MAX_MS = 150;
+const INTERP_MARGIN_MS = 8;
+const INTERP_MIN_INTERVALS = 10;
+const INTERP_STEP_MS = 0.5;
+function netInterpDelayTarget(snapshotWindow) {
+  if (!snapshotWindow || snapshotWindow.intervalCount < INTERP_MIN_INTERVALS) return INTERP_MS;
+  const target = snapshotWindow.meanInterval + 2 * snapshotWindow.jitter + INTERP_MARGIN_MS;
+  return Math.min(INTERP_MAX_MS, Math.max(INTERP_MIN_MS, target));
+}
+function netInterpDelayStep(current, target) {
+  return current + Math.max(-INTERP_STEP_MS, Math.min(INTERP_STEP_MS, target - current));
+}
 function interpFeed(e, x, y, a) {
   const t = performance.now();
   const buf = e.ib || (e.ib = []);
@@ -612,6 +632,159 @@ function interpSample(e, renderT) {
     }
   }
 }
+const NET_SIM_FRAME_MS = 1000 / 60;
+const NET_TRAFFIC_LEAD_MAX_MS = 200;
+const NET_TRAFFIC_LEAD_EASE = 0.25;
+const NET_TRAFFIC_STILL_SPEED = 0.05;
+function netTrafficLeadFrames(stats) {
+  const oneWayMs = stats.rtt === null ? 0 : stats.rtt / 2;
+  return Math.min(NET_TRAFFIC_LEAD_MAX_MS, stats.interpDelay + oneWayMs) / NET_SIM_FRAME_MS;
+}
+function netTrafficCollider(car, leadFrames) {
+  const velocityX = Math.cos(car.angle) * car.speed + car.kvx;
+  const velocityY = Math.sin(car.angle) * car.speed + car.kvy;
+  const collider = car.collider || (car.collider = { leadX: 0, leadY: 0 });
+  const moving = Math.abs(velocityX) + Math.abs(velocityY) > NET_TRAFFIC_STILL_SPEED;
+  collider.leadX += ((moving ? velocityX * leadFrames : 0) - collider.leadX) * NET_TRAFFIC_LEAD_EASE;
+  collider.leadY += ((moving ? velocityY * leadFrames : 0) - collider.leadY) * NET_TRAFFIC_LEAD_EASE;
+  collider.x = car.x + collider.leadX; collider.y = car.y + collider.leadY;
+  collider.angle = car.angle; collider.speed = car.speed; collider.kvx = car.kvx; collider.kvy = car.kvy;
+  collider.w = car.w; collider.h = car.h; collider.mass = car.mass;
+  return collider;
+}
+
+const NET_STATS_SMOOTHING = 0.2;
+const NET_STATS_WINDOW_MS = 5000;
+const NET_STATS_HOST_HZ_MIN_SPAN_MS = 1000;
+const NET_STATS_PENDING_INPUTS = 64;
+const NET_STATS_PING_MS = 1000;
+const NET_STATS_OVERLAY_REFRESH_MS = 500;
+function createNetStats() {
+  return {
+    rtt: null, rttLast: null,
+    inputRtt: null, inputRttLast: null, pendingInputs: [],
+    snapshotTimes: [], snapshotWindow: null,
+    hostHz: null, tickSamples: [],
+    interpDelay: INTERP_MS,
+  };
+}
+function netStatsSmooth(previous, sample) {
+  return previous === null ? sample : previous + (sample - previous) * NET_STATS_SMOOTHING;
+}
+function netStatsOnPong(stats, clientTime, now) {
+  if (!Number.isFinite(clientTime) || clientTime > now) return;
+  stats.rttLast = now - clientTime;
+  stats.rtt = netStatsSmooth(stats.rtt, stats.rttLast);
+}
+function netStatsOnInputSent(stats, seq, now) {
+  stats.pendingInputs.push({ seq, sentAt: now });
+  if (stats.pendingInputs.length > NET_STATS_PENDING_INPUTS) stats.pendingInputs.shift();
+}
+function netStatsOnAck(stats, ack, now) {
+  if (!Number.isFinite(ack)) return;
+  const pending = stats.pendingInputs;
+  let ackedCount = 0;
+  while (ackedCount < pending.length && pending[ackedCount].seq <= ack) ackedCount++;
+  if (ackedCount === 0) return;
+  stats.inputRttLast = now - pending[ackedCount - 1].sentAt;
+  stats.inputRtt = netStatsSmooth(stats.inputRtt, stats.inputRttLast);
+  pending.splice(0, ackedCount);
+}
+const NET_PREDICTED_SHOT_TTL_MS = 1000;
+function netLagCompMs(stats) {
+  if (stats.inputRtt == null) return 0;
+  return clamp(Math.round((stats.inputRtt + stats.interpDelay) / 5) * 5, 0, LAG_COMP_MAX_MS);
+}
+function netPredictedShotPush(queue, now) {
+  queue.push(now);
+}
+function netPredictedShotConsume(queue, now) {
+  while (queue.length && queue[0] < now - NET_PREDICTED_SHOT_TTL_MS) queue.shift();
+  if (!queue.length) return false;
+  queue.shift();
+  return true;
+}
+function netStatsOnTick(stats, tick, now) {
+  if (!Number.isFinite(tick)) return;
+  const samples = stats.tickSamples;
+  if (samples.length && tick < samples[samples.length - 1].tick) samples.length = 0;
+  samples.push({ tick, at: now });
+  while (samples[0].at < now - NET_STATS_WINDOW_MS) samples.shift();
+  const oldest = samples[0], span = now - oldest.at;
+  stats.hostHz = span >= NET_STATS_HOST_HZ_MIN_SPAN_MS ? (tick - oldest.tick) * 1000 / span : null;
+}
+function netStatsSnapshotWindow(times, now) {
+  let first = 0;
+  while (first < times.length && times[first] < now - NET_STATS_WINDOW_MS) first++;
+  const intervalCount = Math.max(0, times.length - first - 1);
+  if (times.length === first) return { rate: 0, meanInterval: null, jitter: null, maxGap: null, intervalCount };
+  let intervalSum = 0;
+  for (let i = first + 1; i < times.length; i++) intervalSum += times[i] - times[i - 1];
+  const meanInterval = intervalCount ? intervalSum / intervalCount : null;
+  let deviationSum = 0, maxGap = now - times[times.length - 1];
+  for (let i = first + 1; i < times.length; i++) {
+    const interval = times[i] - times[i - 1];
+    deviationSum += Math.abs(interval - meanInterval);
+    if (interval > maxGap) maxGap = interval;
+  }
+  const span = now - times[first];
+  return {
+    rate: span > 0 ? intervalCount * 1000 / span : 0,
+    meanInterval,
+    jitter: intervalCount ? deviationSum / intervalCount : null,
+    maxGap,
+    intervalCount,
+  };
+}
+function netStatsOnSnapshot(stats, snapshot, now) {
+  const times = stats.snapshotTimes;
+  times.push(now);
+  while (times[0] < now - NET_STATS_WINDOW_MS) times.shift();
+  stats.snapshotWindow = netStatsSnapshotWindow(times, now);
+  netStatsOnAck(stats, snapshot.ack, now);
+  netStatsOnTick(stats, snapshot.tick, now);
+}
+function netStatsLines(stats, interpDelay, now) {
+  const snapshotWindow = netStatsSnapshotWindow(stats.snapshotTimes, now);
+  const ms = (value, digits = 0) => value === null ? '-' : value.toFixed(digits) + ' ms';
+  const withLast = (smoothed, last) => last === null ? ms(smoothed) : ms(smoothed) + ' (last ' + ms(last) + ')';
+  return [
+    ['RTT', withLast(stats.rtt, stats.rttLast)],
+    ['input RTT', withLast(stats.inputRtt, stats.inputRttLast)],
+    ['snap/s', snapshotWindow.rate.toFixed(1)],
+    ['interval', ms(snapshotWindow.meanInterval, 1)],
+    ['jitter', ms(snapshotWindow.jitter, 1)],
+    ['max gap 5s', ms(snapshotWindow.maxGap)],
+    ['host Hz', stats.hostHz === null ? '-' : stats.hostHz.toFixed(1)],
+    ['interp delay', ms(interpDelay, 1)],
+  ].map(([label, value]) => label.padEnd(13) + value).join('\n');
+}
+net.stats = createNetStats();
+
+let netStatsOverlayOn = new URLSearchParams(location.search).has('netstats');
+let netStatsOverlayEl = null;
+function netRenderStatsOverlay() {
+  const visible = netStatsOverlayOn && netActive() && net.myId !== null;
+  if (!visible) { if (netStatsOverlayEl) netStatsOverlayEl.classList.remove('show'); return; }
+  if (!netStatsOverlayEl) {
+    netStatsOverlayEl = document.createElement('pre');
+    netStatsOverlayEl.id = 'netStats';
+    document.body.appendChild(netStatsOverlayEl);
+  }
+  netStatsOverlayEl.textContent = netStatsLines(net.stats, net.stats.interpDelay, performance.now());
+  netStatsOverlayEl.classList.add('show');
+}
+function netSendPing() {
+  if (netActive()) netSend({ t: 'ping', c: performance.now() });
+}
+addEventListener('keydown', e => {
+  if (e.code !== 'F3') return;
+  e.preventDefault();
+  netStatsOverlayOn = !netStatsOverlayOn;
+  netRenderStatsOverlay();
+});
+setInterval(netSendPing, NET_STATS_PING_MS);
+setInterval(netRenderStatsOverlay, NET_STATS_OVERLAY_REFRESH_MS);
 
 // Applies a car's NON-positional fields from the snapshot (appearance/state); the position
 // goes into the separate interpolation buffer (interpFeed).
@@ -619,12 +792,12 @@ function netApplyCar(c, cp) {
   c.speed = cp.sp;
   c.w = cp.w; c.h = cp.h; c.color = cp.col; c.role = cp.role;
   c.isBike = cp.bike; c.isTank = cp.tank; c.isTaxi = cp.taxi; c.isDelivery = cp.del;
-  c.livery = cp.liv || null; c.wasPolice = cp.pol; c.helmet = cp.hel || '#2a2a2e';
+  c.livery = cp.liv || null; c.wasPolice = cp.pol; c.helmet = cp.hel || '#2a2a2e'; c.dents = cp.dn || 0;
   if (cp.tur != null) c.turretA = cp.tur;
   c.sirenOn = cp.siren; c.lightPhase = cp.lp || 0; c.burning = cp.burn; c.smoking = cp.smk;
 }
 function netMakeWorldCar(cp) {
-  const c = { netId: cp.id, driver: 'net', colH: cp.tank ? 16 : cp.bike ? 8 : 13, gear: 1,
+  const c = { netId: cp.id, driver: 'net', colH: vehicleColH(cp.bike, cp.h), gear: 1,
               kvx: 0, kvy: 0, x: cp.x, y: cp.y, angle: cp.an };
   netApplyCar(c, cp); interpFeed(c, cp.x, cp.y, cp.an);
   return c;
@@ -662,6 +835,7 @@ function netTrainClock() {
 function netOnSnapshot(m) {
   net.snap = m;
   netNoteTrainTick(m);
+  netStatsOnSnapshot(net.stats, m, performance.now());
   // --- World cars (traffic/police/parked/abandoned) ---
   const seen = new Set();
   for (const cp of m.cars) {
@@ -684,7 +858,7 @@ function netOnSnapshot(m) {
   }
   for (const id of net.wpeds.keys()) if (!seenP.has(id)) net.wpeds.delete(id);
   // --- Bullets and rockets (extrapolated locally between snapshots) ---
-  net.wbullets = m.bul.map(b => ({ x: b.x, y: b.y, vx: Math.cos(b.a) * 12, vy: Math.sin(b.a) * 12, hostile: b.hostile, flame: !!b.fl }));
+  net.wbullets = netWorldBulletsFrom(m.bul, net.myId);
   net.wrockets = m.rkt.map(r => ({ x: r.x, y: r.y, vx: Math.cos(r.a) * 6.5, vy: Math.sin(r.a) * 6.5, grenade: !!r.gr }));
   // --- Coins and fires (static: rebuilt on every snapshot) ---
   coins.length = 0; for (const k of m.coins) coins.push({ x: k.x, y: k.y, val: k.v, spin: rnd(0, TAU), bob: rnd(0, TAU) });
@@ -717,8 +891,45 @@ function netOnSnapshot(m) {
 }
 
 // Recreates a cosmetic effect received from the server (existing particles + audio).
+function netWorldBulletsFrom(bul, myId) {
+  const worldBullets = [];
+  for (const b of bul) {
+    if (b.o != null && b.o === myId) continue;
+    const bullet = { x: b.x, y: b.y, vx: Math.cos(b.a) * 12, vy: Math.sin(b.a) * 12, hostile: b.hostile, flame: !!b.fl };
+    if (b.o != null) bullet.fromPlayer = true;
+    worldBullets.push(bullet);
+  }
+  return worldBullets;
+}
+function netPredictFire() {
+  if (!net.authoritative || downT > 0 || player.car || peaceMode()) return;
+  const w = WEAPONS[player.weaponIdx];
+  if (!w || w.melee || w.rocket || w.grenade || player.shootCd > 0) return;
+  if (!(w.auto ? mDownL : mClicked)) return;
+  player.shootCd = w.cd;
+  const aim = Math.atan2(mouseWY() - player.y, mouseWX() - player.x);
+  for (let i = 0; i < (w.pellets || 1); i++) {
+    const a = aim + rnd(-w.spread, w.spread);
+    net.predBullets.push({ x: player.x + Math.cos(a) * 14, y: player.y + Math.sin(a) * 14,
+                           vx: Math.cos(a) * w.spd, vy: Math.sin(a) * w.spd, life: w.life, fromPlayer: true, flame: w.fire });
+  }
+  spawnMuzzle(player.x + Math.cos(aim) * 14, player.y + Math.sin(aim) * 14, aim);
+  (sfx[w.sfx] || sfx.shoot)();
+  netPredictedShotPush(net.predictedShots, performance.now());
+}
+function netStepPredictedBullets() {
+  const predicted = net.predBullets;
+  for (let i = predicted.length - 1; i >= 0; i--) {
+    const b = predicted[i];
+    b.x += b.vx; b.y += b.vy; b.life--;
+    if (b.life <= 0 || solidTile(Math.floor(b.x / T), Math.floor(b.y / T))) predicted.splice(i, 1);
+  }
+}
 function netApplyFx(e) {
-  if (e.k === 0) { spawnMuzzle(e.x, e.y, e.a); const h = hear(e.x, e.y, 850); if (h) sfx.copShoot(h); }   // gunshot
+  if (e.k === 0) {
+    if (e.o != null && e.o === net.myId && netPredictedShotConsume(net.predictedShots, performance.now())) return;
+    spawnMuzzle(e.x, e.y, e.a); const h = hear(e.x, e.y, 850); if (h) sfx.copShoot(h);   // gunshot
+  }
   else if (e.k === 1) spawnBlood(e.x, e.y);
   else if (e.k === 2) spawnSparks(e.x, e.y, e.n || 3);
   else if (e.k === 3) { spawnExplosion(e.x, e.y); const h = hear(e.x, e.y, 1100); if (h) sfx.boom(); }     // explosion
@@ -727,7 +938,9 @@ function netApplyFx(e) {
 // Samples the world at the render instant (in the past) from the interpolation buffer, and
 // extrapolates the bullets. Smooth and at the correct speed at any frame rate.
 function netInterpWorld() {
-  const renderT = performance.now() - INTERP_MS;
+  const stats = net.stats;
+  stats.interpDelay = netInterpDelayStep(stats.interpDelay, netInterpDelayTarget(stats.snapshotWindow));
+  const renderT = performance.now() - stats.interpDelay;
   for (const c of net.wcars.values()) interpSample(c, renderT);
   for (const p of net.wpeds.values()) interpSample(p, renderT);
   for (const g of net.players.values()) {
@@ -748,6 +961,7 @@ function netRebuildArrays() {
   peds.length = 0;
   for (const p of net.wpeds.values()) peds.push(p);
   bullets.length = 0; for (const b of net.wbullets) bullets.push(b);
+  for (const b of net.predBullets) bullets.push(b);
   rockets.length = 0; for (const r of net.wrockets) rockets.push(r);
 }
 
@@ -769,7 +983,7 @@ function netReconcileMe() {
   // Car: create/remove following the authority.
   if (me.car && !player.car) { player.car = netMakePlayerCar(me.car); }
   else if (!me.car && player.car) { player.car = null; engineGain(0); }
-  else if (me.car && player.car) { player.car.sirenOn = me.car.siren; if (me.car.tur != null) player.car.turretA = me.car.tur; }
+  else if (me.car && player.car) { player.car.sirenOn = me.car.siren; player.car.dents = me.car.dn || 0; if (me.car.tur != null) player.car.turretA = me.car.tur; }
   // Out of play (dead/busted): overlay with the server's countdown.
   const bm = $('#bigMsg');
   if (me.down) {
@@ -805,7 +1019,8 @@ function netSendInput() {
   if (net.enterEdge) { b |= 4; net.enterEdge = false; }
   if (net.hornEdge) { b |= 8; net.hornEdge = false; }
   const cmd = { t: 'i', seq: ++net.inSeq, ax, ay, aim: Math.round(aim * 256) / 256, b,
-                px: Math.round(player.x), py: Math.round(player.y) };   // client-authoritative position
+                px: Math.round(player.x), py: Math.round(player.y),   // client-authoritative position
+                lg: netLagCompMs(net.stats) };
   const c = player.car;
   if (c) { cmd.cx = Math.round(c.x); cmd.cy = Math.round(c.y);
            cmd.ca = Math.round(c.angle * 256) / 256; cmd.csp = Math.round(c.speed * 100) / 100; }
@@ -817,6 +1032,7 @@ function netSendInput() {
   // (orientation/resize); it is idempotent server-side.
   const vr = Math.round(Math.max(vw, vh) * 0.5 + 250);
   if (vr !== net.lastVR) { cmd.vr = vr; net.lastVR = vr; }
+  netStatsOnInputSent(net.stats, cmd.seq, performance.now());
   if (simHostActive()) simHostSendInput(cmd);
   else netSend(cmd);
 }
@@ -825,8 +1041,10 @@ function netSendInput() {
 function updateNetClient() {
   applyTouchInput();                                   // mobile: pours the sticks into virtual keys/aim/fire (no-op on desktop)
   if (mClicked) net.firePending = true;                // remember the click (the server does the firing)
+  netPredictFire();
   updateTrainKinematics(netTrainClock());              // train: kinematics only, on the sim's clock (the server rules on impacts)
   netInterpWorld();                                    // world (traffic/pedestrians) from the snapshots
+  netStepPredictedBullets();
   netRebuildArrays();                                  // populates cars[]/peds[] (world + your own vehicle)
   netReconcileMe();                                    // health/cash/weapon/car/death from the server (NOT the position)
   // The player is CLIENT-AUTHORITATIVE: a full local simulation (movement + collisions with

@@ -82,7 +82,7 @@ function trainCollide() {
       const pushX = alongTrack ? (lx < 0 ? -1 : 1) * (penX + 0.5) : 0, pushY = alongTrack ? 0 : (ly < 0 ? -1 : 1) * (penY + 0.5);
       moveBox(c, pushX * s.cos - pushY * s.sin, pushX * s.sin + pushY * s.cos, c.colH, c.colH);
       c.speed *= 0.3; c.kvx *= 0.5; c.kvy *= 0.5;         // hit a wall: almost stopped
-      damageCar(c, 4);
+      damageCar(c, 4, Math.atan2(pushX * s.sin + pushY * s.cos, pushX * s.cos - pushY * s.sin));
       if (c.driver === 'player') { shake(5, 6); sfx.crash(); }
       break;
     }
