@@ -199,23 +199,25 @@ function tickWorld() {
 
 // ===== Network payloads (the same shapes the client already knows how to decode) =====
 const R2 = v => Math.round(v);
+const round2 = v => Math.round(v * 100) / 100;
 function carPayload(c) {
-  return { id: c.id, x: R2(c.x), y: R2(c.y), an: c.angle, sp: Math.round(c.speed * 100) / 100,
+  return { id: c.id, x: R2(c.x), y: R2(c.y), an: round2(c.angle), sp: round2(c.speed),
            w: c.w, h: c.h, col: c.color, role: c.role,
            bike: !!c.isBike, tank: !!c.isTank, taxi: !!c.isTaxi, del: !!c.isDelivery,
            liv: c.livery || null, pol: !!c.wasPolice, hel: c.helmet || null,
            tur: c.isTank ? c.turretA : null, siren: !!c.sirenOn, lp: c.lightPhase || 0,
-           burn: !!c.burning, smk: !!c.smoking, dn: c.dents || undefined,
-           // Driving physics: the client needs it to PREDICT its own vehicle's motion.
-           top: c.top, acc: c.accel, mass: c.mass, gears: c.gears };
+           burn: !!c.burning, smk: !!c.smoking, dn: c.dents || undefined };
+}
+function drivenCarPayload(c) {
+  return { ...carPayload(c), top: c.top, acc: c.accel, mass: c.mass, gears: c.gears };
 }
 function pedPayload(p) {
-  return { id: p.id, x: R2(p.x), y: R2(p.y), f: p.facing || 0, wk: Math.round((p.walk || 0) * 100) / 100,
+  return { id: p.id, x: R2(p.x), y: R2(p.y), f: p.facing || 0, wk: round2(p.walk || 0),
            role: p.role, ko: !!p.ko, sh: p.shirt, sk: p.skin, ha: p.hair, dr: p.copDress ? 1 : p.soldierDress ? 2 : 0 };
 }
 function playerView(p) {
-  return { id: p.id, name: p.name, sh: p.shirtIdx, x: R2(p.x), y: R2(p.y), aim: p.aim,
-           wk: Math.round((p.walk || 0) * 100) / 100, mov: !!p.moving,
+  return { id: p.id, name: p.name, sh: p.shirtIdx, x: R2(p.x), y: R2(p.y), aim: round2(p.aim),
+           wk: round2(p.walk || 0), mov: !!p.moving,
            gun: !WEAPONS[p.weaponIdx].melee, hp: R2(p.health), down: p.downT > 0,
            punch: p.punchT > 0, car: p.car ? carPayload(p.car) : null };
 }
@@ -240,11 +242,11 @@ function snapshotFor(id) {
   const near = (x, y) => { const dx = x - mx, dy = y - my; return dx * dx + dy * dy <= R2q; };
   const out = {
     t: 'w', tick: frame, ack: me.input.seq || 0,
-    me: { x: R2(me.x), y: R2(me.y), aim: me.aim, hp: R2(me.health), cash: me.cash,
+    me: { x: R2(me.x), y: R2(me.y), aim: round2(me.aim), hp: R2(me.health), cash: me.cash,
           wanted: me.wanted | 0, down: me.downT > 0, dt: me.downT, dk: me.downKind, wp: me.weaponIdx, own: me.owned,
           k: me.kills, d: me.deaths, sco: me.score | 0, stk: me.streak | 0, bty: me.bounty | 0,
           ev: (me.events && me.events.length) ? me.events.splice(0) : null,   // queued toasts → consumed here
-          car: me.car ? carPayload(me.car) : null },
+          car: me.car ? drivenCarPayload(me.car) : null },
     players: [], cars: [], peds: [], bul: [], rkt: [], coins: [], fires: [], fx: [],
   };
   for (const e of __fx) if (near(e.x, e.y)) out.fx.push(e);
