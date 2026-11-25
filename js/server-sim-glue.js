@@ -205,7 +205,7 @@ function carPayload(c) {
            w: c.w, h: c.h, col: c.color, role: c.role,
            bike: !!c.isBike, tank: !!c.isTank, taxi: !!c.isTaxi, del: !!c.isDelivery,
            liv: c.livery || null, pol: !!c.wasPolice, hel: c.helmet || null,
-           tur: c.isTank ? c.turretA : null, siren: !!c.sirenOn, lp: c.lightPhase || 0,
+           tur: c.isTank ? round2(c.turretA) : null, siren: !!c.sirenOn, lp: c.lightPhase || 0,
            burn: !!c.burning, smk: !!c.smoking, dn: c.dents || undefined };
 }
 function drivenCarPayload(c) {
@@ -228,7 +228,7 @@ function playerView(p) {
 // therefore seen and heard in multiplayer too, without growing `parts` on the server.
 var __fx = [];
 var __shooterId = null;
-spawnMuzzle = (x, y, a) => { const effect = { k: 0, x: R2(x), y: R2(y), a }; if (__shooterId !== null) effect.o = __shooterId; __fx.push(effect); };
+spawnMuzzle = (x, y, a) => { const effect = { k: 0, x: R2(x), y: R2(y), a: round2(a) }; if (__shooterId !== null) effect.o = __shooterId; __fx.push(effect); };
 spawnBlood = (x, y) => { __fx.push({ k: 1, x: R2(x), y: R2(y) }); };
 spawnSparks = (x, y, n) => { __fx.push({ k: 2, x: R2(x), y: R2(y), n: n | 0 }); };
 spawnExplosion = (x, y) => { __fx.push({ k: 3, x: R2(x), y: R2(y) }); };
@@ -258,11 +258,11 @@ function snapshotFor(id) {
   for (const c of cars) if (c.driver !== 'player' && near(c.x, c.y)) out.cars.push(carPayload(c));
   for (const p of peds) if (near(p.x, p.y)) out.peds.push(pedPayload(p));
   for (const b of bullets) if (near(b.x, b.y)) {
-    const entry = { x: R2(b.x), y: R2(b.y), a: Math.atan2(b.vy, b.vx), hostile: !b.fromPlayer, fl: b.flame ? 1 : 0 };
+    const entry = { x: R2(b.x), y: R2(b.y), a: round2(Math.atan2(b.vy, b.vx)), hostile: !b.fromPlayer, fl: b.flame ? 1 : 0 };
     if (b.fromPlayer && b.owner && b.owner.id) entry.o = b.owner.id;
     out.bul.push(entry);
   }
-  for (const r of rockets) if (near(r.x, r.y)) out.rkt.push({ x: R2(r.x), y: R2(r.y), a: Math.atan2(r.vy, r.vx), gr: r.grenade ? 1 : 0 });
+  for (const r of rockets) if (near(r.x, r.y)) out.rkt.push({ x: R2(r.x), y: R2(r.y), a: round2(Math.atan2(r.vy, r.vx)), gr: r.grenade ? 1 : 0 });
   for (const k of coins) if (near(k.x, k.y)) out.coins.push({ x: R2(k.x), y: R2(k.y), v: k.val });
   for (const f of fires) if (near(f.x, f.y)) out.fires.push({ x: R2(f.x), y: R2(f.y) });
   return out;

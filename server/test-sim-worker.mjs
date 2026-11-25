@@ -34,6 +34,7 @@ function createWorkerHarness(workerGlobals = {}) {
     navigator: { userAgent: 'fake-worker' },
     postMessage: message => posted.push(message),
     WebSocket: FakeSocket,
+    TextEncoder, TextDecoder,
     performance: { now: () => now },
     console,
     setTimeout, clearTimeout,
@@ -60,6 +61,10 @@ function createWorkerHarness(workerGlobals = {}) {
   return { scope, posted, importedFiles, run, advance, send };
 }
 
+const { snapshotDecode } = require('../js/snapshot-codec.js');
+const binaryFramesTo = (fakeSocket, guestId) => fakeSocket.sent.filter(frame => ArrayBuffer.isView(frame) && frame[0] === 0x57
+  && Buffer.from(frame.buffer, frame.byteOffset + 2, frame[1]).toString('utf8') === guestId);
+const decodeGuestFrame = frame => snapshotDecode(frame.subarray(2 + frame[1]));
 function deliver(socket, message) { socket.onmessage({ data: JSON.stringify(message) }); }
 function lastHostState(socket) {
   const frames = socket.sent.filter(frame => typeof frame === 'string' && frame.startsWith('{')).map(frame => JSON.parse(frame));
@@ -91,11 +96,12 @@ ok(harness.posted.some(m => m.type === 'ready'), 'worker posts ready after hosts
 harness.advance(200);
 const hostSnapshots = harness.posted.filter(m => m.type === 'snapshot');
 ok(hostSnapshots.length > 0 && hostSnapshots[0].snapshot.t === 'w' && Array.isArray(hostSnapshots[0].snapshot.sc), 'host snapshot goes to the main thread with sc');
-const guestFrames = socket.sent.filter(frame => typeof frame === 'string' && frame.startsWith('W|p2|'));
-ok(guestFrames.length > 0, 'guest snapshots go over the socket as W|p2|');
-const guestSnapshot = JSON.parse(guestFrames[0].slice('W|p2|'.length));
-ok(guestSnapshot.t === 'w' && guestSnapshot.me && Array.isArray(guestSnapshot.sc), 'guest frame carries a w snapshot with me and sc');
-ok(!socket.sent.some(frame => typeof frame === 'string' && frame.startsWith('W|p1|')), 'the host never gets a W frame');
+const guestFrames = binaryFramesTo(socket, 'p2');
+ok(guestFrames.length > 0, 'guest snapshots go over the socket as binary W frames for p2');
+ok(guestFrames.every(frame => frame[0] === 0x57 && frame[1] === 2 && frame[2 + frame[1]] === 0xB5 && frame[3 + frame[1]] === 0x01), 'binary frames are 0x57, id length, id, then the codec header');
+const guestSnapshot = decodeGuestFrame(guestFrames[0]);
+ok(guestSnapshot && guestSnapshot.t === 'w' && guestSnapshot.me && Array.isArray(guestSnapshot.sc), 'guest frame carries a w snapshot with me and sc');
+ok(binaryFramesTo(socket, 'p1').length === 0 && !socket.sent.some(frame => typeof frame === 'string' && frame.startsWith('W|')), 'the host never gets a W frame and no text W frame is sent');
 ok(guestFrames.length >= 5 && guestFrames.length <= 8, 'about one snapshot every 2 ticks (' + guestFrames.length + ' in 200 ms)');
 
 harness.advance(320);
@@ -115,14 +121,14 @@ harness.send({ type: 'input', input: { ax: 0, ay: 0 } });
 deliver(socket, { t: 'join', id: 'p3', name: 'Late', shirtIdx: 2 });
 harness.advance(520);
 ok(lastHostState(socket).players.some(row => row.id === 'p3'), 'a joining player appears in hst');
-ok(socket.sent.some(frame => typeof frame === 'string' && frame.startsWith('W|p3|')), 'the joining player gets snapshots');
+ok(binaryFramesTo(socket, 'p3').length > 0, 'the joining player gets snapshots');
 deliver(socket, { t: 'leave', id: 'p3' });
 harness.advance(520);
 ok(!lastHostState(socket).players.some(row => row.id === 'p3'), 'a leaving player disappears from hst');
 
 console.log('p2p routing');
 const p2pGuestFrames = () => harness.posted.filter(m => m.type === 'guestFrame' && m.id === 'p2');
-const socketFramesToP2 = () => socket.sent.filter(frame => typeof frame === 'string' && frame.startsWith('W|p2|')).length;
+const socketFramesToP2 = () => binaryFramesTo(socket, 'p2').length;
 harness.send({ type: 'p2p', id: 'p2', open: true });
 const socketFramesBeforeP2p = socketFramesToP2();
 vm.runInContext('playerById("p2").events = [{ k: "toast", m: "hello" }]', harness.scope);
@@ -131,8 +137,10 @@ ok(socketFramesToP2() === socketFramesBeforeP2p, 'a p2p guest gets no W frame ov
 ok(p2pGuestFrames().length >= 1, 'a p2p guest gets guestFrame messages');
 const eventFrame = p2pGuestFrames().find(m => m.events !== null);
 ok(eventFrame && JSON.parse(eventFrame.events).t === 'we' && JSON.parse(eventFrame.events).ev.length === 1, 'queued me.ev lands in the events string');
-ok(eventFrame && typeof JSON.parse(eventFrame.events).tick === 'number' && JSON.parse(eventFrame.events).tick === JSON.parse(eventFrame.snapshot).tick, 'events carry the snapshot tick');
-ok(eventFrame && JSON.parse(eventFrame.snapshot).t === 'w' && JSON.parse(eventFrame.snapshot).me.ev === null && JSON.parse(eventFrame.snapshot).fx.length === 0,
+ok(eventFrame && ArrayBuffer.isView(eventFrame.snapshot) && eventFrame.snapshot[0] === 0xB5 && eventFrame.snapshot[1] === 0x01, 'the guestFrame snapshot is a codec byte array');
+const eventSnapshot = eventFrame && snapshotDecode(eventFrame.snapshot);
+ok(eventSnapshot && typeof JSON.parse(eventFrame.events).tick === 'number' && JSON.parse(eventFrame.events).tick === eventSnapshot.tick, 'events carry the snapshot tick');
+ok(eventSnapshot && eventSnapshot.t === 'w' && eventSnapshot.me.ev === null && eventSnapshot.fx.length === 0,
   'the guestFrame snapshot is a w snapshot without me.ev and fx');
 ok(p2pGuestFrames().some(m => m.events === null), 'a frame without events carries null events');
 const appliedInputs = [];
@@ -143,7 +151,7 @@ harness.send({ type: 'guestInput', id: 'p9', input: { seq: 8 } });
 harness.send({ type: 'guestInput', id: 'p1', input: { seq: 9 } });
 ok(appliedInputs.length === 1 && appliedInputs[0] === 'p2', 'guestInput reaches applyInput only for a known non-host guest');
 harness.advance(40);
-ok(JSON.parse(p2pGuestFrames().pop().snapshot).ack === 7, 'the guest input is applied to the sim');
+ok(snapshotDecode(p2pGuestFrames().pop().snapshot).ack === 7, 'the guest input is applied to the sim');
 harness.scope.__sim.applyInput = realApplyInput;
 harness.send({ type: 'p2p', id: 'p2', open: false });
 const socketFramesAfterClose = socketFramesToP2();
@@ -151,7 +159,7 @@ harness.advance(60);
 ok(socketFramesToP2() > socketFramesAfterClose, 'closing p2p brings the W frames back');
 
 console.log('catch-up cap');
-const lastGuestTick = () => JSON.parse(socket.sent.filter(frame => typeof frame === 'string' && frame.startsWith('W|p2|')).pop().slice('W|p2|'.length)).tick;
+const lastGuestTick = () => decodeGuestFrame(binaryFramesTo(socket, 'p2').pop()).tick;
 const tickBeforeStall = lastGuestTick();
 harness.scope.performance.now = () => 1e9;
 harness.advance(20);

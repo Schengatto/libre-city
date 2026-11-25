@@ -1,6 +1,6 @@
 (function () {
   // dev-only:begin
-  const SIM_SCRIPT_FILES = ['core.js', 'i18n.js', 'city.js', 'train.js', 'entities.js', 'missions.js', 'army.js', 'gameplay.js', 'server-sim-glue.js'];
+  const SIM_SCRIPT_FILES = ['core.js', 'i18n.js', 'city.js', 'train.js', 'entities.js', 'missions.js', 'army.js', 'gameplay.js', 'snapshot-codec.js', 'server-sim-glue.js'];
   // dev-only:end
   const STEP_MS = 1000 / 60;
   const MAX_CATCHUP_MS = 250;
@@ -8,6 +8,9 @@
   const SNAPSHOT_EVERY_TICKS = 2;
   const HOST_STATE_INTERVAL_MS = 500;
   const OPEN_SOCKET_STATE = 1;
+  const BINARY_SNAPSHOT_FRAME_BYTE = 0x57;
+  const MAX_GUEST_ID_BYTES = 255;
+  let guestIdEncoder = null;
   const bundled = typeof makeSimStubs === 'function';
 
   let sim = null;
@@ -70,7 +73,22 @@
     const events = hasEvents ? JSON.stringify({ t: 'we', tick: snapshot.tick, ev: snapshot.me.ev, fx: snapshot.fx }) : null;
     snapshot.me.ev = null;
     snapshot.fx = [];
-    post({ type: 'guestFrame', id, snapshot: JSON.stringify(snapshot), events });
+    const frame = snapshotEncode(snapshot);
+    self.postMessage({ type: 'guestFrame', id, snapshot: frame, events }, [frame.buffer]);
+  }
+
+  function sendBinarySnapshot(id, snapshot) {
+    if (!socket || socket.readyState !== OPEN_SOCKET_STATE) return;
+    if (guestIdEncoder === null) guestIdEncoder = new TextEncoder();
+    const idBytes = guestIdEncoder.encode(id);
+    if (idBytes.length === 0 || idBytes.length > MAX_GUEST_ID_BYTES) return;
+    const frame = snapshotEncode(snapshot);
+    const message = new Uint8Array(2 + idBytes.length + frame.length);
+    message[0] = BINARY_SNAPSHOT_FRAME_BYTE;
+    message[1] = idBytes.length;
+    message.set(idBytes, 2);
+    message.set(frame, 2 + idBytes.length);
+    socket.send(message);
   }
 
   function sendSnapshots() {
@@ -81,7 +99,7 @@
       snapshot.sc = scores;
       if (id === hostId) post({ type: 'snapshot', snapshot });
       else if (p2pGuestIds.has(id)) postGuestFrame(id, snapshot);
-      else sendToServer('W|' + id + '|' + JSON.stringify(snapshot));
+      else sendBinarySnapshot(id, snapshot);
     }
     sim.clearFx();
   }

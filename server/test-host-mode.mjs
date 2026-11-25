@@ -20,6 +20,7 @@ const HOST_BIND_MS = 5000;
 const HOST_CHECK_SLACK_MS = 1500;
 const FIRST_FRAME_BEFORE_BIND_DEADLINE_MS = 800;
 const HOST_LINK_PATH = '/hostlink';
+const BINARY_SNAPSHOT_FRAME_BYTE = 0x57;
 const BACKLOG_FRAME_COUNT = 96;
 const BACKLOG_FRAME_BYTES = 200_000;
 const HOST_LINK_HELLO_MS = 1000;
@@ -82,8 +83,13 @@ function openOnce(port, path) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}${path}`);
     ws.inbox = [];
+    ws.binaryInbox = [];
+    ws.binaryType = 'arraybuffer';
     ws.closed = false;
-    ws.addEventListener('message', event => { try { ws.inbox.push(JSON.parse(event.data)); } catch {} });
+    ws.addEventListener('message', event => {
+      if (typeof event.data !== 'string') { ws.binaryInbox.push(Buffer.from(event.data)); return; }
+      try { ws.inbox.push(JSON.parse(event.data)); } catch {}
+    });
     ws.addEventListener('close', event => { ws.closed = true; ws.closeCode = event.code; });
     ws.addEventListener('open', () => resolve(ws));
     ws.addEventListener('error', reject);
@@ -332,6 +338,47 @@ try {
   const keptRow = relinkStart && relinkStart.state.find(row => row.id === hardenedHost.id);
   check(keptRow && keptRow.s === 111, 'the oversized hst is ignored and the last valid hst is kept');
   closeAll([hardenedHost.ws, hardenedLink, relink]);
+
+  console.log('binary snapshot relay');
+  {
+  const binaryHost = await createRoom('HOSTJ1', 'Joe');
+  const binaryLink = await openHostLink('HOSTJ1', binaryHost.token);
+  check(await waitFor(() => findType(binaryLink, 'hoststart')), 'the binary test hostlink binds');
+  const binaryGuest = await joinRoom('HOSTJ1', 'Kim');
+  const binaryFrame = (guestId, payload) => {
+    const idBytes = Buffer.from(guestId);
+    return Buffer.concat([Buffer.from([BINARY_SNAPSHOT_FRAME_BYTE, idBytes.length]), idBytes, Buffer.from(payload)]);
+  };
+  const firstCodecBytes = [0xB5, 0x01, 0x08, 0x01, 0x41];
+  const secondCodecBytes = [0xB5, 0x01, 0x08, 0x01, 0x42];
+  binaryLink.send(binaryFrame(binaryGuest.id, firstCodecBytes));
+  binaryLink.send(binaryFrame('p99', [0xB5, 0x01, 0x08, 0x01, 0x43]));
+  binaryLink.send(binaryFrame(binaryGuest.id, [0xB4, 0x01, 0x08, 0x01, 0x44]));
+  binaryLink.send(binaryFrame(binaryGuest.id, [0xB5, 0x01]));
+  binaryLink.send(Buffer.from([BINARY_SNAPSHOT_FRAME_BYTE, 0]));
+  binaryLink.send(Buffer.from([BINARY_SNAPSHOT_FRAME_BYTE, 200, 0x61]));
+  binaryLink.send(binaryFrame(binaryGuest.id, secondCodecBytes));
+  check(await waitFor(() => binaryGuest.ws.binaryInbox.length >= 2), 'the guest receives binary snapshots');
+  await wait(SILENCE_MS);
+  check(binaryGuest.ws.binaryInbox.length === 2 && binaryGuest.ws.binaryInbox[0].equals(Buffer.from(firstCodecBytes)) && binaryGuest.ws.binaryInbox[1].equals(Buffer.from(secondCodecBytes)),
+    'the guest gets exactly the codec bytes, without the W and id prefix');
+  check(!binaryHost.ws.binaryInbox.length, 'the host game socket receives no binary snapshot');
+  check(!binaryLink.closed, 'unknown ids, bad codec headers and short frames are dropped without closing the hostlink');
+  const rawCodecProbe = binaryGuest.ws.binaryInbox.some(frame => frame[0] === BINARY_SNAPSHOT_FRAME_BYTE);
+  check(!rawCodecProbe, 'no relayed frame keeps the hostlink prefix');
+  closeAll([binaryHost.ws, binaryGuest.ws, binaryLink]);
+
+  console.log('binary frames that are not snapshots terminate the hostlink');
+  const foreignHost = await createRoom('HOSTK1', 'Lia');
+  const foreignLink = await openHostLink('HOSTK1', foreignHost.token);
+  check(await waitFor(() => findType(foreignLink, 'hoststart')), 'the foreign-binary test hostlink binds');
+  foreignLink.send(Buffer.from([0x58, 1, 0x61, 0xB5, 0x01, 0x00]));
+  check(await waitFor(() => foreignLink.closed) && foreignLink.closeCode === ABNORMAL_CLOSE_CODE, 'a binary frame not starting with 0x57 terminates the hostlink');
+  const earlyBinaryLink = await open(PORT, HOST_LINK_PATH);
+  earlyBinaryLink.send(Buffer.from([BINARY_SNAPSHOT_FRAME_BYTE, 1, 0x61, 0xB5, 0x01, 0x00]));
+  check(await waitFor(() => earlyBinaryLink.closed) && earlyBinaryLink.closeCode === ABNORMAL_CLOSE_CODE, 'a binary frame before the hostlink hello terminates it');
+  closeAll([foreignHost.ws]);
+  }
 
   console.log('hostlink keeps the deflate context');
   const deflateHost = await createRoom('HOSTH1', 'Ida');
