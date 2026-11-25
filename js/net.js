@@ -238,7 +238,7 @@ function netSyncHostRole() {
     net.stats.transport = 'host';
   } else {
     simHostStop();
-    if (net.hostId !== null && !net.authoritative) rtcGuestConnect(net.hostId);
+    if (net.hostId !== null) rtcGuestConnect(net.hostId);
     else rtcGuestClose();
   }
 }
@@ -844,7 +844,6 @@ function netTrainClock() {
   netSlewTrainOffset();
   return frame + net.trainOffset;
 }
-// A snapshot arrives: update the interpolation targets for the world and the ghosts.
 function netApplyWorldEvents(fx, ev) {
   if (fx) for (const e of fx) netApplyFx(e);
   if (Array.isArray(ev)) for (const event of ev) {
@@ -852,6 +851,7 @@ function netApplyWorldEvents(fx, ev) {
     if (txt[0] === '💀' || txt[0] === '🎯') sfx.coin();
   }
 }
+// A snapshot arrives: update the interpolation targets for the world and the ghosts.
 function netOnSnapshot(m) {
   if (!rtcFreshSnapshot(net.lastSnapTick, m.tick)) return;
   if (Number.isFinite(m.tick)) net.lastSnapTick = m.tick;

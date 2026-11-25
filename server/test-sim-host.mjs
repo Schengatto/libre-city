@@ -115,7 +115,7 @@ ok(/netForgedSnapshotFrame\(ev\.data, m\)\) return;/.test(netSource), 'socket di
 function createNetGuestHarness({ guestSendResult = false, hostActive = false } = {}) {
   const calls = { netSend: [], simHostSendInput: [], rtcGuestSendInput: [], rtcGuestConnect: [], rtcGuestClose: 0, rtcHostSignal: [], rtcGuestSignal: [] };
   const context = vm.createContext({
-    net: { hostId: null, myId: 'p1', authoritative: false, lastSnapTick: 10, snap: 'previous', inSeq: 0, firePending: false, enterEdge: false, hornEdge: false, weaponReq: null, lastVR: 0, stats: {} },
+    net: { hostId: null, myId: 'p1', authoritative: true, lastSnapTick: 10, snap: 'previous', inSeq: 0, firePending: false, enterEdge: false, hornEdge: false, weaponReq: null, lastVR: 0, stats: {} },
     performance, player: { x: 0, y: 0, car: null }, vw: 800, vh: 600, mDownL: false,
     held: () => false, mouseWX: () => 0, mouseWY: () => 0, netLagCompMs: () => 0, netStatsOnInputSent: () => {},
     simHostActive: () => hostActive,
@@ -155,10 +155,9 @@ ok(migration.net.lastSnapTick === -1 && migration.calls.rtcGuestConnect.join() =
 const electedSelf = createNetGuestHarness();
 electedSelf.api.onServerMessage({ t: 'host', id: 'p1' });
 ok(electedSelf.calls.rtcGuestConnect.length === 0 && electedSelf.calls.rtcGuestClose === 1 && electedSelf.net.stats.transport === 'host', 'electing myself closes the guest link and shows host');
-const authoritativeRoom = createNetGuestHarness();
-authoritativeRoom.net.authoritative = true;
-authoritativeRoom.api.onServerMessage({ t: 'host', id: 'p3', name: 'Zed' });
-ok(authoritativeRoom.calls.rtcGuestConnect.length === 0 && authoritativeRoom.calls.rtcGuestClose === 1, 'server-authoritative rooms never open a guest link');
+const serverSimRoom = createNetGuestHarness();
+serverSimRoom.api.onServerMessage({ t: 'host', id: null });
+ok(serverSimRoom.calls.rtcGuestConnect.length === 0 && serverSimRoom.calls.rtcGuestClose === 1, 'server-sim rooms (no host) never open a guest link');
 
 const signalAsGuest = createNetGuestHarness();
 signalAsGuest.api.onServerMessage({ t: 'rtc', from: 'p3', k: 'answer', d: 'sdp' });
