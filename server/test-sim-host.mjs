@@ -133,7 +133,7 @@ function createNetGuestHarness({ guestSendResult = false, hostActive = false } =
   const names = ['netSendInput', 'netOnSnapshot', 'netSyncHostRole', 'onServerMessage'];
   const declarations = names.map(name => extractTopLevel(netSource, name)).join('\n');
   vm.runInContext(declarations + '\n;globalThis.api = { ' + names.join(', ') + ' };', context);
-  return { api: context.api, net: context.net, calls };
+  return { api: context.api, net: context.net, calls, context };
 }
 
 const guestOverWs = createNetGuestHarness({ guestSendResult: false });
@@ -146,8 +146,11 @@ const hostInput = createNetGuestHarness({ hostActive: true });
 hostInput.api.netSendInput();
 ok(hostInput.calls.simHostSendInput.length === 1 && hostInput.calls.rtcGuestSendInput.length === 0 && hostInput.calls.netSend.length === 0, 'host input goes only to the local worker');
 
-guestOverWs.api.netOnSnapshot({ tick: 9, t: 'w' });
+const staleEvents = [];
+guestOverWs.context.netApplyWorldEvents = (fx, ev) => staleEvents.push({ fx, ev });
+guestOverWs.api.netOnSnapshot({ tick: 9, t: 'w', fx: ['spark'], me: { ev: ['kill'] } });
 ok(guestOverWs.net.snap === 'previous' && guestOverWs.net.lastSnapTick === 10, 'stale snapshot tick is dropped');
+ok(staleEvents.length === 1 && staleEvents[0].fx[0] === 'spark' && staleEvents[0].ev[0] === 'kill', 'a stale snapshot still delivers its inline events');
 
 const migration = createNetGuestHarness();
 migration.api.onServerMessage({ t: 'host', id: 'p3', name: 'Zed' });

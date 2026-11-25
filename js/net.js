@@ -853,7 +853,7 @@ function netApplyWorldEvents(fx, ev) {
 }
 // A snapshot arrives: update the interpolation targets for the world and the ghosts.
 function netOnSnapshot(m) {
-  if (!rtcFreshSnapshot(net.lastSnapTick, m.tick)) return;
+  if (!rtcFreshSnapshot(net.lastSnapTick, m.tick)) { netApplyWorldEvents(m.fx, m.me && m.me.ev); return; }
   if (Number.isFinite(m.tick)) net.lastSnapTick = m.tick;
   net.snap = m;
   netNoteTrainTick(m);

@@ -131,6 +131,7 @@ function rtcHostOnOffer(from, sdp) {
 }
 
 function rtcHostOnSignal(from, k, d) {
+  if (typeof RTCPeerConnection === 'undefined') return;
   if (typeof from !== 'string' || from === net.myId) return;
   if (k === 'offer' && typeof d === 'string') rtcHostOnOffer(from, d);
   else if (k === 'ice') {

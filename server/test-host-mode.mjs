@@ -626,6 +626,26 @@ try {
   check(rtcHost.ws.inbox.filter(message => message.t === 'rtc').length === rtcHostInboxBefore, 'unknown kinds and oversized or malformed payloads are dropped');
   closeAll([rtcHost.ws, rtcGuestB.ws, rtcGuestC.ws]);
 
+  console.log('webrtc signaling budget');
+  const budgetHost = await createRoom('RTC002', 'Hana');
+  const budgetGuest = await joinRoom('RTC002', 'Ben');
+  const relayedFromGuest = kind => budgetHost.ws.inbox.filter(isRtcFrom(budgetGuest.id, kind)).length;
+  send(budgetGuest.ws, { t: 'rtc', to: budgetHost.id, k: 'offer', d: 'v=0 first' });
+  send(budgetGuest.ws, { t: 'rtc', to: budgetHost.id, k: 'offer', d: 'v=0 second' });
+  await wait(SILENCE_MS);
+  check(relayedFromGuest('offer') === 1 && findMessage(budgetHost.ws, isRtcFrom(budgetGuest.id, 'offer')).d === 'v=0 first',
+    'two offers within 1000 ms: only the first is relayed');
+  for (let n = 0; n < 33; n++) send(budgetGuest.ws, { t: 'rtc', to: budgetHost.id, k: 'ice', d: { candidate: 'c' + n } });
+  await wait(SILENCE_MS);
+  check(relayedFromGuest('ice') === 32, '33 ICE candidates after one offer: 32 are relayed');
+  for (let n = 0; n < 32; n++) send(budgetHost.ws, { t: 'rtc', to: budgetGuest.id, k: 'ice', d: { candidate: 'h' + n } });
+  send(budgetHost.ws, { t: 'rtc', to: budgetGuest.id, k: 'answer', d: 'v=0 answer' });
+  send(budgetHost.ws, { t: 'rtc', to: budgetGuest.id, k: 'ice', d: { candidate: 'after-answer' } });
+  await wait(SILENCE_MS);
+  check(budgetGuest.ws.inbox.some(message => message.t === 'rtc' && message.k === 'ice' && message.d.candidate === 'after-answer'),
+    'the host ICE after its answer is still relayed');
+  closeAll([budgetHost.ws, budgetGuest.ws]);
+
   await wait(200);
   console.log(failures ? `\n${failures} host-mode checks FAILED` : '\nall host-mode checks passed');
 } catch (error) {

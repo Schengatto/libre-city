@@ -109,6 +109,14 @@ console.log('pure helpers');
 
 console.log('host role');
 {
+  const hostWithoutWebRtc = createHarness();
+  hostWithoutWebRtc.context.RTCPeerConnection = undefined;
+  let threw = false;
+  try { hostWithoutWebRtc.context.rtcHostOnSignal('p2', 'offer', 'sdp'); } catch (error) { threw = true; }
+  await flush();
+  ok(!threw && hostWithoutWebRtc.peers.length === 0 && hostWithoutWebRtc.sentSignals.length === 0, 'a host without RTCPeerConnection ignores signals without throwing');
+}
+{
   const h = createHarness();
   h.context.rtcHostOnSignal('p2', 'offer', 'remote-offer-sdp');
   h.context.rtcHostOnSignal('p2', 'ice', { candidate: 'early' });

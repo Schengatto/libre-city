@@ -64,6 +64,8 @@ const MAX_HOST_INPUT_BUFFERED_BYTES = 256 * 1024;
 const RTC_SIGNAL_KINDS = new Set(['offer', 'answer', 'ice']);
 const MAX_RTC_SDP_CHARS = 16384;
 const MAX_RTC_ICE_CHARS = 2048;
+const RTC_MIN_OFFER_INTERVAL_MS = 1000;
+const RTC_MAX_ICE_PER_OFFER = 32;
 const FORWARDED_INPUT_NUMBER_FIELDS = ['seq', 'ax', 'ay', 'aim', 'b', 'px', 'py', 'cx', 'cy', 'ca', 'csp', 'w', 'vr', 'lg'];
 const SNAPSHOT_FRAME_BYTE = 0x57;
 const FRAME_SEPARATOR_BYTE = 0x7c;
@@ -586,6 +588,20 @@ function forwardInputToHost(room, m, id) {
   if (!link || link.bufferedAmount > MAX_HOST_INPUT_BUFFERED_BYTES) return;
   sendRaw(link, forwardedInput(m, id));
 }
+function rtcSignalWithinBudget(sender, targetId, kind) {
+  if (!sender.rtcSignalBudget) sender.rtcSignalBudget = new Map();
+  let budget = sender.rtcSignalBudget.get(targetId);
+  if (!budget) { budget = { offerAt: -Infinity, iceCount: 0 }; sender.rtcSignalBudget.set(targetId, budget); }
+  if (kind === 'offer') {
+    const at = now();
+    if (at - budget.offerAt < RTC_MIN_OFFER_INTERVAL_MS) return false;
+    budget.offerAt = at;
+    budget.iceCount = 0;
+  } else if (kind === 'answer') budget.iceCount = 0;
+  else if (budget.iceCount >= RTC_MAX_ICE_PER_OFFER) return false;
+  else budget.iceCount++;
+  return true;
+}
 function relayRtcSignal(room, sender, m) {
   if (!hostModeActive(room) || !room.hostId || !RTC_SIGNAL_KINDS.has(m.k)) return;
   if ((sender.id === room.hostId) === (m.to === room.hostId)) return;
@@ -595,7 +611,7 @@ function relayRtcSignal(room, sender, m) {
   const payloadFits = m.k === 'ice'
     ? payload !== null && typeof payload === 'object' && !Array.isArray(payload) && JSON.stringify(payload).length <= MAX_RTC_ICE_CHARS
     : typeof payload === 'string' && payload.length <= MAX_RTC_SDP_CHARS;
-  if (!payloadFits) return;
+  if (!payloadFits || !rtcSignalWithinBudget(sender, m.to, m.k)) return;
   sendRaw(target.ws, { t: 'rtc', from: sender.id, k: m.k, d: payload });
 }
 function onHostLinkClose(ws) {

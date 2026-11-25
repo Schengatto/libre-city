@@ -122,8 +122,11 @@ guest ⇄ VPS ⇄ host      (solo signaling e fallback WS)
 - Cambio host: alla migrazione il guest chiude il link, azzera il tick dell'ultimo snapshot
   (`net.lastSnapTick`) e si connette al nuovo host; chi viene eletto host chiude il lato guest.
 - Overlay `?netstats` (o F3): la riga `transport` vale `P2P`, `WS` oppure `host`.
-- Race accettata: gli eventi che il worker ha già estratto per un guest il cui canale si è
-  appena chiuso possono andare persi (gli snapshot successivi riallineano lo stato).
+- Solo STUN: host e guest vedono l'IP pubblico l'uno dell'altro (candidate srflx), come in
+  Fase 1 con PeerJS. `?rtc=off` lo evita per un guest; nasconderlo richiederebbe un relay TURN (non usato).
+- Race accettata: gli eventi one-shot (toast, fx) che il worker ha già estratto per un guest
+  nei 1-2 frame in cui il suo canale si chiude vanno persi; punteggi e stato si riallineano
+  dagli snapshot successivi (`sc`, `me`).
 - Misurare: aprire il guest con `?netstats` (P2P) e poi con `?netstats&rtc=off` (WS) e
   confrontare RTT, `input RTT`, `snap/s`, jitter e `max gap 5s`.
 
