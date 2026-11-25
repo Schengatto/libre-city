@@ -170,11 +170,45 @@ function testHostRewind() {
   ok(late.rival().health < 100, 'rival with no history is tested at the current position');
 }
 
+function testShooterTags() {
+  const duel = createDuel('TAG001');
+  duel.sim.clearFx();
+  duel.sim.applyInput(duel.shooterId, { aim: 0, b: 2, px: duel.origin.x, py: duel.origin.y, seq: 1 });
+  duel.sim.tick();
+  const snapshot = duel.sim.snapshotFor(duel.rival().id);
+  const muzzle = snapshot.fx.find(effect => effect.k === 0);
+  ok(muzzle && muzzle.o === duel.shooterId, 'player muzzle fx carries the shooter id');
+  const bullet = snapshot.bul.find(entry => !entry.hostile);
+  ok(bullet && bullet.o === duel.shooterId, 'player bullet carries the shooter id');
+
+  const hostile = createRoomSim('TAG002');
+  const victimId = hostile.addPlayer('Victim', 0);
+  const victim = hostile._player(victimId);
+  hostile.setPolice(true);
+  victim.wanted = 4;
+  victim.wantedHeat = 4.5;
+  victim.crimeCd = 100000;
+  const cop = hostile._spawnPed(victim.x + 90, victim.y, 'cop');
+  const seenMuzzles = [], seenHostileBullets = [];
+  for (let tick = 0; tick < 600; tick++) {
+    victim.health = 100;
+    hostile.tick();
+    const view = hostile.snapshotFor(victimId);
+    for (const effect of view.fx) if (effect.k === 0) seenMuzzles.push(effect);
+    for (const entry of view.bul) if (entry.hostile) seenHostileBullets.push(entry);
+    hostile.clearFx();
+  }
+  ok(cop && seenMuzzles.length > 0 && seenHostileBullets.length > 0, 'a cop fires during the scenario');
+  ok(seenMuzzles.every(effect => !('o' in effect)), 'cop muzzle fx has no shooter id');
+  ok(seenHostileBullets.every(entry => !('o' in entry)), 'hostile bullets have no shooter id');
+}
+
 testBodyHistory();
 testLagMsToTicks();
 testNetLagCompMs();
 testPredictedShotQueue();
 testHostRewind();
+testShooterTags();
 
 console.log(`\nfire prediction: ${pass} ok, ${fail} failed`);
 process.exit(fail ? 1 : 0);
