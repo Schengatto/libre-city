@@ -110,7 +110,9 @@ giocatore, angoli e `aim` arrotondati a 0,01). Stessa misura, livello 6, seed 1-
 | senza context takeover | 341 / 393 KB/s | 211 / 243 KB/s |
 | con context takeover | 128 / 225 KB/s | 56 / 71 KB/s |
 
-Il raw conta ora perché il canale `fast` P2P (LIBRE-33) invia senza deflate.
+La colonna "prima" è rimisurata su adc6bb8: i 183 / 239 KB/s della tabella sopra vengono da
+un main precedente, con un mondo diverso. Il raw conta ora perché il canale `fast` P2P
+(LIBRE-33) invia senza deflate.
 
 ### Trasporto P2P (WebRTC)
 
