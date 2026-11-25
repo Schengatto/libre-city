@@ -568,7 +568,11 @@ function enterNode(c, nodeIdx) {
   }
   let ch;
   if (!outs.length) ch = { ei: c.edge, ed: -c.ed };          // dead end → U-turn
-  else { outs.sort((p, q) => q.align - p.align); ch = Math.random() < 0.6 ? outs[0] : pick(outs); }
+  else {
+    outs.sort((p, q) => q.align - p.align);
+    while (outs.length > 1 && outs[outs.length - 1].align < -0.99) outs.pop();
+    ch = Math.random() < 0.6 ? outs[0] : pick(outs);
+  }
   c.edge = ch.ei; c.ed = ch.ed; c.t = ch.ed > 0 ? 0 : 1;
   railPlace(c);
 }

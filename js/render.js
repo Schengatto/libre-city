@@ -1858,7 +1858,7 @@ function drawCoins() {
 function drawTrafficLights() {
   const col = { green: '#37e05a', yellow: '#ffd23a', red: '#ff4040' }, o = HALF_ROAD * 0.72;
   for (const nd of nodes) {
-    if (!nd.signal) continue;
+    if (!nd.signal || nd.sharesSignalOf !== undefined) continue;
     const x = nd.x - camX, y = nd.y - camY;
     if (x < -30 || y < -30 || x > vw + 30 || y > vh + 30) continue;
     signalHead(x - o, y, hState, col, true);    // heads for the horizontal axis (E/W)

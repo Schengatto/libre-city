@@ -120,8 +120,11 @@ function buildGraph() {
   }
   if (island) reserveArmyIsland(island, armyNode);
   // Traffic lights only at some busy junctions, NOT at every one.
-  for (let n = 0; n < nodes.length; n++)
-    if (nodes[n].edges.length >= 3 && hash2(n * 3 + 2, n + 5) % 3 === 0) nodes[n].signal = true;
+  for (let n = 0; n < nodes.length; n++) {
+    const node = nodes[n];
+    if (node.sharesSignalOf !== undefined) node.signal = nodes[node.sharesSignalOf].signal;
+    else if (node.edges.length >= 3 && hash2(n * 3 + 2, n + 5) % 3 === 0) node.signal = true;
+  }
 }
 
 // ---------- Rasterising the roads onto tiles ----------
@@ -242,7 +245,7 @@ function reserveArmyIsland({ i, j }, armyNode) {
   const approachIndex = nodes.length - 1, streetIndex = armyNode + dj * NX + di, street = nodes[streetIndex];
   if ((di ? street.y : street.x) === gateAxis) addRoadEdge(streetIndex, approachIndex);
   else {
-    nodes.push({ x: di ? street.x : gateAxis, y: di ? gateAxis : street.y, edges: [], signal: false, live: true });
+    nodes.push({ x: di ? street.x : gateAxis, y: di ? gateAxis : street.y, edges: [], signal: false, live: true, sharesSignalOf: streetIndex });
     addRoadEdge(streetIndex, nodes.length - 1);
     addRoadEdge(nodes.length - 1, approachIndex);
   }
