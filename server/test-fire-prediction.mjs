@@ -86,6 +86,7 @@ const SHOOTER_SETTLE_TICKS = 20;
 const RIVAL_OFFSET_X = 100;
 const RIVAL_JUMP_Y = 400;
 const SHOT_TICKS = 12;
+const RIVAL_DOWN_TICKS = 40;
 
 function findClearRowOrigin(sim) {
   const kinds = sim._tileKinds();
@@ -120,7 +121,7 @@ function createDuel(code, rivalJoinsLate) {
   if (!rivalJoinsLate) { rivalId = sim.addPlayer('Rival', 1); settle(SHOOTER_SETTLE_TICKS); }
   else settle(SHOOTER_SETTLE_TICKS);
   return {
-    sim, shooterId, shooter, origin,
+    sim, shooterId, shooter, origin, reportBoth,
     addRival() { rivalId = sim.addPlayer('Rival', 1); return rivalId; },
     rival: () => sim._player(rivalId),
     settle,
@@ -171,6 +172,35 @@ function testHostRewind() {
   ok(late.rival().health < 100, 'rival with no history is tested at the current position');
 }
 
+function testBulletLagIsFixedAtFiring() {
+  const duel = createDuel('LAGC07');
+  duel.reportBoth(RIVAL_OFFSET_X, RIVAL_JUMP_Y);
+  duel.sim.applyInput(duel.shooterId, { aim: 0, b: 2, px: duel.origin.x, py: duel.origin.y, seq: 1, lg: 150 });
+  duel.sim.tick();
+  for (let i = 1; i < SHOT_TICKS; i++) {
+    duel.reportBoth(RIVAL_OFFSET_X, RIVAL_JUMP_Y);
+    duel.sim.applyInput(duel.shooterId, { lg: 0 });
+    duel.sim.tick();
+  }
+  ok(duel.rival().health < 100, 'changing lg after the shot does not change that bullet rewind');
+}
+
+function testNoHistoryWhileDown() {
+  const respawned = createDuel('LAGC08');
+  const rival = respawned.rival();
+  rival.downT = RIVAL_DOWN_TICKS;
+  rival.downKind = 'dead';
+  respawned.settle(RIVAL_DOWN_TICKS);
+  ok(rival.downT === 0, 'rival respawned after the down ticks');
+  respawned.shoot({ lg: 250 }, RIVAL_JUMP_Y);
+  ok(rival.health === 100, 'shot rewound to ticks the rival spent down does not hit the old death spot');
+
+  const alive = createDuel('LAGC09');
+  alive.settle(RIVAL_DOWN_TICKS);
+  alive.shoot({ lg: 250 }, RIVAL_JUMP_Y);
+  ok(alive.rival().health < 100, 'same shot hits when the rival stayed alive at the spot');
+}
+
 function testShooterTags() {
   const duel = createDuel('TAG001');
   duel.sim.clearFx();
@@ -208,7 +238,8 @@ function createPredictionContext() {
   const calls = { muzzle: [], copShoot: 0, shoot: 0, smg: 0 };
   const net = { myId: 'me', authoritative: true, predBullets: [], predictedShots: [] };
   const sandbox = {
-    net, calls, downT: 0, mDownL: false, mClicked: false, now: 1000,
+    net, calls, downT: 0, mDownL: false, mClicked: false, now: 1000, mouseX: 1000, mouseY: 700,
+    mouseWX: () => sandbox.mouseX, mouseWY: () => sandbox.mouseY,
     player: { x: 500, y: 700, aim: 0, shootCd: 0, car: null, weaponIdx: 1 },
     peaceMode: () => false, T: 32, solidTile: () => false, rnd: () => 0,
     WEAPONS: [
@@ -299,6 +330,16 @@ function testPredictFire() {
   pistol.api.netPredictFire();
   ok(pistol.net.predBullets.length === 1, 'cooldown blocks a second prediction');
 
+  const aimed = createPredictionContext();
+  aimed.sandbox.player.aim = 0;
+  aimed.sandbox.mouseX = 500;
+  aimed.sandbox.mouseY = 1000;
+  aimed.sandbox.mClicked = true;
+  aimed.api.netPredictFire();
+  const aimedBullet = aimed.net.predBullets[0];
+  ok(Math.abs(aimedBullet.vx) < 1e-9 && Math.abs(aimedBullet.vy - 13) < 1e-9, 'predicted bullet direction follows the mouse, not the stale player.aim');
+  ok(Math.abs(aimed.calls.muzzle[0].a - Math.PI / 2) < 1e-9, 'muzzle flash angle follows the mouse');
+
   const shotgun = createPredictionContext();
   shotgun.sandbox.player.weaponIdx = 3;
   shotgun.sandbox.mClicked = true;
@@ -347,6 +388,8 @@ testLagMsToTicks();
 testNetLagCompMs();
 testPredictedShotQueue();
 testHostRewind();
+testBulletLagIsFixedAtFiring();
+testNoHistoryWhileDown();
 testShooterTags();
 testOwnMuzzleSuppression();
 testWorldBulletsFilter();

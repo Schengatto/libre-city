@@ -45,7 +45,7 @@ const net = {
   firePending: false, enterEdge: false, hornEdge: false, weaponReq: null,  // one-shot actions → server
   wcars: new Map(), wpeds: new Map(),   // id → world entities (interpolated)
   wbullets: [], wrockets: [],           // bullets/rockets (extrapolated between snapshots)
-  predBullets: [], predictedShots: [],  // own shots simulated locally + their pending host confirmations
+  predBullets: [], predictedShots: [],
 };
 const netActive = () => net.mode !== null;
 
@@ -894,12 +894,13 @@ function netPredictFire() {
   if (!w || w.melee || w.rocket || w.grenade || player.shootCd > 0) return;
   if (!(w.auto ? mDownL : mClicked)) return;
   player.shootCd = w.cd;
+  const aim = Math.atan2(mouseWY() - player.y, mouseWX() - player.x);
   for (let i = 0; i < (w.pellets || 1); i++) {
-    const a = player.aim + rnd(-w.spread, w.spread);
+    const a = aim + rnd(-w.spread, w.spread);
     net.predBullets.push({ x: player.x + Math.cos(a) * 14, y: player.y + Math.sin(a) * 14,
                            vx: Math.cos(a) * w.spd, vy: Math.sin(a) * w.spd, life: w.life, fromPlayer: true, flame: w.fire });
   }
-  spawnMuzzle(player.x + Math.cos(player.aim) * 14, player.y + Math.sin(player.aim) * 14, player.aim);
+  spawnMuzzle(player.x + Math.cos(aim) * 14, player.y + Math.sin(aim) * 14, aim);
   (sfx[w.sfx] || sfx.shoot)();
   netPredictedShotPush(net.predictedShots, performance.now());
 }
@@ -1027,7 +1028,7 @@ function netSendInput() {
 function updateNetClient() {
   applyTouchInput();                                   // mobile: pours the sticks into virtual keys/aim/fire (no-op on desktop)
   if (mClicked) net.firePending = true;                // remember the click (the server does the firing)
-  netPredictFire();                                    // local tracer/flash/sound now; the host still decides the hit
+  netPredictFire();
   updateTrainKinematics(netTrainClock());              // train: kinematics only, on the sim's clock (the server rules on impacts)
   netInterpWorld();                                    // world (traffic/pedestrians) from the snapshots
   netStepPredictedBullets();

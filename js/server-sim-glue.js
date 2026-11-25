@@ -171,7 +171,7 @@ function tickWorld() {
     else if (wantedHeat > 0) { wantedHeat = Math.max(0, wantedHeat - 0.0016); wanted = Math.floor(wantedHeat); }
     pl.input.fireEdge = false;
     saveP(pl);
-    bodyHistoryRecord(pl.hist, frame, (pl.car || pl).x, (pl.car || pl).y);
+    if (pl.downT === 0) bodyHistoryRecord(pl.hist, frame, (pl.car || pl).x, (pl.car || pl).y);
   }
   __shooterId = null;
   // The SHARED world (police density, pedestrian reactions) responds to the MOST wanted

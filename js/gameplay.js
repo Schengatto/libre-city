@@ -81,11 +81,12 @@ function updatePlayerFoot() {
 function playerShoot(w) {
   if (w.rocket) { playerFireRocket(w); return; }      // the launcher fires an explosive rocket
   if (w.grenade) { playerThrowGrenade(w); return; }   // grenades throw a charge that explodes over an area
+  const lagTicks = lagMsToTicks(player.input && player.input.lagMs);
   for (let i = 0; i < (w.pellets || 1); i++) {        // the shotgun fires a spread of pellets
     const a = player.aim + rnd(-w.spread, w.spread);
     const bx = player.x + Math.cos(a) * 14, by = player.y + Math.sin(a) * 14;
     bullets.push({ x: bx, y: by, vx: Math.cos(a) * w.spd, vy: Math.sin(a) * w.spd,
-                   life: w.life, fromPlayer: true, dmg: w.dmgCar, knock: w.knock, owner: player, pvp: w.pvp || 8, flame: w.fire });
+                   life: w.life, fromPlayer: true, dmg: w.dmgCar, knock: w.knock, owner: player, pvp: w.pvp || 8, flame: w.fire, lagTicks });
   }
   spawnMuzzle(player.x + Math.cos(player.aim) * 14, player.y + Math.sin(player.aim) * 14, player.aim);
   shake(w.shake || 2, 3);
@@ -891,7 +892,7 @@ function updateBullets() {
         }
       }
       // PvP (authoritative server only): the shot can floor ANOTHER player.
-      const lagTicks = !hit && MP && b.owner && b.owner.input ? lagMsToTicks(b.owner.input.lagMs) : 0;
+      const lagTicks = b.lagTicks || 0;
       if (!hit && MP) for (const v of MP) {
         if (v === b.owner || v.downT > 0) continue;
         const rewound = lagTicks > 0 && bodyHistoryLookup(v.hist, frame - lagTicks, REWIND_SPOT);
