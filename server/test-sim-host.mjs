@@ -29,11 +29,15 @@ function createHostHarness() {
     document: { querySelector: selector => selector === 'meta[name="lc-sim-worker"]' ? { content: 'js/sim-worker.js' } : null },
     netSend: message => sentToServer.push(message),
     netOnSnapshot: snapshot => snapshots.push(snapshot),
+    rtcHostSendFrame: (id, snapshot, events) => rtcFrames.push({ id, snapshot, events }),
+    rtcHostCloseAll: () => { rtcCloseAllCalls++; },
   });
   vm.runInContext(fs.readFileSync(path.join(JS_DIR, 'sim-host.js'), 'utf8'), context);
   return { context, sentToServer, snapshots };
 }
 
+const rtcFrames = [];
+let rtcCloseAllCalls = 0;
 const { context: host, sentToServer, snapshots } = createHostHarness();
 
 ok(host.simHostActive() === false, 'inactive before start');
@@ -78,6 +82,22 @@ host.simHostStop();
 ok(fourthWorker.terminated && host.simHostActive() === false, 'stop terminates the worker');
 host.simHostSendInput({ t: 'i', seq: 2 });
 ok(fourthWorker.posted.length === 1, 'no input posted after stop');
+
+host.simHostSetP2P('p2', true);
+host.simHostForwardGuestInput('p2', { seq: 1 });
+ok(fourthWorker.posted.length === 1, 'no p2p or guest input message posted without a worker');
+host.simHostStart();
+const fifthWorker = FakeWorker.instances[4];
+host.simHostSetP2P('p2', true);
+ok(JSON.stringify(fifthWorker.posted[1]) === '{"type":"p2p","id":"p2","open":true}', 'simHostSetP2P posts the p2p message');
+host.simHostForwardGuestInput('p2', { seq: 3, ax: 1 });
+ok(JSON.stringify(fifthWorker.posted[2]) === '{"type":"guestInput","id":"p2","input":{"seq":3,"ax":1}}', 'simHostForwardGuestInput posts the guest input');
+fifthWorker.onmessage({ data: { type: 'guestFrame', id: 'p2', snapshot: '{"t":"w"}', events: '{"t":"we"}' } });
+ok(rtcFrames.length === 1 && rtcFrames[0].id === 'p2' && rtcFrames[0].snapshot === '{"t":"w"}' && rtcFrames[0].events === '{"t":"we"}',
+  'a guestFrame message reaches rtcHostSendFrame');
+const closeCallsBeforeStop = rtcCloseAllCalls;
+host.simHostStop();
+ok(rtcCloseAllCalls === closeCallsBeforeStop + 1, 'simHostStop closes every rtc link');
 
 const netSource = fs.readFileSync(path.join(JS_DIR, 'net.js'), 'utf8');
 const prefixLine = netSource.match(/^const NET_SNAPSHOT_FRAME_PREFIX = .*$/m);

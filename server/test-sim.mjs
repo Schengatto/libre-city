@@ -2,8 +2,11 @@
 // Checks: ONE shared authoritative city per room; several players in the same world;
 // movement; area-of-interest snapshots; PvP combat with kill credit.
 //   Usage:  node server/test-sim.mjs
+import vm from 'node:vm';
+import { createRequire } from 'node:module';
 import runtime from './sim-runtime.js';
-const { createRoomSim } = runtime;
+const { createRoomSim, BUNDLE, JS_DIR } = runtime;
+const { makeSimStubs } = createRequire(import.meta.url)(JS_DIR + '/sim-stubs.js');
 
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ', msg); } else { fail++; console.log('  XX FAIL:', msg); } };
@@ -103,6 +106,24 @@ ok(run, 'il rivale a piedi è stato steso dall\'auto');
 ok((sc3.find(s => s.id === D) || {}).k >= 1, 'l\'investimento è accreditato al pirata (kill)');
 ok((sc3.find(s => s.id === V) || {}).d >= 1, 'alla vittima è contata la morte');
 ok(pd.downT === 0 && pd.health === 100, 'chi guida non investe se stesso');
+
+console.log('stale inputs');
+const staleContext = makeSimStubs('STALE1', 900, { setTimeout, clearTimeout, setInterval, clearInterval });
+vm.createContext(staleContext);
+vm.runInContext(BUNDLE, staleContext, { timeout: 5000 });
+const staleSim = staleContext.__sim;
+const staleId = staleSim.addPlayer('Stale', 0);
+const staleInput = staleContext.playerById(staleId).input;
+staleSim.applyInput(staleId, { seq: 10, ax: 1 });
+staleSim.applyInput(staleId, { seq: 9, ax: -1, b: 4 });
+ok(staleInput.ax === 1 && staleInput.seq === 10, 'a stale input does not move the axes or the seq back');
+ok(staleInput.enterExit === true, 'a stale input still delivers its edge bits');
+staleSim.applyInput(staleId, { seq: 5, w: 2, b: 1, aim: 3, vr: 700 });
+ok(staleInput.weapon === 2 && staleContext.playerById(staleId).aoi === 700, 'a stale input still applies the weapon and the view radius');
+ok(staleInput.fireHeld === false && staleInput.aim === 0, 'a stale input does not touch fireHeld or aim');
+staleInput.seq = 100;
+staleSim.applyInput(staleId, { seq: 1, ax: -1 });
+ok(staleInput.ax === -1 && staleInput.seq === 1, 'an input far behind the window is accepted as a sequence restart');
 
 console.log(`\n${fail === 0 ? '✅' : '❌'}  ${pass} ok, ${fail} fail`);
 process.exit(fail === 0 ? 0 : 1);

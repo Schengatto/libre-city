@@ -275,6 +275,7 @@ const RESTORABLE_NUMBER_FIELDS = {
 };
 
 // ===== Control API exposed to the Node harness (top-level var ⇒ property of the global) =====
+const STALE_INPUT_WINDOW = 64;
 var __sim = {
   addPlayer(name, shirtIdx, id) { const pl = makeSimPlayer(name, shirtIdx); if (id) pl.id = id; players.push(pl); return pl.id; },
   removePlayer(id) {
@@ -285,19 +286,25 @@ var __sim = {
   applyInput(id, cmd) {
     const pl = playerById(id); if (!pl || !cmd) return;
     const i = pl.input;
-    if (cmd.ax != null) i.ax = cmd.ax; if (cmd.ay != null) i.ay = cmd.ay;
-    if (cmd.aim != null) i.aim = cmd.aim; if (cmd.seq != null) i.seq = cmd.seq;
-    if (cmd.b != null) { i.fireHeld = !!(cmd.b & 1); if (cmd.b & 2) i.fireEdge = true; if (cmd.b & 4) i.enterExit = true; if (cmd.b & 8) i.horn = true; }
-    if (cmd.drive) { touchDrive.active = !!cmd.drive.active; touchDrive.angle = cmd.drive.angle || 0; }
+    const stale = cmd.seq != null && i.seq != null && cmd.seq <= i.seq && i.seq - cmd.seq < STALE_INPUT_WINDOW;
+    if (cmd.b != null) {
+      if (!stale) i.fireHeld = !!(cmd.b & 1);
+      if (cmd.b & 2) i.fireEdge = true; if (cmd.b & 4) i.enterExit = true; if (cmd.b & 8) i.horn = true;
+    }
     if (cmd.w != null) i.weapon = cmd.w;
-    if (cmd.lg != null) i.lagMs = Number.isFinite(cmd.lg) ? Math.min(LAG_COMP_MAX_MS, Math.max(0, cmd.lg)) : 0;
-    // CLIENT-AUTHORITATIVE POSITION: the player owns their own movement. We store it here
-    // and tickWorld applies it after the player's sim (firing/interactions stay server-side,
-    // from the position the client reported).
-    if (cmd.px != null) {
-      pl.rx = cmd.px; pl.ry = cmd.py; pl.hasReport = true;
-      if (cmd.cx != null) { pl.rcx = cmd.cx; pl.rcy = cmd.cy; pl.rca = cmd.ca; pl.rcsp = cmd.csp; }
-      else pl.rcx = null;
+    if (!stale) {
+      if (cmd.ax != null) i.ax = cmd.ax; if (cmd.ay != null) i.ay = cmd.ay;
+      if (cmd.aim != null) i.aim = cmd.aim; if (cmd.seq != null) i.seq = cmd.seq;
+      if (cmd.drive) { touchDrive.active = !!cmd.drive.active; touchDrive.angle = cmd.drive.angle || 0; }
+      if (cmd.lg != null) i.lagMs = Number.isFinite(cmd.lg) ? Math.min(LAG_COMP_MAX_MS, Math.max(0, cmd.lg)) : 0;
+      // CLIENT-AUTHORITATIVE POSITION: the player owns their own movement. We store it here
+      // and tickWorld applies it after the player's sim (firing/interactions stay server-side,
+      // from the position the client reported).
+      if (cmd.px != null) {
+        pl.rx = cmd.px; pl.ry = cmd.py; pl.hasReport = true;
+        if (cmd.cx != null) { pl.rcx = cmd.cx; pl.rcy = cmd.cy; pl.rca = cmd.ca; pl.rcsp = cmd.csp; }
+        else pl.rcx = null;
+      }
     }
     // Adaptive area-of-interest radius requested by the client (clamped: never so small
     // that entities pop in on screen, never above the default cap).

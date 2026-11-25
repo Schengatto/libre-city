@@ -120,6 +120,36 @@ deliver(socket, { t: 'leave', id: 'p3' });
 harness.advance(520);
 ok(!lastHostState(socket).players.some(row => row.id === 'p3'), 'a leaving player disappears from hst');
 
+console.log('p2p routing');
+const p2pGuestFrames = () => harness.posted.filter(m => m.type === 'guestFrame' && m.id === 'p2');
+const socketFramesToP2 = () => socket.sent.filter(frame => typeof frame === 'string' && frame.startsWith('W|p2|')).length;
+harness.send({ type: 'p2p', id: 'p2', open: true });
+const socketFramesBeforeP2p = socketFramesToP2();
+vm.runInContext('playerById("p2").events = [{ k: "toast", m: "hello" }]', harness.scope);
+harness.advance(150);
+ok(socketFramesToP2() === socketFramesBeforeP2p, 'a p2p guest gets no W frame over the socket');
+ok(p2pGuestFrames().length >= 1, 'a p2p guest gets guestFrame messages');
+const eventFrame = p2pGuestFrames().find(m => m.events !== null);
+ok(eventFrame && JSON.parse(eventFrame.events).t === 'we' && JSON.parse(eventFrame.events).ev.length === 1, 'queued me.ev lands in the events string');
+ok(eventFrame && typeof JSON.parse(eventFrame.events).tick === 'number' && JSON.parse(eventFrame.events).tick === JSON.parse(eventFrame.snapshot).tick, 'events carry the snapshot tick');
+ok(eventFrame && JSON.parse(eventFrame.snapshot).t === 'w' && JSON.parse(eventFrame.snapshot).me.ev === null && JSON.parse(eventFrame.snapshot).fx.length === 0,
+  'the guestFrame snapshot is a w snapshot without me.ev and fx');
+ok(p2pGuestFrames().some(m => m.events === null), 'a frame without events carries null events');
+const appliedInputs = [];
+const realApplyInput = harness.scope.__sim.applyInput;
+harness.scope.__sim.applyInput = (id, input) => { appliedInputs.push(id); return realApplyInput(id, input); };
+harness.send({ type: 'guestInput', id: 'p2', input: { seq: 7, ax: 1 } });
+harness.send({ type: 'guestInput', id: 'p9', input: { seq: 8 } });
+harness.send({ type: 'guestInput', id: 'p1', input: { seq: 9 } });
+ok(appliedInputs.length === 1 && appliedInputs[0] === 'p2', 'guestInput reaches applyInput only for a known non-host guest');
+harness.advance(40);
+ok(JSON.parse(p2pGuestFrames().pop().snapshot).ack === 7, 'the guest input is applied to the sim');
+harness.scope.__sim.applyInput = realApplyInput;
+harness.send({ type: 'p2p', id: 'p2', open: false });
+const socketFramesAfterClose = socketFramesToP2();
+harness.advance(60);
+ok(socketFramesToP2() > socketFramesAfterClose, 'closing p2p brings the W frames back');
+
 console.log('catch-up cap');
 const lastGuestTick = () => JSON.parse(socket.sent.filter(frame => typeof frame === 'string' && frame.startsWith('W|p2|')).pop().slice('W|p2|'.length)).tick;
 const tickBeforeStall = lastGuestTick();
