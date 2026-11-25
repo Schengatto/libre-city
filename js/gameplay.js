@@ -81,11 +81,12 @@ function updatePlayerFoot() {
 function playerShoot(w) {
   if (w.rocket) { playerFireRocket(w); return; }      // the launcher fires an explosive rocket
   if (w.grenade) { playerThrowGrenade(w); return; }   // grenades throw a charge that explodes over an area
+  const lagTicks = lagMsToTicks(player.input && player.input.lagMs);
   for (let i = 0; i < (w.pellets || 1); i++) {        // the shotgun fires a spread of pellets
     const a = player.aim + rnd(-w.spread, w.spread);
     const bx = player.x + Math.cos(a) * 14, by = player.y + Math.sin(a) * 14;
     bullets.push({ x: bx, y: by, vx: Math.cos(a) * w.spd, vy: Math.sin(a) * w.spd,
-                   life: w.life, fromPlayer: true, dmg: w.dmgCar, knock: w.knock, owner: player, pvp: w.pvp || 8, flame: w.fire });
+                   life: w.life, fromPlayer: true, dmg: w.dmgCar, knock: w.knock, owner: player, pvp: w.pvp || 8, flame: w.fire, lagTicks });
   }
   spawnMuzzle(player.x + Math.cos(player.aim) * 14, player.y + Math.sin(player.aim) * 14, player.aim);
   shake(w.shake || 2, 3);
@@ -869,6 +870,7 @@ function resolveRemoteCarCollisions() {
 }
 
 // ---------- Bullets ----------
+const REWIND_SPOT = { x: 0, y: 0 };
 function updateBullets() {
   for (let i = bullets.length - 1; i >= 0; i--) {
     const b = bullets[i];
@@ -890,17 +892,20 @@ function updateBullets() {
         }
       }
       // PvP (authoritative server only): the shot can floor ANOTHER player.
+      const lagTicks = b.lagTicks || 0;
       if (!hit && MP) for (const v of MP) {
         if (v === b.owner || v.downT > 0) continue;
+        const rewound = lagTicks > 0 && bodyHistoryLookup(v.hist, frame - lagTicks, REWIND_SPOT);
+        const spotX = rewound ? REWIND_SPOT.x : (v.car || v).x, spotY = rewound ? REWIND_SPOT.y : (v.car || v).y;
         if (v.car) {
           const c = v.car;
-          if (Math.abs(b.x - c.x) < c.w / 2 && Math.abs(b.y - c.y) < c.h / 2 + 4) {
+          if (Math.abs(b.x - spotX) < c.w / 2 && Math.abs(b.y - spotY) < c.h / 2 + 4) {
             const wasDown = v.downT > 0, vb = v.bounty | 0;
             asPlayer(v, () => { damageCar(c, b.dmg || 10, Math.atan2(b.vy, b.vx)); hurtPlayer(3); });
             if (!wasDown && v.downT > 0 && b.owner) creditKill(b.owner, v, vb);
             spawnSparks(b.x, b.y, 2); hit = true; break;
           }
-        } else if (dist(b.x, b.y, v.x, v.y) < v.r + 3) {
+        } else if (dist(b.x, b.y, spotX, spotY) < v.r + 3) {
           const wasDown = v.downT > 0, vb = v.bounty | 0;
           asPlayer(v, () => hurtPlayer(b.pvp || 8, Math.atan2(b.vy, b.vx)));
           if (!wasDown && v.downT > 0 && b.owner) creditKill(b.owner, v, vb);

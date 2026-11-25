@@ -3,6 +3,33 @@
 
 // ---------- State ----------
 const DIRS = [ {x:1,y:0}, {x:-1,y:0}, {x:0,y:1}, {x:0,y:-1} ];
+const LAG_COMP_MAX_MS = 250;
+const LAG_HISTORY_TICKS = 32;
+const SIM_STEP_MS = 1000 / 60;
+function createBodyHistory() {
+  return {
+    ticks: new Int32Array(LAG_HISTORY_TICKS).fill(-1),
+    xs: new Float32Array(LAG_HISTORY_TICKS),
+    ys: new Float32Array(LAG_HISTORY_TICKS),
+  };
+}
+function bodyHistoryRecord(history, tick, x, y) {
+  const slot = tick % LAG_HISTORY_TICKS;
+  history.ticks[slot] = tick;
+  history.xs[slot] = x;
+  history.ys[slot] = y;
+}
+function bodyHistoryLookup(history, tick, out) {
+  const slot = tick % LAG_HISTORY_TICKS;
+  if (history.ticks[slot] !== tick) return false;
+  out.x = history.xs[slot];
+  out.y = history.ys[slot];
+  return true;
+}
+function lagMsToTicks(lagMs) {
+  if (!Number.isFinite(lagMs)) return 0;
+  return Math.round(clamp(lagMs, 0, LAG_COMP_MAX_MS) / SIM_STEP_MS);
+}
 // "Pedestrian-friendly" tiles: where passers-by are happy to be.
 const pedFriendly = t => t === SIDEWALK || t === GRASS || t === ALLEY || t === SAND || t === QUAY;
 const tileTypeAt = (wx, wy) => tileAt(Math.floor(wx / T), Math.floor(wy / T));

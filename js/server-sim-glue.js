@@ -58,7 +58,8 @@ function makeSimPlayer(name, shirtIdx) {
     wanted: 0, wantedHeat: 0, crimeCd: 0,         // PER-PLAYER wanted level
     cash: 0, downT: 0, downKind: null, kills: 0, deaths: 0,
     score: 0, streak: 0, bounty: 0, events: [],   // score/streak/bounty + the player's queued toast messages
-    input: { ax: 0, ay: 0, aim: 0, fireHeld: false, fireEdge: false, enterExit: false, horn: false, weapon: null },
+    input: { ax: 0, ay: 0, aim: 0, fireHeld: false, fireEdge: false, enterExit: false, horn: false, weapon: null, lagMs: 0 },
+    hist: createBodyHistory(),
   };
 }
 function playerById(id) { for (const p of players) if (p.id === id) return p; return null; }
@@ -125,9 +126,11 @@ function simHorn(pl) {
 
 // ===== The authoritative world's tick (replaces gameplay.js's update()) =====
 function tickWorld() {
+  __shooterId = null;
   updateLights();
   // --- PER-PLAYER PHASE: each acts with their own globals marshalled in ---
   for (const pl of players) {
+    __shooterId = pl.id;
     loadP(pl);
     __curInput = pl.input;
     mDownL = pl.input.fireHeld; mClicked = pl.input.fireEdge;
@@ -168,7 +171,9 @@ function tickWorld() {
     else if (wantedHeat > 0) { wantedHeat = Math.max(0, wantedHeat - 0.0016); wanted = Math.floor(wantedHeat); }
     pl.input.fireEdge = false;
     saveP(pl);
+    if (pl.downT === 0) bodyHistoryRecord(pl.hist, frame, (pl.car || pl).x, (pl.car || pl).y);
   }
+  __shooterId = null;
   // The SHARED world (police density, pedestrian reactions) responds to the MOST wanted
   // player present: set the room globals to the maximum across the players.
   { let mh = 0, mw = 0; for (const pl of players) { if (pl.wantedHeat > mh) mh = pl.wantedHeat; if ((pl.wanted | 0) > mw) mw = pl.wanted | 0; }
@@ -220,7 +225,8 @@ function playerView(p) {
 // recreates them (particles + audio via hear). Muzzle flashes/blood/sparks/explosions are
 // therefore seen and heard in multiplayer too, without growing `parts` on the server.
 var __fx = [];
-spawnMuzzle = (x, y, a) => { __fx.push({ k: 0, x: R2(x), y: R2(y), a }); };
+var __shooterId = null;
+spawnMuzzle = (x, y, a) => { const effect = { k: 0, x: R2(x), y: R2(y), a }; if (__shooterId !== null) effect.o = __shooterId; __fx.push(effect); };
 spawnBlood = (x, y) => { __fx.push({ k: 1, x: R2(x), y: R2(y) }); };
 spawnSparks = (x, y, n) => { __fx.push({ k: 2, x: R2(x), y: R2(y), n: n | 0 }); };
 spawnExplosion = (x, y) => { __fx.push({ k: 3, x: R2(x), y: R2(y) }); };
@@ -249,7 +255,11 @@ function snapshotFor(id) {
   for (const p of players) if (p !== me) out.players.push(playerView(p));
   for (const c of cars) if (c.driver !== 'player' && near(c.x, c.y)) out.cars.push(carPayload(c));
   for (const p of peds) if (near(p.x, p.y)) out.peds.push(pedPayload(p));
-  for (const b of bullets) if (near(b.x, b.y)) out.bul.push({ x: R2(b.x), y: R2(b.y), a: Math.atan2(b.vy, b.vx), hostile: !b.fromPlayer, fl: b.flame ? 1 : 0 });
+  for (const b of bullets) if (near(b.x, b.y)) {
+    const entry = { x: R2(b.x), y: R2(b.y), a: Math.atan2(b.vy, b.vx), hostile: !b.fromPlayer, fl: b.flame ? 1 : 0 };
+    if (b.fromPlayer && b.owner && b.owner.id) entry.o = b.owner.id;
+    out.bul.push(entry);
+  }
   for (const r of rockets) if (near(r.x, r.y)) out.rkt.push({ x: R2(r.x), y: R2(r.y), a: Math.atan2(r.vy, r.vx), gr: r.grenade ? 1 : 0 });
   for (const k of coins) if (near(k.x, k.y)) out.coins.push({ x: R2(k.x), y: R2(k.y), v: k.val });
   for (const f of fires) if (near(f.x, f.y)) out.fires.push({ x: R2(f.x), y: R2(f.y) });
@@ -280,6 +290,7 @@ var __sim = {
     if (cmd.b != null) { i.fireHeld = !!(cmd.b & 1); if (cmd.b & 2) i.fireEdge = true; if (cmd.b & 4) i.enterExit = true; if (cmd.b & 8) i.horn = true; }
     if (cmd.drive) { touchDrive.active = !!cmd.drive.active; touchDrive.angle = cmd.drive.angle || 0; }
     if (cmd.w != null) i.weapon = cmd.w;
+    if (cmd.lg != null) i.lagMs = Number.isFinite(cmd.lg) ? Math.min(LAG_COMP_MAX_MS, Math.max(0, cmd.lg)) : 0;
     // CLIENT-AUTHORITATIVE POSITION: the player owns their own movement. We store it here
     // and tickWorld applies it after the player's sim (firing/interactions stay server-side,
     // from the position the client reported).
