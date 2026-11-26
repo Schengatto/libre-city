@@ -402,7 +402,7 @@ async function fetchPublicGames() {
   const epoch = publicGamesEpoch;
   publicGamesFetching = true;
   try {
-    const res = await fetch(publicRoomsUrl(netServerUrl()), { cache: 'no-store', signal: AbortSignal.timeout(PUBLIC_GAMES_POLL_MS) });
+    const res = await fetch(publicRoomsUrl(netServerUrl()), { cache: 'no-store', signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(PUBLIC_GAMES_POLL_MS) : undefined });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (epoch !== publicGamesEpoch) return;
@@ -476,6 +476,11 @@ function joinPublicGame(code) {
   stopPublicGamesPolling();
   showJoinPanel();
   const joinCodeInput = $('#joinCode'); if (joinCodeInput) joinCodeInput.value = code;
+  if (!playerName) {
+    publicGamesJoining = false;
+    const joinNameInput = $('#joinName'); if (joinNameInput) joinNameInput.focus();
+    return;
+  }
   const joinStatus = $('#joinStatus'); if (joinStatus) joinStatus.textContent = t('join.connecting');
   netJoin(code, '', err => {
     publicGamesJoining = false;

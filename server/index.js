@@ -703,7 +703,7 @@ function handleCreate(ws, m) {
 const ROOM_TITLE_MAX_LENGTH = 24;
 const PUBLIC_ROOM_MIN_LEFT_MS = 60_000;
 function sanitizeRoomTitle(rawTitle, fallbackName) {
-  const title = String(rawTitle || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, ROOM_TITLE_MAX_LENGTH).trim();
+  const title = String(rawTitle || '').replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, '').trim().slice(0, ROOM_TITLE_MAX_LENGTH).trim();
   return title || fallbackName;
 }
 function publicRoomList() {

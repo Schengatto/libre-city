@@ -113,6 +113,8 @@ try {
   const dirtyEntry = await listedRoom('PTIT01');
   ok(dirtyEntry?.title === '<b>x</b>' + 'Y'.repeat(16), `control chars removed, cut to 24 (${dirtyEntry?.title})`);
   ok(dirtyEntry?.title.length === MAX_TITLE_LENGTH, `length is ${MAX_TITLE_LENGTH}`);
+  clients.push(await createRoom({ code: 'PTIT04', public: true, title: 'Ev\u202eil\u0085Name' }));
+  ok((await listedRoom('PTIT04'))?.title === 'EvilName', 'bidi override and C1 control removed');
   clients.push(await createRoom({ code: 'PTIT02', public: true, title: '' }));
   ok((await listedRoom('PTIT02'))?.title === 'Ann', 'empty title falls back to the player name');
   clients.push(await createRoom({ code: 'PTIT03', public: true, title: ' \n\t ', name: 'ABCDEFGHIJKLMNOPQRST' }));
