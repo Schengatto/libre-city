@@ -258,6 +258,8 @@ function startMatch(resume) {
   if (!resume) {
     timeLeft = gameMinutes * 60 * 60;            // minutes → frames (~60 fps)
     if (netActive() && net.clockLeft != null) timeLeft = net.clockLeft;   // the server's authoritative clock
+    matchElapsedFrames = 0;
+    if (netActive() && net.clockLeft != null && gameMinutes > 0) matchElapsedFrames = gameMinutes * 60 * 60 - net.clockLeft;
     player.score = 0;                            // new match: score reset (in MP net.score is what counts)
   }
   // Violence filter (single-player): no weapons in hand → hide the weapon readout and the
