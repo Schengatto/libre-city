@@ -57,7 +57,7 @@ function isPlainObject(value) {
 }
 
 function isImportedName(value) {
-  return typeof value === 'string' && value.length >= 1 && value.length <= IMPORT_NAME_MAX_LENGTH;
+  return typeof value === 'string' && value.length >= 1 && value.length <= IMPORT_NAME_MAX_LENGTH && value.trim() === value;
 }
 
 function isImportedScore(value) {
@@ -70,17 +70,24 @@ function isImportedScore(value) {
 
 const IMPORT_VALIDATORS = {
   [STORAGE_PREFIX + 'name']: isImportedName,
-  [STORAGE_PREFIX + 'minutes']: value => Number.isFinite(value),
+  [STORAGE_PREFIX + 'minutes']: value => [0, 5, 10, 15, 30, 60].includes(value),
   [STORAGE_PREFIX + 'audio']: value => typeof value === 'boolean',
   [STORAGE_PREFIX + 'music']: value => typeof value === 'boolean',
   [STORAGE_PREFIX + 'lang']: value => IMPORT_LANGUAGES.includes(value),
   [STORAGE_PREFIX + 'scores']: value => Array.isArray(value) && value.length <= IMPORT_SCORES_MAX_ENTRIES && value.every(isImportedScore),
-  [STORAGE_PREFIX + 'save']: isPlainObject,
+  [STORAGE_PREFIX + 'save']: value => isPlainObject(value) && typeof value.code === 'string' && (value.name === undefined || typeof value.name === 'string'),
 };
 
-function isImportableEntry(key, text) {
-  if (typeof text !== 'string' || !Object.hasOwn(IMPORT_VALIDATORS, key)) return false;
-  try { return IMPORT_VALIDATORS[key](JSON.parse(text)); } catch { return false; }
+function validatedImportText(key, text) {
+  if (typeof text !== 'string' || !Object.prototype.hasOwnProperty.call(IMPORT_VALIDATORS, key)) return null;
+  try {
+    const value = JSON.parse(text);
+    if (!IMPORT_VALIDATORS[key](value)) return null;
+    if (key === STORAGE_PREFIX + 'scores') {
+      return JSON.stringify(value.map(({ name, score, min, date }) => ({ name, score, min, date })));
+    }
+    return text;
+  } catch { return null; }
 }
 
 function decodeStorageImport(encoded) {
@@ -90,7 +97,8 @@ function decodeStorageImport(encoded) {
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
     const entries = {};
     for (const key of Object.keys(parsed)) {
-      if (isImportableEntry(key, parsed[key])) entries[key] = parsed[key];
+      const text = validatedImportText(key, parsed[key]);
+      if (text !== null) entries[key] = text;
     }
     return entries;
   } catch { return null; }

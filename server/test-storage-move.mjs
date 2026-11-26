@@ -49,16 +49,16 @@ migrateStoragePrefix(s);
 ok(s.getItem('vibeCity.lang') === '"en"' && s.getItem('libreCity.lang') === null, 'existing vibeCity key wins, legacy key removed');
 
 console.log('export and import');
-s = makeStorage({ 'vibeCity.lang': '"en"', 'vibeCity.save': '{"v":3,"name":"Zoë"}', 'other': '1' });
+s = makeStorage({ 'vibeCity.lang': '"en"', 'vibeCity.save': '{"v":3,"code":"ABCD","name":"Zoë"}', 'other': '1' });
 const encoded = encodeStorageExport(s);
 ok(/^[A-Za-z0-9_-]+$/.test(encoded), 'export is base64url');
-ok(JSON.stringify(decodeStorageImport(encoded)) === JSON.stringify({ 'vibeCity.lang': '"en"', 'vibeCity.save': '{"v":3,"name":"Zoë"}' }), 'round trip keeps only vibeCity keys, unicode intact');
+ok(JSON.stringify(decodeStorageImport(encoded)) === JSON.stringify({ 'vibeCity.lang': '"en"', 'vibeCity.save': '{"v":3,"code":"ABCD","name":"Zoë"}' }), 'round trip keeps only vibeCity keys, unicode intact');
 ok(encodeStorageExport(makeStorage({})) === '', 'empty export when no keys');
 
 console.log('hostile input');
 ok(decodeStorageImport('%%%') === null, 'bad base64 rejected');
 ok(decodeStorageImport(b64url('not json')) === null, 'non-JSON payload rejected');
-ok(JSON.stringify(decodeStorageImport(b64url(JSON.stringify({ token: '"x"', 'vibeCity.a': 'not json', 'vibeCity.b': 5, 'vibeCity.minutes': '1' })))) === '{"vibeCity.minutes":"1"}', 'foreign keys, non-JSON and non-string values dropped');
+ok(JSON.stringify(decodeStorageImport(b64url(JSON.stringify({ token: '"x"', 'vibeCity.a': 'not json', 'vibeCity.b': 5, 'vibeCity.minutes': '5' })))) === '{"vibeCity.minutes":"5"}', 'foreign keys, non-JSON and non-string values dropped');
 
 console.log('import whitelist');
 const decodeEntries = entries => decodeStorageImport(b64url(JSON.stringify(entries)));
@@ -77,9 +77,19 @@ ok(decodeEntries({ 'vibeCity.save': '[1]' })['vibeCity.save'] === undefined && d
 const intents = decodeEntries({ 'vibeCity.hostIntent': '{"code":"X"}', 'vibeCity.spIntent': '{"code":"X"}', 'vibeCity.loadIntent': '{}', 'vibeCity.joinIntent': '{}' });
 ok(Object.keys(intents).length === 0, 'one-shot intent keys dropped');
 ok(Object.keys(decodeStorageImport(b64url('{"__proto__":"{}","constructor":"{}","vibeCity.name":"\\"Zed\\""}'))).join() === 'vibeCity.name', '__proto__ and constructor keys dropped');
-const validEntries = { 'vibeCity.name': '"Anna"', 'vibeCity.lang': '"it"', 'vibeCity.scores': JSON.stringify([validScore]), 'vibeCity.save': '{"v":3}', 'vibeCity.minutes': '5', 'vibeCity.audio': 'true', 'vibeCity.music': 'false' };
+const validEntries = { 'vibeCity.name': '"Anna"', 'vibeCity.lang': '"it"', 'vibeCity.scores': JSON.stringify([validScore]), 'vibeCity.save': '{"v":3,"code":"ABCD"}', 'vibeCity.minutes': '5', 'vibeCity.audio': 'true', 'vibeCity.music': 'false' };
 ok(JSON.stringify(decodeEntries(validEntries)) === JSON.stringify(validEntries), 'valid entries import together');
-ok(decodeStorageImport('A'.repeat(200001)) === null, 'oversize fragment rejected');
+ok(Object.keys(decodeEntries({ 'vibeCity.name': '"   "' })).length === 0, 'whitespace-only name dropped');
+ok(Object.keys(decodeEntries({ 'vibeCity.name': '" Anna"' })).length === 0, 'padded name dropped');
+ok(Object.keys(decodeEntries({ 'vibeCity.minutes': '7' })).length === 0, 'unsupported duration dropped');
+ok([0, 5, 10, 15, 30, 60].every(minutes => decodeEntries({ 'vibeCity.minutes': String(minutes) })['vibeCity.minutes'] === String(minutes)), 'all UI durations accepted');
+ok(Object.keys(decodeEntries({ 'vibeCity.save': '{"v":3}' })).length === 0, 'save without a string code dropped');
+ok(Object.keys(decodeEntries({ 'vibeCity.save': '{"code":"ABCD","name":42}' })).length === 0, 'save with non-string name dropped');
+ok(decodeEntries({ 'vibeCity.scores': JSON.stringify([{ ...validScore, extra: 'discard' }]) })['vibeCity.scores'] === JSON.stringify([validScore]), 'extra score fields dropped');
+const capPayload = JSON.stringify({ 'vibeCity.minutes': '5' });
+const paddedPayload = byteLength => b64url(capPayload.padEnd(byteLength));
+ok(decodeStorageImport(paddedPayload(149999))['vibeCity.minutes'] === '5', 'valid payload just under the cap accepted');
+ok(decodeStorageImport(paddedPayload(150001)) === null, 'valid payload just over the cap rejected');
 s = makeStorage({ 'vibeCity.save': JSON.stringify({ v: 3, pad: 'x'.repeat(200000) }) });
 ok(encodeStorageExport(s) === '', 'oversize export is empty');
 ok(legacyHostRedirectUrl({ hostname: 'libre-city.schengatto.com', search: '?room=ABCD' }, s) === 'https://vibecity.schengatto.com/?room=ABCD', 'oversize export redirects without data');
