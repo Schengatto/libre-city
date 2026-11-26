@@ -18,6 +18,7 @@ const NIGHT = { r: 70, g: 85, b: 140, light: 1 };
 ok(DAY_CYCLE_FRAMES === 39600, 'cycle is 11 minutes');
 ok(dayCycleFrame(0) === 0, 'cycle frame at start is 0');
 ok(dayCycleFrame(DAY_CYCLE_FRAMES + 5) === 5, 'cycle frame wraps');
+ok(dayCycleFrame(-5) === 39595, 'cycle frame wraps negative elapsed');
 
 ok(same({ ...dayNightAmbient(0) }, DAY), 'start of cycle is full day');
 ok(same({ ...dayNightAmbient(3 * FRAMES_PER_MINUTE) }, DAY), 'midday is full day');
@@ -43,8 +44,10 @@ ok(updateBody.indexOf('matchElapsedFrames++') > 0 && updateBody.indexOf('matchEl
 
 const ui = readSource('ui.js');
 const startMatchBody = ui.slice(ui.search(/^function startMatch\(/m));
-ok(/matchElapsedFrames = 0;/.test(startMatchBody), 'startMatch resets matchElapsedFrames');
-ok(/netActive\(\) && net\.clockLeft != null && gameMinutes > 0\) matchElapsedFrames = gameMinutes \* 60 \* 60 - net\.clockLeft;/.test(startMatchBody), 'startMatch derives matchElapsedFrames from the server clock');
+const freshMatchBranch = startMatchBody.slice(startMatchBody.indexOf('if (!resume) {'), startMatchBody.indexOf('\n  }\n'));
+ok(startMatchBody.indexOf('if (!resume) {') > 0 && /matchElapsedFrames = 0;/.test(freshMatchBranch), 'startMatch resets matchElapsedFrames only in the fresh-match branch');
+ok(/netActive\(\) && net\.clockLeft != null && gameMinutes > 0\) matchElapsedFrames = gameMinutes \* 60 \* 60 - net\.clockLeft;/.test(freshMatchBranch), 'startMatch derives matchElapsedFrames from the server clock only in the fresh-match branch');
+ok((startMatchBody.match(/matchElapsedFrames/g) || []).length === (freshMatchBranch.match(/matchElapsedFrames/g) || []).length, 'startMatch touches matchElapsedFrames nowhere outside the fresh-match branch');
 
 const save = readSource('save.js');
 ok(/matchElapsed: matchElapsedFrames/.test(save) && /matchElapsedFrames = s\.matchElapsed \| 0/.test(save), 'save writes and reads matchElapsed');

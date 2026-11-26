@@ -13,7 +13,7 @@ const DAY_NIGHT_KEYFRAMES = [
 ];
 
 function dayCycleFrame(elapsedFrames) {
-  return Math.floor(elapsedFrames) % DAY_CYCLE_FRAMES;
+  return ((Math.floor(elapsedFrames) % DAY_CYCLE_FRAMES) + DAY_CYCLE_FRAMES) % DAY_CYCLE_FRAMES;
 }
 
 function dayNightAmbient(cycleFrame) {
