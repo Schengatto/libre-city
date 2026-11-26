@@ -473,6 +473,7 @@ function electHost(room, excludeId) {
   const next = pickHost(room, excludeId);
   closeHostLink(room);
   room.hostId = next ? next.id : null;
+  room.hostLinkBound = false;
   awaitFirstHostFrame(room);
   if (!next) { fallbackToServerSim(room); return; }
   broadcast(room, { t: 'host', id: next.id, name: next.name });
@@ -509,8 +510,10 @@ function handleHostLink(ws, m) {
   const room = rooms.get(String(m.code || '').toUpperCase());
   const p = room && typeof m.token === 'string' && [...room.players.values()].find(pp => pp.token === m.token);
   if (!p || !hostModeActive(room) || room.hostId !== p.id) { ws.terminate(); return; }
+  const rebinding = room.hostLinkBound;
   const previousLink = room.hostLink;
   room.hostLink = ws;
+  room.hostLinkBound = true;
   ws._hostRoom = room;
   if (previousLink) awaitFirstHostFrame(room);
   if (previousLink && previousLink !== ws) { try { previousLink.close(); } catch {} }
@@ -520,6 +523,7 @@ function handleHostLink(ws, m) {
     state: room.hostState?.players || [],
     police: room.police,
   });
+  if (rebinding) broadcast(room, { t: 'host', id: p.id, name: p.name });
   log('hostlink', room.code, p.id);
 }
 function startsWithSnapshotPayload(data, payloadStart) {
@@ -705,7 +709,7 @@ function createRoom(ws, m) {
     code, pass: String(m.pass || ''), max: clamp(+m.max || 4, 2, MAX_PLAYERS_CAP),
     minutes: Math.max(0, +m.minutes || 0), police: typeof m.police === 'boolean' ? m.police : true, startAt: now(),
     idSeq: 0, players: new Map(), endTimer: null, ended: false,
-    hostId: null, hostLink: null, hostBindStartedAt: 0, hostLastFrameAt: 0, hostState: null, resigned: new Set(), hostWatchTimer: null,
+    hostId: null, hostLink: null, hostLinkBound: false, hostBindStartedAt: 0, hostLastFrameAt: 0, hostState: null, resigned: new Set(), hostWatchTimer: null,
   };
   rooms.set(code, room);
   scheduleEnd(room);
