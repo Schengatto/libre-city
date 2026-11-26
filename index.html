@@ -6,15 +6,15 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Libre City">
-<meta name="application-name" content="Libre City">
+<meta name="apple-mobile-web-app-title" content="Vibe City">
+<meta name="application-name" content="Vibe City">
 <meta name="theme-color" content="#0a0a12">
 <!-- PWA: installable from the browser (manifest + service worker at the end of the body) -->
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<title>Libre City</title>
+<title>Vibe City</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bungee&display=swap" rel="stylesheet">
@@ -493,7 +493,7 @@
     </div>
     <button id="musicBtn" type="button" aria-pressed="true" data-i18n-title="music.toggle" data-i18n-aria="music.toggle">♪ ON</button>
 
-    <h1>LIBRE CITY</h1>
+    <h1>VIBE CITY</h1>
     <div class="tag" data-i18n="start.tag">Corri · Consegna · Soccorri</div>
 
     <!-- First run (before anything else): language choice -->
@@ -777,12 +777,13 @@
 
   <!-- Multiplayer: address of the WebSocket server (see server/). Leave it empty in
        development (net.js uses ws://localhost:8787); AFTER DEPLOYING put the public URL
-       here, e.g. content="wss://libre-city.fly.dev". Single-player works without a
+       here, e.g. content="wss://vibe-city.fly.dev". Single-player works without a
        server. -->
-  <meta name="lc-server" content="">
+  <meta name="vc-server" content="">
   <meta name="lc-sim-worker" content="js/sim-worker.js">
-  <!-- The game is split into 16 scripts sharing the global scope: the order matters!
+  <!-- The game is split into 20 scripts sharing the global scope: the order matters!
        i18n.js comes right after core.js, since everything else calls t()/tList(). -->
+  <script src="js/storage-move.js"></script>
   <script src="js/core.js"></script>
   <script src="js/i18n.js"></script>
   <script src="js/city.js"></script>

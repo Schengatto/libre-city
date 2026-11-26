@@ -1,4 +1,4 @@
-<h1 align="center">Libre City</h1>
+<h1 align="center">Vibe City</h1>
 
 <p align="center">
   <b>A GTA-style sandbox city that runs in a browser tab.</b><br>
@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://libre-city.schengatto.cloud/"><b>▶ Play now</b></a>
+  <a href="https://vibecity.schengatto.com/"><b>▶ Play now</b></a>
 </p>
 
 <p align="center">
@@ -162,7 +162,7 @@ STATIC_DIR=dist node server/index.js       # game + WebSocket on http://localhos
 
 ```bash
 npm run build                                          # → dist/
-LC_SERVER=wss://your-server.example.com npm run build  # baked-in server address
+VC_SERVER=wss://your-server.example.com npm run build  # baked-in server address
 ```
 
 `build.js` copies the sources into `dist/`, fingerprints every script (`js/ui.js` →
@@ -171,7 +171,7 @@ LC_SERVER=wss://your-server.example.com npm run build  # baked-in server address
 (`_headers`) and Apache (`.htaccess`). It does not minify, and it pulls in no build dependencies.
 
 Deploy by uploading the **contents** of `dist/` to your site root. The multiplayer server address is
-written into the page as `<meta name="lc-server">`; it can also be overridden at runtime with
+written into the page as `<meta name="vc-server">`; it can also be overridden at runtime with
 `?server=wss://…` for testing.
 
 ## Server configuration

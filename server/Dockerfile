@@ -1,4 +1,4 @@
-# Server multigiocatore di Libre City. Immagine minima Node su Alpine.
+# Server multigiocatore di Vibe City. Immagine minima Node su Alpine.
 # Funziona su Fly.io, Railway, Render e qualsiasi host che accetti un container.
 FROM node:22-alpine
 

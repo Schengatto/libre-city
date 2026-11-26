@@ -15,8 +15,8 @@ permissions:
   contents: read
 
 env:
-  PUBLIC_URL: https://libre-city.schengatto.com
-  SERVER_URL: wss://libre-city.schengatto.com
+  PUBLIC_URL: https://vibecity.schengatto.com
+  SERVER_URL: wss://vibecity.schengatto.com
 
 jobs:
   test:
@@ -38,7 +38,7 @@ jobs:
       - name: Build client
         run: node build.js
         env:
-          LC_SERVER: ${{ env.SERVER_URL }}
+          VC_SERVER: ${{ env.SERVER_URL }}
 
   deploy:
     needs: test
@@ -68,7 +68,7 @@ jobs:
       - name: Build client
         run: node build.js
         env:
-          LC_SERVER: ${{ env.SERVER_URL }}
+          VC_SERVER: ${{ env.SERVER_URL }}
 
       - name: Stage release
         run: |

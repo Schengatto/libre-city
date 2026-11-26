@@ -1,4 +1,4 @@
-# Multigiocatore di Libre City
+# Multigiocatore di Vibe City
 
 Il multigiocatore gira su un **vero server** (Node + WebSocket, in `server/`).
 Prima era P2P via PeerJS/WebRTC: uno dei telefoni faceva da host e, appena andava
@@ -34,7 +34,7 @@ File coinvolti:
 | `server/index.js` | Server WebSocket: stanze, relay, orologio, riaggancio |
 | `server/test.mjs` | Smoke test del protocollo (`npm test` in `server/`) |
 | `js/net.js` | Client: crea/entra, ghost, PvP, ladder, riaggancio automatico |
-| `index.html` | `<meta name="lc-server">` con l'URL del server |
+| `index.html` | `<meta name="vc-server">` con l'URL del server |
 
 ## Fase 2 — Server autoritativo (prossima)
 
@@ -237,16 +237,16 @@ Su **Railway/Render**: nuovo servizio dal repo puntando alla cartella `server/`
 (usano il `Dockerfile`), start `node index.js`. La porta arriva dall'env `PORT`.
 
 **2. Sito** — genera `dist/` **passando l'URL del server**: il build lo inietta
-nel `<meta name="lc-server">`, così non tocchi `index.html` a mano.
+nel `<meta name="vc-server">`, così non tocchi `index.html` a mano.
 ```bash
-LC_SERVER=wss://libre-city.fly.dev npm run build
-# equivalenti:  npm run build -- --server=wss://libre-city.fly.dev
-#               node build.js wss://libre-city.fly.dev
+VC_SERVER=wss://vibe-city.fly.dev npm run build
+# equivalenti:  npm run build -- --server=wss://vibe-city.fly.dev
+#               node build.js wss://vibe-city.fly.dev
 ```
 Poi carica il contenuto di `dist/` su Cloudflare Pages / Netlify / Apache.
 Senza URL (`npm run build`) il meta resta vuoto: va bene per lo sviluppo locale
 (il client ripiega su `ws://localhost:8787`). All'occorrenza puoi comunque forzare
-l'URL a runtime con `window.LIBRE_CITY_SERVER = 'wss://…'` o `?server=wss://…`.
+l'URL a runtime con `window.VIBE_CITY_SERVER = 'wss://…'` o `?server=wss://…`.
 
 > Nota Fly: con `min_machines_running = 0` la macchina si sospende a stanza vuota
 > (costo ~0) ma il **primo** ingresso paga un cold start di qualche secondo — il

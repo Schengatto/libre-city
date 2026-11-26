@@ -1,4 +1,4 @@
-// LIBRE CITY · js/ui.js — DOM HUD, main loop, menus, settings, high scores, pause and start-up.
+// VIBE CITY · js/ui.js — DOM HUD, main loop, menus, settings, high scores, pause and start-up.
 
 // =========================================================
 //  HUD

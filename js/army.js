@@ -1,4 +1,4 @@
-// LIBRE CITY · js/army.js — the army: tank and rockets, base alarm, guard soldiers
+// VIBE CITY · js/army.js — the army: tank and rockets, base alarm, guard soldiers
 // and military jeeps.
 
 // ---------- Tank 🪖 ----------

@@ -1,4 +1,4 @@
-// LIBRE CITY · js/train.js — ring railway and looping train.
+// VIBE CITY · js/train.js — ring railway and looping train.
 // The track is a closed loop inside the outer ring road (railPointAt in city.js): it
 // depends only on the room code, like all generation, so host, guests and the
 // authoritative server see the same line. One train runs around it without stopping:

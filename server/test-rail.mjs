@@ -8,11 +8,11 @@ let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ', msg); } else { fail++; console.log('  XX FAIL:', msg); } };
 
 const GRID_SIZES = { PABC12: [8, 8], MABC12: [8, 16], GABC12: [16, 16] };
-const SIM_SCRIPT = new vm.Script(BUNDLE, { filename: 'libre-sim-bundle.js' });
+const SIM_SCRIPT = new vm.Script(BUNDLE, { filename: 'vibe-sim-bundle.js' });
 
 function loadRoom(code, { peace = false } = {}) {
   const context = stubs.makeSimStubs(code, 900, { setTimeout, clearTimeout, setInterval, clearInterval });
-  if (peace) context.localStorage.getItem = key => key === 'libreCity.spIntent' ? JSON.stringify({ code, violence: false }) : null;
+  if (peace) context.localStorage.getItem = key => key === 'vibeCity.spIntent' ? JSON.stringify({ code, violence: false }) : null;
   vm.createContext(context);
   SIM_SCRIPT.runInContext(context, { timeout: 5000 });
   return { sim: context.__sim, ev: expr => vm.runInContext(expr, context) };

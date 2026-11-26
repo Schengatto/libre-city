@@ -16,7 +16,7 @@ const FORCED_CODES = ['P', 'M', 'G'].flatMap(size => Array.from({ length: 10 }, 
 
 function loadCity(code, { peace = false, patch = source => source } = {}) {
   const sandbox = stubs.makeSimStubs(code, 900, { setTimeout, clearTimeout, setInterval, clearInterval });
-  if (peace) sandbox.localStorage = { ...sandbox.localStorage, getItem: key => key === 'libreCity.spIntent' ? JSON.stringify({ code, violence: false }) : null };
+  if (peace) sandbox.localStorage = { ...sandbox.localStorage, getItem: key => key === 'vibeCity.spIntent' ? JSON.stringify({ code, violence: false }) : null };
   const context = vm.createContext(sandbox);
   vm.runInContext(patch(BUNDLE), context, { timeout: 10000 });
   return expr => vm.runInContext(expr, context);

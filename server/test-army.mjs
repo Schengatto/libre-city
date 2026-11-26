@@ -1,4 +1,4 @@
-// LIBRE CITY · server/test-army.mjs — the military base: layout, guard duties, parking.
+// VIBE CITY · server/test-army.mjs — the military base: layout, guard duties, parking.
 //   Usage:  node server/test-army.mjs
 import runtime from './sim-runtime.js';
 const { createRoomSim } = runtime;

@@ -1,4 +1,4 @@
-// LIBRE CITY · js/audio.js — audio: procedural WebAudio synthesis (engines, gunfire, sirens…).
+// VIBE CITY · js/audio.js — audio: procedural WebAudio synthesis (engines, gunfire, sirens…).
 
 // =========================================================
 //  AUDIO (procedural synthesis)

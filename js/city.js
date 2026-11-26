@@ -1,4 +1,4 @@
-// LIBRE CITY · js/city.js — city generation: street grid graph, tiles and alleys,
+// VIBE CITY · js/city.js — city generation: street grid graph, tiles and alleys,
 // landmarks (hospital, police, gun shop…), military base, buildings and street detail.
 
 // ---------- City: road network as a graph (an orthogonal street grid) ----------

@@ -1,4 +1,4 @@
-// LIBRE CITY · server/test-server-sim.mjs — end-to-end test of the authoritative server
+// VIBE CITY · server/test-server-sim.mjs — end-to-end test of the authoritative server
 // (Phase 2, Stage 2b). Starts the real server; two WebSocket clients create/join the room,
 // send INPUT ('i') and receive the SNAPSHOTS ('w') of ONE shared city.
 //   Usage:  node server/test-server-sim.mjs

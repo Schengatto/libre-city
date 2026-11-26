@@ -1,6 +1,6 @@
 'use strict';
 // =============================================================================
-// LIBRE CITY · server/leaderboard.js — SHARED multiplayer leaderboard.
+// VIBE CITY · server/leaderboard.js — SHARED multiplayer leaderboard.
 //
 // The per-match ladder (Tab / 🏆) lives and dies with the room: it says who won THAT match
 // and nothing else. This module is the other half — a leaderboard shared by everyone on the

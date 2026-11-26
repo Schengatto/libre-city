@@ -1,11 +1,11 @@
-// LIBRE CITY · js/save.js — SINGLE-PLAYER game saves.
+// VIBE CITY · js/save.js — SINGLE-PLAYER game saves.
 //
 // The city is generated deterministically from the room code (ROOM_CODE, see
 // core.js), so it is NOT saved: remembering the code is enough to regenerate it.
 // A save therefore holds only the player's live state (position, health, weapons,
 // cash, wanted level, time left, mission counters) plus that city's code.
 //
-// One slot per browser (localStorage, key `libreCity.save`). Traffic and pedestrians
+// One slot per browser (localStorage, key `vibeCity.save`). Traffic and pedestrians
 // are not saved: they repopulate on their own, indistinguishably.
 //
 // Reloading implies REGENERATING the world: if the saved code differs from the

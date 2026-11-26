@@ -1,4 +1,4 @@
-// LIBRE CITY · server/test-traffic.mjs — traffic: collisions and safe distances.
+// VIBE CITY · server/test-traffic.mjs — traffic: collisions and safe distances.
 //
 // Runs the headless simulation (the SAME one as the client) and checks that:
 //  1) the car silhouettes do not interpenetrate (impact is on the edge, not inside the

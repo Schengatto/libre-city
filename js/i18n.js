@@ -1,4 +1,4 @@
-// LIBRE CITY · js/i18n.js — translations (Italian · English) and their application to the DOM.
+// VIBE CITY · js/i18n.js — translations (Italian · English) and their application to the DOM.
 //
 // How it works:
 //   • `t('key', {p:1})` → the string in the current language, with {…} placeholders
@@ -12,7 +12,7 @@
 //       data-i18n-title="k" → title
 //       data-i18n-aria="k"  → aria-label
 //     `applyI18n()` fills them in; `setLang('en')` saves the choice and reapplies.
-//   • The language lives in localStorage ('libreCity.lang'): on a first run it is null →
+//   • The language lives in localStorage ('vibeCity.lang'): on a first run it is null →
 //     ui.js shows the language choice before the name (see #langPanel).
 //
 // NB: this file is in the headless sim bundle (server/sim-runtime.js), where neither
@@ -23,7 +23,7 @@ const LANGS = ['it', 'en'];
 // The saved language, otherwise the browser's (only as the selector's default: until the
 // user chooses, `langChosen()` stays false and ui.js asks).
 function _storedLang() {
-  try { const v = localStorage.getItem('libreCity.lang'); return v ? JSON.parse(v) : null; } catch { return null; }
+  try { const v = localStorage.getItem('vibeCity.lang'); return v ? JSON.parse(v) : null; } catch { return null; }
 }
 function _browserLang() {
   try { return /^it/i.test(navigator.language || '') ? 'it' : 'en'; } catch { return 'it'; }
@@ -38,7 +38,7 @@ function langChosen() { return _langChosen; }
 function setLang(l) {
   if (!LANGS.includes(l)) return;
   LANG = l;
-  try { localStorage.setItem('libreCity.lang', JSON.stringify(l)); } catch {}
+  try { localStorage.setItem('vibeCity.lang', JSON.stringify(l)); } catch {}
   applyLangAttrs();
   applyI18n();
 }
@@ -263,8 +263,8 @@ const STR = {
       'un\'altra app la stanza non è raggiungibile, e ricompare appena riapri questa pagina.',
     'invite.play': '▶ Inizia a giocare',
     'invite.cancel': '↩ Annulla la partita',
-    'invite.shareTitle': 'Libre City',
-    'invite.shareText': 'Entra nella mia partita di Libre City! Codice stanza: {code}',
+    'invite.shareTitle': 'Vibe City',
+    'invite.shareText': 'Entra nella mia partita di Vibe City! Codice stanza: {code}',
 
     'join.title': '🔗 Entra in partita',
     'join.name': 'Il tuo nome',
@@ -477,8 +477,8 @@ const STR = {
     'respawn.dead': '🏥 Rimesso in sesto dall\'ospedale',
 
     // ---- Match ----
-    'game.welcome': 'Benvenuto a Libre City, {name}! 🏙️  {hint}{mp}',
-    'game.welcomeBack': 'Bentornato a Libre City, {name}! 🏙️ Partita ripresa.',
+    'game.welcome': 'Benvenuto a Vibe City, {name}! 🏙️  {hint}{mp}',
+    'game.welcomeBack': 'Bentornato a Vibe City, {name}! 🏙️ Partita ripresa.',
     'game.hintTouch': 'Avvicinati a un\'auto e tocca 🚗',
     'game.hintKb': 'Ruba un\'auto con E',
     'game.mpLadderTouch': ' · 🏆 per la classifica',
@@ -690,8 +690,8 @@ const STR = {
       'app the room is unreachable, and it comes back as soon as you reopen this page.',
     'invite.play': '▶ Start playing',
     'invite.cancel': '↩ Cancel the game',
-    'invite.shareTitle': 'Libre City',
-    'invite.shareText': 'Join my Libre City game! Room code: {code}',
+    'invite.shareTitle': 'Vibe City',
+    'invite.shareText': 'Join my Vibe City game! Room code: {code}',
 
     'join.title': '🔗 Join a game',
     'join.name': 'Your name',
@@ -885,8 +885,8 @@ const STR = {
     'respawn.busted': '👮 Released from the station — behave yourself!',
     'respawn.dead': '🏥 Patched up by the hospital',
 
-    'game.welcome': 'Welcome to Libre City, {name}! 🏙️  {hint}{mp}',
-    'game.welcomeBack': 'Welcome back to Libre City, {name}! 🏙️ Game resumed.',
+    'game.welcome': 'Welcome to Vibe City, {name}! 🏙️  {hint}{mp}',
+    'game.welcomeBack': 'Welcome back to Vibe City, {name}! 🏙️ Game resumed.',
     'game.hintTouch': 'Walk up to a car and tap 🚗',
     'game.hintKb': 'Steal a car with E',
     'game.mpLadderTouch': ' · 🏆 for the scoreboard',

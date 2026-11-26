@@ -1,4 +1,4 @@
-/* LIBRE CITY — top-down city driving game.
+/* VIBE CITY — top-down city driving game.
    Split into 10 classic scripts sharing the global scope (no modules, so it also
    runs from file://). Load order (see index.html): core → city → entities → input
    → missions → army → gameplay → render → audio → ui. Files call into each other
@@ -67,7 +67,7 @@ const random = mulberry32(hashStr(ROOM_CODE));
 //  which case the city stays "normal", barracks included.)
 const PEACE_CITY = (() => {
   try {
-    const read = k => { const v = localStorage.getItem('libreCity.' + k); return v === null ? null : JSON.parse(v); };
+    const read = k => { const v = localStorage.getItem('vibeCity.' + k); return v === null ? null : JSON.parse(v); };
     const sp = read('spIntent');
     if (sp && sp.code === ROOM_FROM_URL) return sp.violence === false;
     const sv = read('save');

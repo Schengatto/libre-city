@@ -1,4 +1,4 @@
-// LIBRE CITY · js/gameplay.js — rules and physics: player on foot and driving, fists and
+// VIBE CITY · js/gameplay.js — rules and physics: player on foot and driving, fists and
 // gunfire, pedestrians and cops, traffic AI, collisions, bullets, damage/death,
 // population management, camera and update().
 

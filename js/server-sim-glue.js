@@ -1,4 +1,4 @@
-// LIBRE CITY · js/server-sim-glue.js — HEADLESS glue for the authoritative simulation
+// VIBE CITY · js/server-sim-glue.js — HEADLESS glue for the authoritative simulation
 // (Phase 2).
 //
 // This is NOT included in index.html: it is appended to the END of the sim bundle by

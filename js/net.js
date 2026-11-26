@@ -1,4 +1,4 @@
-// LIBRE CITY · js/net.js — multiplayer: create/join a room on a real WebSocket SERVER,
+// VIBE CITY · js/net.js — multiplayer: create/join a room on a real WebSocket SERVER,
 // ghosts of remote players, PvP damage and the scoreboard (ladder).
 //
 // PHASE 1. The transport is no longer P2P over PeerJS/WebRTC but an always-on Node server
@@ -54,16 +54,16 @@ const netActive = () => net.mode !== null;
 
 // ---------- Server URL -----------------------------------------------------
 // In development (localhost / file://) it points at the local server on 8787. In production
-// the URL comes from <meta name="lc-server" content="wss://…"> in index.html (or from
-// window.LIBRE_CITY_SERVER or ?server=…). That keeps net.js generic and lets the server
+// the URL comes from <meta name="vc-server" content="wss://…"> in index.html (or from
+// window.VIBE_CITY_SERVER or ?server=…). That keeps net.js generic and lets the server
 // address be configured without touching the code.
 const NET_PROD_SERVER = '';       // fallback when there is no meta/override (fill in after deploy)
 function netServerUrl() {
   const q = new URLSearchParams(location.search).get('server');
   if (q) return q;
-  const meta = document.querySelector('meta[name="lc-server"]');
+  const meta = document.querySelector('meta[name="vc-server"]');
   if (meta && meta.content.trim()) return meta.content.trim();
-  if (window.LIBRE_CITY_SERVER) return window.LIBRE_CITY_SERVER;
+  if (window.VIBE_CITY_SERVER) return window.VIBE_CITY_SERVER;
   const h = location.hostname;
   if (!h || h === 'localhost' || h === '127.0.0.1') return 'ws://' + (h || 'localhost') + ':8787';
   return NET_PROD_SERVER || null;
