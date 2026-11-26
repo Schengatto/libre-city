@@ -12,7 +12,7 @@
 //       data-i18n-title="k" → title
 //       data-i18n-aria="k"  → aria-label
 //     `applyI18n()` fills them in; `setLang('en')` saves the choice and reapplies.
-//   • The language lives in localStorage ('libreCity.lang'): on a first run it is null →
+//   • The language lives in localStorage ('vibeCity.lang'): on a first run it is null →
 //     ui.js shows the language choice before the name (see #langPanel).
 //
 // NB: this file is in the headless sim bundle (server/sim-runtime.js), where neither
@@ -23,7 +23,7 @@ const LANGS = ['it', 'en'];
 // The saved language, otherwise the browser's (only as the selector's default: until the
 // user chooses, `langChosen()` stays false and ui.js asks).
 function _storedLang() {
-  try { const v = localStorage.getItem('libreCity.lang'); return v ? JSON.parse(v) : null; } catch { return null; }
+  try { const v = localStorage.getItem('vibeCity.lang'); return v ? JSON.parse(v) : null; } catch { return null; }
 }
 function _browserLang() {
   try { return /^it/i.test(navigator.language || '') ? 'it' : 'en'; } catch { return 'it'; }
@@ -38,7 +38,7 @@ function langChosen() { return _langChosen; }
 function setLang(l) {
   if (!LANGS.includes(l)) return;
   LANG = l;
-  try { localStorage.setItem('libreCity.lang', JSON.stringify(l)); } catch {}
+  try { localStorage.setItem('vibeCity.lang', JSON.stringify(l)); } catch {}
   applyLangAttrs();
   applyI18n();
 }

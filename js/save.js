@@ -5,7 +5,7 @@
 // A save therefore holds only the player's live state (position, health, weapons,
 // cash, wanted level, time left, mission counters) plus that city's code.
 //
-// One slot per browser (localStorage, key `libreCity.save`). Traffic and pedestrians
+// One slot per browser (localStorage, key `vibeCity.save`). Traffic and pedestrians
 // are not saved: they repopulate on their own, indistinguishably.
 //
 // Reloading implies REGENERATING the world: if the saved code differs from the

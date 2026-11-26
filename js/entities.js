@@ -106,8 +106,8 @@ let paused = false;
 // ---------- Profile and settings (saved in the browser) ----------
 // localStorage may be absent (headless tests) or blocked: never assume it is there.
 const store = {
-  get(k, d) { try { const v = localStorage.getItem('libreCity.' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
-  set(k, v) { try { localStorage.setItem('libreCity.' + k, JSON.stringify(v)); } catch {} },
+  get(k, d) { try { const v = localStorage.getItem('vibeCity.' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('vibeCity.' + k, JSON.stringify(v)); } catch {} },
 };
 let playerName  = store.get('name', '');       // empty = first run: ask for the name
 let gameMinutes = store.get('minutes', 0);     // game length in minutes · 0 = untimed

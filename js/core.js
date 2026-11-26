@@ -67,7 +67,7 @@ const random = mulberry32(hashStr(ROOM_CODE));
 //  which case the city stays "normal", barracks included.)
 const PEACE_CITY = (() => {
   try {
-    const read = k => { const v = localStorage.getItem('libreCity.' + k); return v === null ? null : JSON.parse(v); };
+    const read = k => { const v = localStorage.getItem('vibeCity.' + k); return v === null ? null : JSON.parse(v); };
     const sp = read('spIntent');
     if (sp && sp.code === ROOM_FROM_URL) return sp.violence === false;
     const sv = read('save');
