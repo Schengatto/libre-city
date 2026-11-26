@@ -118,40 +118,81 @@
               cyan #33e0ff · gold #ffd23a · phosphor #3dff9e
      ========================================================== */
   #start { position:absolute; inset:0; z-index:50; display:flex; flex-direction:column;
-    align-items:center; justify-content:center; text-align:center; background:#0a0a12;
-    padding:56px 12px 76px; }
+    align-items:center; justify-content:center; justify-content:safe center; text-align:center; background:#0a0a12;
+    padding:56px 12px 76px; --cabinet-band:rgba(10,10,18,.94); }
+  #arcTop, #ticker, #start #credits { background:var(--cabinet-band); backdrop-filter:blur(6px); }
   /* The "fixed" children (scene, hi-score bar, ticker, credits) stay out of the flow. */
   #start > *:not(#scene):not(#arcTop):not(#ticker):not(#credits):not(#musicBtn) { position:relative; z-index:1; }
 
-  /* The scene stays fixed behind the menus even as the page scrolls: purple glow from the
-     sign, a perspective grid and fine scanlines. */
-  #scene { position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden;
-    background:radial-gradient(130% 100% at 50% 0%, #241245 0%, #12081f 46%, #0a0a12 78%); }
-  #scene .grid { position:absolute; left:-15%; right:-15%; bottom:-12px; height:36vh; opacity:.5;
-    background-image:
-      repeating-linear-gradient(90deg, rgba(51,224,255,.30) 0 2px, transparent 2px 64px),
-      repeating-linear-gradient(0deg, rgba(255,62,165,.28) 0 2px, transparent 2px 38px);
-    transform:perspective(340px) rotateX(58deg); transform-origin:50% 0; }
+  #scene { --horizon:64%; position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden;
+    background:
+      radial-gradient(1.5px 1.5px at 12% 10%, #fff 50%, transparent),
+      radial-gradient(1px 1px at 27% 22%, #ffe9f4 50%, transparent),
+      radial-gradient(1.5px 1.5px at 68% 8%, #fff 50%, transparent),
+      radial-gradient(1px 1px at 83% 19%, #ffe9f4 50%, transparent),
+      radial-gradient(1px 1px at 46% 14%, #fff 50%, transparent),
+      radial-gradient(70vmax 34vmax at 50% var(--horizon), rgba(255,150,90,.55), transparent 62%),
+      linear-gradient(180deg, #120a33 0%, #2c0f52 20%, #6b1b6e 38%, #c4306f 50%, #ff6a5c 58%, #ffb15c var(--horizon)); }
+  #scene .sun { position:absolute; left:50%; top:var(--horizon); width:min(56vmin,460px); aspect-ratio:1;
+    border-radius:50%; transform:translate(-50%,-78%);
+    background:linear-gradient(#fff1a8 0%, #ffc14d 38%, #ff6a6a 68%, #e0287f 100%);
+    -webkit-mask-image:linear-gradient(#000 40%, transparent 40% 43%, #000 43% 50%, transparent 50% 54%,
+      #000 54% 60%, transparent 60% 65%, #000 65% 70%, transparent 70% 76%, #000 76%);
+    mask-image:linear-gradient(#000 40%, transparent 40% 43%, #000 43% 50%, transparent 50% 54%,
+      #000 54% 60%, transparent 60% 65%, #000 65% 70%, transparent 70% 76%, #000 76%); }
+  #scene .skyline { position:absolute; left:0; right:0; bottom:calc(100% - var(--horizon)); }
+  #scene .skyline.far { height:min(24vh,220px); background:#4a1a60;
+    clip-path:polygon(0 100%,0 62%,4% 62%,4% 48%,8% 48%,8% 58%,11% 58%,11% 30%,13% 26%,15% 30%,15% 56%,
+      19% 56%,19% 44%,23% 44%,23% 64%,27% 64%,27% 40%,29% 40%,29% 20%,31% 20%,31% 40%,33% 40%,33% 60%,
+      38% 60%,38% 52%,42% 52%,42% 76%,58% 76%,58% 48%,61% 48%,61% 34%,63% 34%,63% 48%,66% 48%,66% 60%,
+      70% 60%,70% 36%,72% 28%,74% 36%,74% 58%,78% 58%,78% 44%,82% 44%,82% 24%,84% 24%,84% 14%,85% 14%,
+      85% 24%,87% 24%,87% 52%,91% 52%,91% 64%,95% 64%,95% 42%,98% 42%,98% 60%,100% 60%,100% 100%); }
+  #scene .skyline.near { height:min(15vh,140px);
+    background:radial-gradient(circle, rgba(255,206,140,.55) 0 1px, transparent 1.6px) 0 0/8px 10px, #1a0828;
+    clip-path:polygon(0 100%,0 40%,6% 40%,6% 20%,10% 20%,10% 50%,14% 50%,14% 30%,17% 30%,17% 10%,19% 3%,
+      21% 10%,21% 46%,26% 46%,26% 62%,32% 62%,32% 82%,68% 82%,68% 58%,73% 58%,73% 34%,77% 34%,77% 14%,
+      80% 14%,80% 40%,84% 40%,84% 24%,88% 24%,88% 50%,93% 50%,93% 30%,97% 30%,97% 56%,100% 56%,100% 100%); }
+  #scene .sea { position:absolute; left:0; right:0; top:var(--horizon); bottom:0; overflow:hidden;
+    border-top:1px solid rgba(255,214,160,.7);
+    background:linear-gradient(#3a1658 0%, #14194a 35%, #070d26 100%); }
+  #scene .sea::before { content:''; position:absolute; left:50%; top:0; width:min(44vmin,360px); height:80%;
+    transform:translateX(-50%);
+    background:repeating-linear-gradient(180deg, rgba(255,176,96,.8) 0 3px, transparent 3px 10px);
+    -webkit-mask-image:radial-gradient(50% 100% at 50% 0, #000 25%, transparent 80%);
+    mask-image:radial-gradient(50% 100% at 50% 0, #000 25%, transparent 80%);
+    animation:sunShimmer 3.4s ease-in-out infinite alternate; }
+  #scene .sea::after { content:''; position:absolute; left:-20%; right:-20%; top:0; height:100%;
+    background:repeating-linear-gradient(180deg, transparent 0 18px, rgba(51,224,255,.2) 18px 20px);
+    transform:perspective(320px) rotateX(56deg); transform-origin:50% 0; }
+  @keyframes sunShimmer { from { transform:translateX(-50%) scaleX(.88) } to { transform:translateX(-50%) scaleX(1.08) } }
+  #scene .palm { position:absolute; bottom:-3vh; height:clamp(260px,min(76vh,100vw),660px);
+    aspect-ratio:240/400; fill:#0d0419; transform-origin:45% 100%;
+    animation:palmSway 7s ease-in-out infinite alternate; }
+  #scene .palm-l { left:-7vw; }
+  #scene .palm-r { right:-9vw; height:clamp(220px,min(62vh,84vw),540px); scale:-1 1; animation-delay:-3s; }
+  @keyframes palmSway { from { rotate:-1.2deg } to { rotate:1.4deg } }
+  @media (max-width:640px) { #scene .palm-l { left:-24vw; } #scene .palm-r { right:-26vw; } }
   #scene .scan { position:absolute; inset:0;
-    background:repeating-linear-gradient(0deg, rgba(0,0,0,.16) 0 2px, transparent 2px 5px),
-               radial-gradient(120% 100% at 50% 50%, transparent 55%, rgba(0,0,0,.55) 100%); }
+    background:repeating-linear-gradient(0deg, rgba(0,0,0,.08) 0 2px, transparent 2px 5px),
+               radial-gradient(120% 100% at 50% 50%, transparent 55%, rgba(6,2,18,.6) 100%); }
 
   /* ---- Cabinet bar: HI-SCORE on the left, credits on the right ---- */
   #arcTop { position:fixed; top:0; left:0; right:0; z-index:2; display:flex; gap:12px;
     justify-content:space-between; padding:calc(10px + env(safe-area-inset-top,0px)) 18px 8px;
     font:bold 12px 'Courier New',monospace; letter-spacing:.14em; color:#33e0ff;
-    text-shadow:0 0 8px rgba(51,224,255,.7); pointer-events:none; white-space:nowrap; }
+    text-shadow:0 0 8px rgba(51,224,255,.7); pointer-events:none; white-space:nowrap;
+    border-bottom:1px solid rgba(51,224,255,.35); }
   #arcTop .hi { color:#ffd23a; text-shadow:0 0 8px rgba(255,210,58,.7);
     overflow:hidden; text-overflow:ellipsis; }
   #musicBtn { position:fixed; top:calc(36px + env(safe-area-inset-top,0px)); right:14px; z-index:3;
-    padding:5px 10px; border:1px solid rgba(255,62,165,.7); border-radius:4px; background:rgba(10,10,18,.6);
+    padding:5px 10px; border:1px solid rgba(255,62,165,.7); border-radius:4px; background:var(--cabinet-band);
     font:bold 12px 'Courier New',monospace; letter-spacing:.14em; color:#ff3ea5; cursor:pointer;
     text-shadow:0 0 8px rgba(255,62,165,.7); box-shadow:0 0 10px rgba(255,62,165,.3); }
   #musicBtn.off { color:#9aa3c8; border-color:rgba(154,163,200,.45); text-shadow:none; box-shadow:none; }
 
   /* ---- Ticker at the bottom: the cabinet's attract mode ---- */
   #ticker { position:fixed; left:0; right:0; bottom:0; z-index:2; height:30px; overflow:hidden;
-    display:flex; align-items:center; background:rgba(0,0,0,.72);
+    display:flex; align-items:center;
     border-top:1px solid rgba(51,224,255,.35); pointer-events:none; }
   #ticker span { white-space:nowrap; font:bold 11px 'Courier New',monospace;
     letter-spacing:.2em; color:#9aa3c8; animation:ticker 30s linear infinite; }
@@ -162,17 +203,30 @@
     font-size:clamp(42px,9vw,92px); color:#fff; letter-spacing:.02em; line-height:.95;
     animation:titleIn .7s cubic-bezier(.2,.9,.3,1.15) both;
     text-shadow:0 0 6px #fff, 0 0 18px #ff3ea5, 0 0 44px #ff3ea5, 3px 3px 0 #7c1150; }
+  @supports ((-webkit-background-clip:text) or (background-clip:text)) {
+    #start h1 { background:linear-gradient(180deg, #fff3b0 0%, #ffd23a 30%, #ff8a3c 55%, #ff3ea5 80%, #c02bd6 100%);
+      -webkit-background-clip:text; background-clip:text; color:transparent; text-shadow:none;
+      filter:drop-shadow(3px 3px 0 #3a0a3e) drop-shadow(0 0 18px rgba(255,62,165,.55)); } }
   @keyframes titleIn { 0% { transform:translateY(-30px) scale(.92); opacity:0 }
     60% { transform:translateY(4px) scale(1.02); opacity:1 } 100% { transform:none; opacity:1 } }
-  #start .tag { margin-top:10px; font-family:'Courier New',monospace; font-weight:bold;
-    font-size:clamp(10px,1.9vw,14px); letter-spacing:.34em; text-transform:uppercase;
-    color:#33e0ff; text-shadow:0 0 10px rgba(51,224,255,.8); animation:tagIn .6s ease .3s both; }
+  #start .tag { margin-top:10px; font:600 clamp(15px,2.2vw,20px) 'Trebuchet MS','Segoe UI',sans-serif;
+    letter-spacing:.02em; color:#ffe3f1;
+    text-shadow:0 1px 2px #1a0628, 0 0 3px #1a0628, 0 0 8px rgba(26,6,40,.9); animation:tagIn .6s ease .3s both; }
   @keyframes tagIn { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:none } }
   #start p { margin-top:18px; opacity:.92; max-width:560px; line-height:1.7; font-size:15px; }
   #start .keys { margin-top:16px; display:grid; grid-template-columns:auto auto; gap:6px 20px;
     font-size:14px; text-align:left; background:rgba(0,0,0,.4); padding:14px 20px;
     border:1px solid rgba(51,224,255,.25); border-radius:12px; }
   #start .keys b { color:#ffd23a; }
+  #howtoPanel { width:min(640px,94vw); align-items:stretch; text-align:left; }
+  #howtoPanel #howtoBack { align-self:center; }
+  #howtoPanel .goal, #howtoPanel .note { margin:0; max-width:none; line-height:1.5; opacity:.85; }
+  #howtoPanel .note { font-size:13px; opacity:.7; }
+  #howtoPanel .howtoSection { display:grid; gap:8px; }
+  #howtoPanel h3 { font:600 13px 'Trebuchet MS','Segoe UI',sans-serif; color:#33e0ff; }
+  #howtoPanel ul { list-style:none; margin:0; padding:0; display:grid; gap:8px; font-size:14px; line-height:1.5; }
+  #howtoPanel b { color:#ffd23a; }
+  #howtoPanel .keys { margin-top:0; }
   /* The cabinet's ▶ cursor blinks next to the highlighted entry. */
   .mbtn:not(.back)::before { content:'▶'; position:absolute; left:16px; top:50%;
     transform:translateY(-50%); color:#33e0ff; font-size:13px;
@@ -183,14 +237,11 @@
 
   /* ---- Menu panels: the cabinet's control deck ---- */
   .panel { position:relative; margin-top:24px; display:flex; flex-direction:column; align-items:center;
-    gap:12px; min-width:min(420px,92vw); background:linear-gradient(#2b2140,#171126);
+    gap:12px; min-width:min(420px,92vw); background:linear-gradient(rgba(42,18,70,.8),rgba(18,9,36,.88));
+    -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
     border:3px solid #33e0ff; border-radius:18px; padding:24px 28px 26px;
-    box-shadow:0 0 24px rgba(51,224,255,.28), inset 0 0 40px rgba(0,0,0,.5);
+    box-shadow:0 0 24px rgba(51,224,255,.28), inset 0 0 40px rgba(0,0,0,.35);
     animation:panelIn .35s ease both; }
-  /* Screws at the corners of the deck. */
-  .panel::before, .panel::after { content:''; position:absolute; top:9px; width:8px; height:8px;
-    border-radius:50%; background:radial-gradient(circle at 35% 30%,#cfd6e4,#5a6274); }
-  .panel::before { left:9px; } .panel::after { right:9px; }
   @keyframes panelIn { from { opacity:0; transform:translateY(10px) } to { opacity:1; transform:none } }
   .panel h2 { font-family:'Bungee','Trebuchet MS',sans-serif; font-weight:normal;
     color:#ff3ea5; font-size:20px; letter-spacing:.03em; text-shadow:0 0 12px rgba(255,62,165,.8); }
@@ -198,14 +249,14 @@
     outline:3px solid #33e0ff; outline-offset:2px; }
 
   /* ---- Credits at the foot of the page ---- */
-  #start #credits { position:fixed; left:0; right:0; bottom:36px; z-index:2;
+  #start #credits { position:fixed; left:0; right:0; bottom:30px; z-index:2; padding:6px 0;
     font-size:12px; letter-spacing:.06em; color:rgba(255,255,255,.72);
     text-shadow:0 1px 3px rgba(0,0,0,.85); }
   #start #credits a { color:#33e0ff; text-decoration:none;
     border-bottom:1px solid rgba(51,224,255,.45); }
   #start #credits a:hover { color:#ffd23a; border-color:#ffd23a; }
   @media (prefers-reduced-motion:reduce) {
-    #start h1, #start .tag, .panel, .mbtn::before, #ticker span,
+    #start h1, #start .tag, .panel, .mbtn::before, #ticker span, #scene .palm, #scene .sea::before,
     #pause h2, #goTitle, .roomcode { animation:none !important; } }
   .mbtn { position:relative; font-family:'Bungee','Trebuchet MS',sans-serif; font-weight:normal;
     font-size:15px; letter-spacing:.05em; padding:12px 0; width:min(320px,84vw); color:#fff;
@@ -217,8 +268,27 @@
   .mbtn.back { font-family:inherit; font-weight:bold; background:none; border-color:transparent;
     box-shadow:none; opacity:.75; font-size:14px; padding:8px 0; }
   .mbtn.back:hover { opacity:1; transform:none; box-shadow:none; }
+  #menuPanel { display:grid; grid-template-columns:1fr 1fr; gap:12px; width:min(400px,92vw); min-width:0;
+    padding:24px; border-color:rgba(51,224,255,.4); box-shadow:inset 0 0 40px rgba(0,0,0,.35); }
+  #menuPanel > * { grid-column:1 / -1; }
+  #menuPanel .mbtn { width:100%; box-shadow:0 4px 0 #7c1150; }
+  #menuPanel .mbtn:hover { box-shadow:0 2px 0 #7c1150; }
+  #menuPanel .mbtn:active { box-shadow:0 0 0 #7c1150; }
+  #menuPanel #playBtn { padding:16px 0; font-size:17px; color:#2a0830; border-color:#fff1c2;
+    background:linear-gradient(#ffe27a, #ffab4c 55%, #ff7a5c); box-shadow:0 4px 0 #a8324f; }
+  #menuPanel #playBtn:hover { box-shadow:0 2px 0 #a8324f; }
+  #menuPanel #playBtn:active { box-shadow:0 0 0 #a8324f; }
+  #playBtn::before { color:#2a0830; text-shadow:none; }
+  #menuPanel .mbtn.minor { grid-column:auto; padding:11px 8px; border-width:2px; border-radius:10px;
+    font:bold 14px 'Trebuchet MS','Segoe UI',sans-serif; letter-spacing:0; color:#e6ddf5;
+    background:rgba(14,8,30,.55); border-color:rgba(255,255,255,.16); box-shadow:none;
+    transition:transform .12s, border-color .15s, color .15s; }
+  #menuPanel .mbtn.minor:hover { transform:none; border-color:#ff3ea5; color:#fff; box-shadow:none; }
+  #menuPanel .mbtn.minor:active { transform:scale(.98); box-shadow:none; }
+  #menuPanel .mbtn.minor::before { display:none; }
+  #menuPanel #installBtn { grid-column:1 / -1; }
   #menuHello { font:bold 14px 'Courier New',monospace; letter-spacing:.12em; opacity:.95; }
-  #menuHello b { color:#33e0ff; text-shadow:0 0 8px rgba(51,224,255,.6); }
+  #menuHello b { color:#33e0ff; }
   .field { display:flex; flex-direction:column; gap:6px; align-items:flex-start; width:min(320px,84vw); }
   .field label { font:bold 10px 'Courier New',monospace; letter-spacing:.24em; text-transform:uppercase;
     color:#33e0ff; text-shadow:0 0 6px rgba(51,224,255,.5); }
@@ -328,15 +398,16 @@
   #start { overflow-y:auto; }
   /* On short screens (phone in landscape) skip the centring: scroll from the top. */
   @media (max-height:560px) {
-    #start { justify-content:flex-start; padding:44px 10px 50px; }
+    #start { justify-content:flex-start; padding:44px 10px 64px; }
     #start p { margin-top:10px; }
     #ticker { height:24px; }
+    #start #credits { bottom:24px; }
   }
-  body.touch #start .desc { display:none; }
   body.touch #start .keys.kb { display:none; }
   #start .keys.touchhelp { display:none; }
   body.touch #start .keys.touchhelp { display:grid; }
   body.touch #start p { font-size:14px; padding:0 14px; }
+  body.touch #howtoPanel .goal, body.touch #howtoPanel .note { padding:0; }
 
   /* ---- Multiplayer ---- */
   #mpBadge { position:absolute; top:12px; left:50%; transform:translateX(-50%); z-index:5;
@@ -480,9 +551,25 @@
   </div>
 
   <div id="start">
-    <!-- Arcade scene: glow from the sign, synthwave grid, scanlines -->
     <div id="scene" aria-hidden="true">
-      <div class="grid"></div>
+      <svg width="0" height="0" style="position:absolute">
+        <symbol id="palmShape" viewBox="0 0 240 400">
+          <path d="M88 400C90 300 100 200 116 112L126 114C112 200 106 300 112 400Z"/>
+          <path d="M120 110Q170 60 222 112Q168 82 120 110Z"/>
+          <path d="M120 110Q70 55 14 104Q72 80 120 110Z"/>
+          <path d="M120 110Q150 40 196 36Q148 62 120 110Z"/>
+          <path d="M120 110Q96 38 50 30Q100 66 120 110Z"/>
+          <path d="M120 110Q178 100 204 172Q160 112 120 110Z"/>
+          <path d="M120 110Q62 104 38 172Q82 116 120 110Z"/>
+          <circle cx="114" cy="118" r="6"/><circle cx="126" cy="120" r="6"/>
+        </symbol>
+      </svg>
+      <div class="sun"></div>
+      <div class="skyline far"></div>
+      <div class="skyline near"></div>
+      <div class="sea"></div>
+      <svg class="palm palm-l" viewBox="0 0 240 400"><use href="#palmShape"/></svg>
+      <svg class="palm palm-r" viewBox="0 0 240 400"><use href="#palmShape"/></svg>
       <div class="scan"></div>
     </div>
 
@@ -494,7 +581,7 @@
     <button id="musicBtn" type="button" aria-pressed="true" data-i18n-title="music.toggle" data-i18n-aria="music.toggle">♪ ON</button>
 
     <h1>VIBE CITY</h1>
-    <div class="tag" data-i18n="start.tag">Corri · Consegna · Soccorri</div>
+    <div class="tag" data-i18n="start.tag">La città è tua. Prenditela.</div>
 
     <!-- First run (before anything else): language choice -->
     <div id="langPanel" class="panel hidden">
@@ -515,16 +602,16 @@
 
     <!-- Main menu -->
     <div id="menuPanel" class="panel hidden">
-      <div id="menuHello" data-i18n-html="menu.hello">Ciao, <b id="menuName"></b>!</div>
-      <button id="playBtn" class="mbtn" data-i18n="menu.play">▶ Giocatore singolo</button>
-      <button id="loadBtn" class="mbtn hidden" data-i18n="menu.load">💾 Riprendi partita</button>
-      <button id="mpBtn" class="mbtn" data-i18n="menu.mp">🌐 Multigiocatore</button>
-      <button id="settingsBtn" class="mbtn" data-i18n="menu.settings">⚙️ Impostazioni</button>
-      <button id="scoresBtn" class="mbtn" data-i18n="menu.scores">🏆 Record locali</button>
-      <button id="lbBtn" class="mbtn" data-i18n="menu.lb">🌐 Classifica online</button>
-      <button id="howtoBtn" class="mbtn" data-i18n="menu.howto">❓ Come si gioca</button>
+      <div id="menuHello" data-i18n-html="menu.hello">Ciao, <b id="menuName"></b></div>
+      <button id="playBtn" class="mbtn" data-i18n="menu.play">Giocatore singolo</button>
+      <button id="loadBtn" class="mbtn hidden" data-i18n="menu.load">Riprendi partita</button>
+      <button id="mpBtn" class="mbtn" data-i18n="menu.mp">Multigiocatore</button>
+      <button id="settingsBtn" class="mbtn minor" data-i18n="menu.settings">Impostazioni</button>
+      <button id="scoresBtn" class="mbtn minor" data-i18n="menu.scores">Record locali</button>
+      <button id="lbBtn" class="mbtn minor" data-i18n="menu.lb">Classifica online</button>
+      <button id="howtoBtn" class="mbtn minor" data-i18n="menu.howto">Come si gioca</button>
       <!-- Only appears when the browser offers installation (beforeinstallprompt) -->
-      <button id="installBtn" class="mbtn hidden" data-i18n="menu.install">📲 Installa l'app</button>
+      <button id="installBtn" class="mbtn minor hidden" data-i18n="menu.install">Installa l'app</button>
     </div>
 
     <!-- Single-player: create the match (violence, duration, map size) -->
@@ -727,44 +814,49 @@
 
     <!-- How to play -->
     <div id="howtoPanel" class="panel hidden">
-    <p class="desc" data-i18n-html="howto.desc">Esplora una grande città con <b>quartieri diversi</b> — case, uffici, fabbriche — e strutture
-       come <b>ospedali 🏥</b> (dove curarti), <b>centrali di polizia 🚔</b>, caserme dei pompieri,
-       banche e mercati. <b>Ruba qualsiasi auto</b>, sfreccia nel traffico e raccogli le
-       <b>monetine 🪙</b> nascoste nei <b>vicoli</b>. Sali su un <b>taxi 🚕</b> per fare il tassista:
-       carica i clienti e portali a destinazione seguendo la <b>freccia</b> — più la corsa è lunga
-       (e veloce!), più guadagni. Oppure salta su una <b>moto delle consegne 🏍️</b>: ritira il cibo
-       alla <b>pizzeria 🍕</b> e portalo ai clienti affamati finché è caldo — consegna in fretta e
-       prendi la mancia! Davanti a ogni struttura trovi i suoi <b>mezzi parcheggiati</b>: prendi
-       l'<b>ambulanza 🚑</b> all'ospedale per soccorrere i feriti, la <b>volante 🚔</b> alla
-       centrale per inseguire i <b>rapinatori</b> di banche e mercati, o l'<b>autopompa 🚒</b>
-       dei pompieri per spegnere gli <b>incendi</b> sparando acqua con l'idrante — e con
-       <b>Spazio</b> accendi la sirena! La <b>caserma dell'esercito 🪖</b> è un'<b>area recintata</b>:
-       oltre il cancello, nel cortile, trovi <b>jeep militari</b> e il <b>carro armato</b> — spara
-       <b>razzi</b> (ricarica lenta!) e passa sopra le altre auto schiacciandole. Ma la base è
-       presidiata da <b>tanti soldati</b>: appena entri nella zona militare ti sparano a vista,
-       e le <b>jeep armate</b> ti danno la caccia!
-       Parti <b>a mani nude</b>: i <b>pugni 👊</b> feriscono i passanti e al <b>terzo colpo</b>
-       li stendono. Coi soldi guadagnati passa all'<b>ARMERIA 🔫</b>: la <b>pistola</b> costa
-       pochi dollari, poi arrivano <b>mitra, fucile a pompa e lanciarazzi</b>. Ma attento: se investi,
-       picchi o spari la gente, la <b>polizia</b> ti darà la caccia — più stelle ⭐ hai, più diventano cattivi!</p>
+    <h2 data-i18n="menu.howto">Come si gioca</h2>
+    <p class="goal" data-i18n="howto.goal">Fai soldi in una città aperta: lavora, esplora, e quando serve scappa dalla polizia.</p>
+    <section class="howtoSection">
+      <h3 data-i18n="howto.jobsTitle">Lavori</h3>
+      <p class="note" data-i18n="howto.jobsNote">Ogni struttura ha i suoi mezzi parcheggiati davanti: sali a bordo per iniziare.</p>
+      <ul>
+        <li data-i18n-html="howto.job1"><b>Taxi</b>: carica i clienti e segui la freccia fino a destinazione. Più la corsa è lunga e veloce, più paga.</li>
+        <li data-i18n-html="howto.job2"><b>Consegne</b>: prendi la moto alla pizzeria e porta il cibo ai clienti finché è caldo. Se sei veloce arriva la mancia.</li>
+        <li data-i18n-html="howto.job3"><b>Ambulanza</b>: parte dall'ospedale, soccorri i feriti.</li>
+        <li data-i18n-html="howto.job4"><b>Volante</b>: parte dalla centrale, insegui i rapinatori di banche e mercati.</li>
+        <li data-i18n-html="howto.job5"><b>Autopompa</b>: parte dalla caserma dei pompieri, spegni gli incendi con l'idrante.</li>
+      </ul>
+    </section>
+    <section class="howtoSection">
+      <h3 data-i18n="howto.cityTitle">In città</h3>
+      <ul>
+        <li data-i18n-html="howto.city1"><b>Auto</b>: puoi rubare qualsiasi veicolo e sfrecciare nel traffico.</li>
+        <li data-i18n-html="howto.city2"><b>Monetine</b>: sono nascoste nei vicoli.</li>
+        <li data-i18n-html="howto.city3"><b>Ospedale</b>: entra per curarti.</li>
+        <li data-i18n-html="howto.city4"><b>Armeria</b>: parti a mani nude, tre pugni stendono un passante. Coi soldi compri pistola, mitra, fucile a pompa e lanciarazzi.</li>
+        <li data-i18n-html="howto.city5"><b>Caserma dell'esercito</b>: area recintata con jeep militari e carro armato, che spara razzi e schiaccia le auto. I soldati sparano a vista.</li>
+        <li data-i18n-html="howto.city6"><b>Polizia</b>: se investi, picchi o spari la gente ti dà la caccia. Più stelle hai, più si fa dura.</li>
+      </ul>
+    </section>
+    <h3 data-i18n="howto.controlsTitle">Comandi</h3>
     <div class="keys kb">
       <span data-i18n-html="howto.kb1"><b>WASD</b> / frecce</span><span data-i18n="howto.kb1v">muovere / guidare</span>
       <span data-i18n-html="howto.kb2"><b>Mouse</b></span><span data-i18n="howto.kb2v">mirare</span>
       <span data-i18n-html="howto.kb3"><b>Click sinistro</b></span><span data-i18n="howto.kb3v">pugni / sparare (a piedi)</span>
       <span data-i18n-html="howto.kb4"><b>E</b></span><span data-i18n="howto.kb4v">salire / scendere dall'auto</span>
-      <span data-i18n-html="howto.kb5"><b>Spazio</b></span><span data-i18n="howto.kb5v">clacson / sirena 🚨</span>
+      <span data-i18n-html="howto.kb5"><b>Spazio</b></span><span data-i18n="howto.kb5v">clacson / sirena</span>
       <span data-i18n-html="howto.kb6"><b>M</b></span><span data-i18n="howto.kb6v">missioni on / off</span>
       <span data-i18n-html="howto.kb7"><b>1-5</b></span><span data-i18n="howto.kb7v">cambiare / comprare arma</span>
     </div>
     <div class="keys touchhelp">
-      <span data-i18n-html="howto.t1"><b>🕹️ Stick sinistro</b></span><span data-i18n="howto.t1v">muovere / guidare</span>
-      <span data-i18n-html="howto.t2"><b>🎯 Stick destro</b></span><span data-i18n="howto.t2v">mirare — spingi a fondo per sparare</span>
+      <span data-i18n-html="howto.t1"><b>Stick sinistro</b></span><span data-i18n="howto.t1v">muovere / guidare</span>
+      <span data-i18n-html="howto.t2"><b>Stick destro</b></span><span data-i18n="howto.t2v">mirare, spingi a fondo per sparare</span>
       <span data-i18n-html="howto.t3"><b>🚗</b></span><span data-i18n="howto.t3v">salire / scendere dal mezzo</span>
-      <span data-i18n-html="howto.t4"><b>📣</b></span><span data-i18n="howto.t4v">clacson / sirena 🚨</span>
+      <span data-i18n-html="howto.t4"><b>📣</b></span><span data-i18n="howto.t4v">clacson / sirena</span>
       <span data-i18n-html="howto.t5"><b>📋</b></span><span data-i18n="howto.t5v">missioni on / off</span>
       <span data-i18n-html="howto.t6"><b>Icone in alto</b></span><span data-i18n="howto.t6v">cambiare / comprare arma</span>
     </div>
-    <p style="font-size:13px;opacity:.7;margin-top:16px;" data-i18n="howto.volume">🔊 Alza il volume per motori, spari e sirene!</p>
+    <p class="note" data-i18n="howto.volume">Alza il volume: motori, spari e sirene fanno metà del gioco.</p>
     <button id="howtoBack" class="mbtn back" data-i18n="common.back">↩ Indietro</button>
     </div><!-- /howtoPanel -->
 

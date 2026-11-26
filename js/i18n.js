@@ -169,7 +169,7 @@ const STR = {
     'lad.bounty': '🎯 Taglia',
 
     // ---- Title screen ----
-    'start.tag': 'Corri · Consegna · Soccorri',
+    'start.tag': 'La città è tua. Prenditela.',
     'start.hiscore': 'HI-SCORE&nbsp; $0',
     'start.credits': 'CREDITI&nbsp;1',
     'start.credit': 'Realizzato da <a href="https://enricoschintu.com" target="_blank" rel="noopener">Enrico Schintu</a> · © 2026',
@@ -184,15 +184,15 @@ const STR = {
     'name.required': 'Serve un nome!',
 
     // ---- Main menu ----
-    'menu.hello': 'Ciao, <b id="menuName"></b>!',
-    'menu.play': '▶ Giocatore singolo',
-    'menu.load': '💾 Riprendi partita',
-    'menu.mp': '🌐 Multigiocatore',
-    'menu.settings': '⚙️ Impostazioni',
-    'menu.scores': '🏆 Record locali',
-    'menu.lb': '🌐 Classifica online',
-    'menu.howto': '❓ Come si gioca',
-    'menu.install': '📲 Installa l\'app',
+    'menu.hello': 'Ciao, <b id="menuName"></b>',
+    'menu.play': 'Giocatore singolo',
+    'menu.load': 'Riprendi partita',
+    'menu.mp': 'Multigiocatore',
+    'menu.settings': 'Impostazioni',
+    'menu.scores': 'Record locali',
+    'menu.lb': 'Classifica online',
+    'menu.howto': 'Come si gioca',
+    'menu.install': 'Installa l\'app',
     'menu.installed': 'App installata! 🎉',
 
     // ---- Single-player ----
@@ -308,38 +308,36 @@ const STR = {
     'lb.dur_m': '{m}m',
 
     // ---- How to play ----
-    'howto.desc': 'Esplora una grande città con <b>quartieri diversi</b> — case, uffici, fabbriche — e strutture ' +
-      'come <b>ospedali 🏥</b> (dove curarti), <b>centrali di polizia 🚔</b>, caserme dei pompieri, banche e ' +
-      'mercati. <b>Ruba qualsiasi auto</b>, sfreccia nel traffico e raccogli le <b>monetine 🪙</b> nascoste nei ' +
-      '<b>vicoli</b>. Sali su un <b>taxi 🚕</b> per fare il tassista: carica i clienti e portali a destinazione ' +
-      'seguendo la <b>freccia</b> — più la corsa è lunga (e veloce!), più guadagni. Oppure salta su una ' +
-      '<b>moto delle consegne 🏍️</b>: ritira il cibo alla <b>pizzeria 🍕</b> e portalo ai clienti affamati ' +
-      'finché è caldo — consegna in fretta e prendi la mancia! Davanti a ogni struttura trovi i suoi ' +
-      '<b>mezzi parcheggiati</b>: prendi l\'<b>ambulanza 🚑</b> all\'ospedale per soccorrere i feriti, la ' +
-      '<b>volante 🚔</b> alla centrale per inseguire i <b>rapinatori</b> di banche e mercati, o ' +
-      'l\'<b>autopompa 🚒</b> dei pompieri per spegnere gli <b>incendi</b> sparando acqua con l\'idrante — e con ' +
-      '<b>Spazio</b> accendi la sirena! La <b>caserma dell\'esercito 🪖</b> è un\'<b>area recintata</b>: oltre il ' +
-      'cancello, nel cortile, trovi <b>jeep militari</b> e il <b>carro armato</b> — spara <b>razzi</b> ' +
-      '(ricarica lenta!) e passa sopra le altre auto schiacciandole. Ma la base è presidiata da <b>tanti ' +
-      'soldati</b>: appena entri nella zona militare ti sparano a vista, e le <b>jeep armate</b> ti danno la ' +
-      'caccia! Parti <b>a mani nude</b>: i <b>pugni 👊</b> feriscono i passanti e al <b>terzo colpo</b> li ' +
-      'stendono. Coi soldi guadagnati passa all\'<b>ARMERIA 🔫</b>: la <b>pistola</b> costa pochi dollari, poi ' +
-      'arrivano <b>mitra, fucile a pompa e lanciarazzi</b>. Ma attento: se investi, picchi o spari la gente, la ' +
-      '<b>polizia</b> ti darà la caccia — più stelle ⭐ hai, più diventano cattivi!',
+    'howto.goal': 'Fai soldi in una città aperta: lavora, esplora, e quando serve scappa dalla polizia.',
+    'howto.jobsTitle': 'Lavori',
+    'howto.jobsNote': 'Ogni struttura ha i suoi mezzi parcheggiati davanti: sali a bordo per iniziare.',
+    'howto.job1': '<b>Taxi</b>: carica i clienti e segui la freccia fino a destinazione. Più la corsa è lunga e veloce, più paga.',
+    'howto.job2': '<b>Consegne</b>: prendi la moto alla pizzeria e porta il cibo ai clienti finché è caldo. Se sei veloce arriva la mancia.',
+    'howto.job3': '<b>Ambulanza</b>: parte dall\'ospedale, soccorri i feriti.',
+    'howto.job4': '<b>Volante</b>: parte dalla centrale, insegui i rapinatori di banche e mercati.',
+    'howto.job5': '<b>Autopompa</b>: parte dalla caserma dei pompieri, spegni gli incendi con l\'idrante.',
+    'howto.cityTitle': 'In città',
+    'howto.city1': '<b>Auto</b>: puoi rubare qualsiasi veicolo e sfrecciare nel traffico.',
+    'howto.city2': '<b>Monetine</b>: sono nascoste nei vicoli.',
+    'howto.city3': '<b>Ospedale</b>: entra per curarti.',
+    'howto.city4': '<b>Armeria</b>: parti a mani nude, tre pugni stendono un passante. Coi soldi compri pistola, mitra, fucile a pompa e lanciarazzi.',
+    'howto.city5': '<b>Caserma dell\'esercito</b>: area recintata con jeep militari e carro armato, che spara razzi e schiaccia le auto. I soldati sparano a vista.',
+    'howto.city6': '<b>Polizia</b>: se investi, picchi o spari la gente ti dà la caccia. Più stelle hai, più si fa dura.',
+    'howto.controlsTitle': 'Comandi',
     'howto.kb1': '<b>WASD</b> / frecce', 'howto.kb1v': 'muovere / guidare',
     'howto.kb2': '<b>Mouse</b>', 'howto.kb2v': 'mirare',
     'howto.kb3': '<b>Click sinistro</b>', 'howto.kb3v': 'pugni / sparare (a piedi)',
     'howto.kb4': '<b>E</b>', 'howto.kb4v': 'salire / scendere dall\'auto',
-    'howto.kb5': '<b>Spazio</b>', 'howto.kb5v': 'clacson / sirena 🚨',
+    'howto.kb5': '<b>Spazio</b>', 'howto.kb5v': 'clacson / sirena',
     'howto.kb6': '<b>M</b>', 'howto.kb6v': 'missioni on / off',
     'howto.kb7': '<b>1-5</b>', 'howto.kb7v': 'cambiare / comprare arma',
-    'howto.t1': '<b>🕹️ Stick sinistro</b>', 'howto.t1v': 'muovere / guidare',
-    'howto.t2': '<b>🎯 Stick destro</b>', 'howto.t2v': 'mirare — spingi a fondo per sparare',
+    'howto.t1': '<b>Stick sinistro</b>', 'howto.t1v': 'muovere / guidare',
+    'howto.t2': '<b>Stick destro</b>', 'howto.t2v': 'mirare, spingi a fondo per sparare',
     'howto.t3': '<b>🚗</b>', 'howto.t3v': 'salire / scendere dal mezzo',
-    'howto.t4': '<b>📣</b>', 'howto.t4v': 'clacson / sirena 🚨',
+    'howto.t4': '<b>📣</b>', 'howto.t4v': 'clacson / sirena',
     'howto.t5': '<b>📋</b>', 'howto.t5v': 'missioni on / off',
     'howto.t6': '<b>Icone in alto</b>', 'howto.t6v': 'cambiare / comprare arma',
-    'howto.volume': '🔊 Alza il volume per motori, spari e sirene!',
+    'howto.volume': 'Alza il volume: motori, spari e sirene fanno metà del gioco.',
 
     // ---- Weapons ----
     'weapon.fists': 'Pugni',
@@ -600,7 +598,7 @@ const STR = {
     'lad.deaths': '☠️ Deaths',
     'lad.bounty': '🎯 Bounty',
 
-    'start.tag': 'Drive · Deliver · Rescue',
+    'start.tag': 'The city is yours. Take it.',
     'start.hiscore': 'HI-SCORE&nbsp; $0',
     'start.credits': 'CREDITS&nbsp;1',
     'start.credit': 'Made by <a href="https://enricoschintu.com" target="_blank" rel="noopener">Enrico Schintu</a> · © 2026',
@@ -613,15 +611,15 @@ const STR = {
     'name.next': 'Next ➜',
     'name.required': 'A name is required!',
 
-    'menu.hello': 'Hi, <b id="menuName"></b>!',
-    'menu.play': '▶ Single player',
-    'menu.load': '💾 Resume game',
-    'menu.mp': '🌐 Multiplayer',
-    'menu.settings': '⚙️ Settings',
-    'menu.scores': '🏆 Local records',
-    'menu.lb': '🌐 Online leaderboard',
-    'menu.howto': '❓ How to play',
-    'menu.install': '📲 Install the app',
+    'menu.hello': 'Hi, <b id="menuName"></b>',
+    'menu.play': 'Single player',
+    'menu.load': 'Resume game',
+    'menu.mp': 'Multiplayer',
+    'menu.settings': 'Settings',
+    'menu.scores': 'Local records',
+    'menu.lb': 'Online leaderboard',
+    'menu.howto': 'How to play',
+    'menu.install': 'Install the app',
     'menu.installed': 'App installed! 🎉',
 
     'sp.title': '▶ Single player',
@@ -731,38 +729,51 @@ const STR = {
     'lb.dur_hm': '{h}h {m}m',
     'lb.dur_m': '{m}m',
 
-    'howto.desc': 'Explore a big city with <b>different districts</b> — houses, offices, factories — and ' +
-      'landmarks such as <b>hospitals 🏥</b> (where you heal), <b>police stations 🚔</b>, fire stations, banks ' +
-      'and markets. <b>Steal any car</b>, race through the traffic and collect the <b>coins 🪙</b> hidden in the ' +
-      '<b>alleys</b>. Hop in a <b>taxi 🚕</b> and work as a cabbie: pick fares up and take them to their ' +
-      'destination following the <b>arrow</b> — the longer (and faster!) the ride, the more you earn. Or jump on ' +
-      'a <b>delivery bike 🏍️</b>: collect the food at the <b>pizzeria 🍕</b> and bring it to hungry customers ' +
-      'while it is still hot — deliver fast and get the tip! In front of every landmark you find its ' +
-      '<b>parked vehicles</b>: take the <b>ambulance 🚑</b> at the hospital to rescue the injured, the ' +
-      '<b>patrol car 🚔</b> at the station to chase bank and market <b>robbers</b>, or the fire brigade\'s ' +
-      '<b>fire engine 🚒</b> to put <b>fires</b> out by spraying water with the hose — and press <b>Space</b> ' +
-      'for the siren! The <b>army barracks 🪖</b> is a <b>fenced compound</b>: past the gate, in the yard, you ' +
-      'find <b>military jeeps</b> and the <b>tank</b> — fire <b>rockets</b> (slow reload!) and drive over other ' +
-      'cars, crushing them. But the base is guarded by <b>plenty of soldiers</b>: the moment you enter the ' +
-      'military zone they shoot on sight, and the <b>armed jeeps</b> hunt you down! You start ' +
-      '<b>bare-handed</b>: <b>punches 👊</b> hurt pedestrians and the <b>third hit</b> knocks them out. With the ' +
-      'money you earn head to the <b>GUN SHOP 🔫</b>: the <b>pistol</b> costs a few dollars, then come the ' +
-      '<b>SMG, shotgun and rocket launcher</b>. But watch out: run people over, beat them up or shoot them and ' +
-      'the <b>police</b> will hunt you — the more stars ⭐ you have, the nastier they get!',
+    'howto.goal': 'Make money in an open city: work, explore, and when you have to, outrun the police.',
+
+    'howto.jobsTitle': 'Jobs',
+
+    'howto.jobsNote': 'Every landmark has its vehicles parked out front: get in to start.',
+
+    'howto.job1': '<b>Taxi</b>: pick up fares and follow the arrow to their destination. The longer and faster the ride, the more it pays.',
+
+    'howto.job2': '<b>Deliveries</b>: take the bike at the pizzeria and bring the food to customers while it is hot. Be quick and you get a tip.',
+
+    'howto.job3': '<b>Ambulance</b>: starts at the hospital, rescue the injured.',
+
+    'howto.job4': '<b>Patrol car</b>: starts at the police station, chase bank and market robbers.',
+
+    'howto.job5': '<b>Fire engine</b>: starts at the fire station, put fires out with the hose.',
+
+    'howto.cityTitle': 'In the city',
+
+    'howto.city1': '<b>Cars</b>: you can steal any vehicle and race through the traffic.',
+
+    'howto.city2': '<b>Coins</b>: they are hidden in the alleys.',
+
+    'howto.city3': '<b>Hospital</b>: go in to heal.',
+
+    'howto.city4': '<b>Gun shop</b>: you start bare-handed, three punches knock a pedestrian out. With your money you buy a pistol, SMG, shotgun and rocket launcher.',
+
+    'howto.city5': '<b>Army barracks</b>: a fenced compound with military jeeps and a tank that fires rockets and crushes cars. Soldiers shoot on sight.',
+
+    'howto.city6': '<b>Police</b>: run people over, beat them up or shoot them and they hunt you. The more stars you have, the tougher it gets.',
+
+    'howto.controlsTitle': 'Controls',
     'howto.kb1': '<b>WASD</b> / arrows', 'howto.kb1v': 'move / drive',
     'howto.kb2': '<b>Mouse</b>', 'howto.kb2v': 'aim',
     'howto.kb3': '<b>Left click</b>', 'howto.kb3v': 'punch / shoot (on foot)',
     'howto.kb4': '<b>E</b>', 'howto.kb4v': 'enter / exit the car',
-    'howto.kb5': '<b>Space</b>', 'howto.kb5v': 'horn / siren 🚨',
+    'howto.kb5': '<b>Space</b>', 'howto.kb5v': 'horn / siren',
     'howto.kb6': '<b>M</b>', 'howto.kb6v': 'missions on / off',
     'howto.kb7': '<b>1-5</b>', 'howto.kb7v': 'switch / buy weapon',
-    'howto.t1': '<b>🕹️ Left stick</b>', 'howto.t1v': 'move / drive',
-    'howto.t2': '<b>🎯 Right stick</b>', 'howto.t2v': 'aim — push all the way to shoot',
+    'howto.t1': '<b>Left stick</b>', 'howto.t1v': 'move / drive',
+    'howto.t2': '<b>Right stick</b>', 'howto.t2v': 'aim, push all the way to shoot',
     'howto.t3': '<b>🚗</b>', 'howto.t3v': 'enter / exit the vehicle',
-    'howto.t4': '<b>📣</b>', 'howto.t4v': 'horn / siren 🚨',
+    'howto.t4': '<b>📣</b>', 'howto.t4v': 'horn / siren',
     'howto.t5': '<b>📋</b>', 'howto.t5v': 'missions on / off',
     'howto.t6': '<b>Icons on top</b>', 'howto.t6v': 'switch / buy weapon',
-    'howto.volume': '🔊 Turn the volume up for engines, gunshots and sirens!',
+    'howto.volume': 'Turn the volume up: engines, gunshots and sirens are half the game.',
 
     'weapon.fists': 'Fists',
     'weapon.pistol': 'Pistol',
