@@ -181,9 +181,9 @@ const hasRotatedBlit = recording => {
 }
 
 {
-  const street = createNightWorld(gridOf(['gggggg', 'ssssss', 'rrrrrr', 'ssssss', 'gggggg', 'gggggg']));
+  const street = createNightWorld(gridOf(['gggggggggggg', 'ssssssssssss', 'rrrrrrrrrrrr', 'ssssssssssss', 'gggggggggggg', 'gggggggggggg']));
   const lamps = street.run('buildStreetLamps()');
-  ok(lamps.length === 3, 'lamps follow the (tx + ty) % 4 spacing rule');
+  ok(lamps.length === 2, 'lamps follow the (tx + ty) % 8 spacing rule');
   const nextToRoad = lamp => {
     const tx = Math.floor(lamp.x / 32), ty = Math.floor(lamp.y / 32);
     return street.run(`tileAt(${tx}, ${ty}) === SIDEWALK && [[1,0],[-1,0],[0,1],[0,-1]].some(([dx, dy]) => tileAt(${tx} + dx, ${ty} + dy) === ROAD)`);
@@ -193,10 +193,10 @@ const hasRotatedBlit = recording => {
   ok(street.run('buildStreetLamps() === buildStreetLamps()'), 'lamps are built once and cached');
 
   street.run(`matchElapsedFrames = ${NIGHT_ELAPSED}; drawDayNight();`);
-  ok(countCalls(street.lightmap(), 'drawImage') === 3, 'visible lamps are blitted to the lightmap');
+  ok(countCalls(street.lightmap(), 'drawImage') === 2, 'visible lamps are blitted to the lightmap');
 
   street.run('camX = 100000; camY = 100000; drawDayNight();');
-  ok(countCalls(street.lightmap(), 'drawImage') === 3, 'lamps outside the viewport are culled');
+  ok(countCalls(street.lightmap(), 'drawImage') === 2, 'lamps outside the viewport are culled');
 }
 
 {
@@ -230,9 +230,13 @@ const hasRotatedBlit = recording => {
 {
   const render = readSource('render.js');
   const body = render.slice(render.indexOf('function render()'));
-  const gunshop = body.indexOf('drawGunshopMenu();'), dayNight = body.indexOf('drawDayNight();');
-  ok(gunshop > 0 && dayNight > gunshop && dayNight < body.indexOf('drawMinimap();') && dayNight < body.indexOf('drawAim();'), 'render draws the night overlay after the gunshop menu and before the minimap and aim');
-  ok(dayNight < body.indexOf('flashT > 0'), 'night overlay is drawn before the red hit flash');
+  const dayNight = body.indexOf('drawDayNight();');
+  const afterOverlay = ['drawPops();', 'drawGunshopMenu();', 'flashT > 0', 'drawMinimap();', 'drawAim();'];
+  ok(dayNight > body.indexOf('drawParts();') && afterOverlay.every(marker => dayNight < body.indexOf(marker)), 'night overlay sits after the particles and before pops, gunshop menu, flash, minimap and aim');
+
+  const net = readSource('net.js');
+  const resumeBlock = net.slice(net.indexOf('if (resumed && started && gameMinutes > 0) {'));
+  ok(/^if \(resumed && started && gameMinutes > 0\) \{\n\s+timeLeft = net\.clockLeft;\n\s+matchElapsedFrames = gameMinutes \* 60 \* 60 - net\.clockLeft;\n\s+\}/.test(resumeBlock), 'reconnect resyncs matchElapsedFrames with the server clock');
 }
 
 {

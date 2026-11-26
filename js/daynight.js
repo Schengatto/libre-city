@@ -31,14 +31,16 @@ function dayNightAmbient(cycleFrame) {
 }
 
 const NIGHT_LIGHT_SCALE = 0.5;
-const NIGHT_LAMP_RADIUS = 90;
-const NIGHT_WINDOW_RADIUS = 14;
+const NIGHT_LAMP_RADIUS = 65;
+const NIGHT_LAMP_CORE_ALPHA = 0.55;
+const NIGHT_WINDOW_RADIUS = 20;
+const NIGHT_WINDOW_MID_RATIO = 0.7;
 const NIGHT_FIRE_RADIUS = 110;
 const NIGHT_BLAST_RADIUS = 48;
 const NIGHT_ROCKET_RADIUS = 36;
 const NIGHT_HEADLIGHT_REACH = 120;
 const NIGHT_HEADLIGHT_HALF_ANGLE = 0.5;
-const NIGHT_LAMP_SPACING = 4;
+const NIGHT_LAMP_SPACING = 8;
 const NIGHT_WINDOWS_PER_BUILDING = 3;
 const NIGHT_WINDOW_LIT_PERCENT = 60;
 const NIGHT_WINDOW_EDGE_INSET = 8;
@@ -112,13 +114,13 @@ function nightLightCreateCanvas(width, height) {
   return canvas;
 }
 
-function buildNightLightSprite(worldRadius, rgb) {
+function buildNightLightSprite(worldRadius, rgb, coreAlpha = 1, midRatio = 0.4) {
   const radius = worldRadius * NIGHT_LIGHT_SCALE;
   const canvas = nightLightCreateCanvas(radius * 2, radius * 2);
   const spriteContext = canvas.getContext('2d');
   const gradient = spriteContext.createRadialGradient(radius, radius, 0, radius, radius, radius);
-  gradient.addColorStop(0, `rgba(${rgb},1)`);
-  gradient.addColorStop(0.45, `rgba(${rgb},0.4)`);
+  gradient.addColorStop(0, `rgba(${rgb},${coreAlpha})`);
+  gradient.addColorStop(0.45, `rgba(${rgb},${coreAlpha * midRatio})`);
   gradient.addColorStop(1, `rgba(${rgb},0)`);
   spriteContext.fillStyle = gradient;
   spriteContext.fillRect(0, 0, radius * 2, radius * 2);
@@ -143,8 +145,8 @@ function buildNightHeadlightSprite() {
 
 function nightLightEnsureSprites() {
   if (nightLightSprites.lamp) return;
-  nightLightSprites.lamp = buildNightLightSprite(NIGHT_LAMP_RADIUS, '255,200,120');
-  nightLightSprites.window = buildNightLightSprite(NIGHT_WINDOW_RADIUS, '255,210,130');
+  nightLightSprites.lamp = buildNightLightSprite(NIGHT_LAMP_RADIUS, '255,190,110', NIGHT_LAMP_CORE_ALPHA);
+  nightLightSprites.window = buildNightLightSprite(NIGHT_WINDOW_RADIUS, '255,200,110', 1, NIGHT_WINDOW_MID_RATIO);
   nightLightSprites.fire = buildNightLightSprite(NIGHT_FIRE_RADIUS, '255,130,50');
   nightLightSprites.blast = buildNightLightSprite(NIGHT_BLAST_RADIUS, '255,170,60');
   nightLightSprites.rocket = buildNightLightSprite(NIGHT_ROCKET_RADIUS, '255,160,60');
