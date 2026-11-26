@@ -988,6 +988,7 @@ function netApplyFx(e) {
   else if (e.k === 1) spawnBlood(e.x, e.y);
   else if (e.k === 2) spawnSparks(e.x, e.y, e.n || 3);
   else if (e.k === 3) { spawnExplosion(e.x, e.y); const h = hear(e.x, e.y, 1100); if (h) sfx.boom(); }     // explosion
+  else if (e.k === 4) sfx.horn(hear(e.x, e.y, 850), { hornF: e.f, hornKind: e.h });
 }
 
 // Samples the world at the render instant (in the past) from the interpolation buffer, and

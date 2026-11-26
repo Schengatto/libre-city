@@ -122,6 +122,7 @@ function simEnterExit(pl) {
 function simHorn(pl) {
   const c = pl.car; if (!c) return;
   if (c.wasPolice || c.livery === 'ambulance' || c.livery === 'fire') c.sirenOn = !c.sirenOn;
+  else __fx.push({ k: 4, x: R2(c.x), y: R2(c.y), f: c.hornF | 0, h: c.hornKind || 'car' });
 }
 
 // ===== The authoritative world's tick (replaces gameplay.js's update()) =====
