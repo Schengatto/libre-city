@@ -354,7 +354,7 @@ try {
   const firstLink = await openHostLink('HOSTR1', rebindHost.token);
   check(await waitFor(() => findType(firstLink, 'hoststart')), 'the first hostlink binds');
   await wait(SILENCE_MS);
-  check(countHostMessages() === hostMessagesBeforeFirstBind,'the first bind after the election does not broadcast host again');
+  check(countHostMessages() === hostMessagesBeforeFirstBind, 'the first bind after the election does not broadcast host again');
   const secondLink = await openHostLink('HOSTR1', rebindHost.token);
   check(await waitFor(() => findType(secondLink, 'hoststart')), 'the same host binds a second hostlink');
   check(await waitFor(() => countHostMessages() === hostMessagesBeforeFirstBind + 1), 'rebinding the host link broadcasts host to the guest');
@@ -363,6 +363,45 @@ try {
   await wait(SILENCE_MS);
   check(countHostMessages() === hostMessagesBeforeFirstBind + 1, 'the rebind broadcasts host exactly once');
   closeAll([rebindHost.ws, rebindGuest.ws, firstLink, secondLink]);
+  }
+
+  console.log('host reload rebind broadcast');
+  {
+  const reloadHost = await createRoom('HOSTR2', 'Rex');
+  const reloadGuest = await joinRoom('HOSTR2', 'Sia', 'desktop', OLD_BUILD);
+  const countReloadHostMessages = () => reloadGuest.ws.inbox.filter(message => message.t === 'host').length;
+  const hostMessagesBeforeReload = countReloadHostMessages();
+  const linkBeforeReload = await openHostLink('HOSTR2', reloadHost.token);
+  check(await waitFor(() => findType(linkBeforeReload, 'hoststart')), 'the host link binds before the reload');
+  closeAll([linkBeforeReload]);
+  check(await waitFor(() => linkBeforeReload.closed), 'the host link closes with no eligible migrant');
+  await wait(SILENCE_MS);
+  check(countReloadHostMessages() === hostMessagesBeforeReload, 'closing the host link without a migrant broadcasts nothing');
+  const linkAfterReload = await openHostLink('HOSTR2', reloadHost.token);
+  check(await waitFor(() => findType(linkAfterReload, 'hoststart')), 'the reloaded host binds a new link');
+  check(await waitFor(() => countReloadHostMessages() === hostMessagesBeforeReload + 1), 'the reloaded host link broadcasts host to the guest');
+  const reloadBroadcast = reloadGuest.ws.inbox.filter(message => message.t === 'host').pop();
+  check(reloadBroadcast.id === reloadHost.id && reloadBroadcast.name === 'Rex', 'the reload broadcast names the same host');
+  await wait(SILENCE_MS);
+  check(countReloadHostMessages() === hostMessagesBeforeReload + 1, 'the reload broadcasts host exactly once');
+  closeAll([reloadHost.ws, reloadGuest.ws, linkAfterReload]);
+  }
+
+  console.log('first bind after a re-election');
+  {
+  const resigningOwner = await createRoom('HOSTR3', 'Ria');
+  const electedGuest = await joinRoom('HOSTR3', 'Sol');
+  const countElectionHostMessages = () => electedGuest.ws.inbox.filter(message => message.t === 'host').length;
+  const ownerLink = await openHostLink('HOSTR3', resigningOwner.token);
+  check(await waitFor(() => findType(ownerLink, 'hoststart')), 'the first host link binds before the resign');
+  const hostMessagesBeforeResign = countElectionHostMessages();
+  send(resigningOwner.ws, { t: 'resign' });
+  check(await waitFor(() => countElectionHostMessages() === hostMessagesBeforeResign + 1), 'the resign elects the guest with one host message');
+  const electedLink = await openHostLink('HOSTR3', electedGuest.token);
+  check(await waitFor(() => findType(electedLink, 'hoststart')), 'the elected host binds its first link');
+  await wait(SILENCE_MS);
+  check(countElectionHostMessages() === hostMessagesBeforeResign + 1, 'the first bind after the re-election adds no host message');
+  closeAll([resigningOwner.ws, electedGuest.ws, ownerLink, electedLink]);
   }
 
   console.log('binary snapshot relay');
