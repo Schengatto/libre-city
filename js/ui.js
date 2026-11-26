@@ -297,19 +297,21 @@ onClick('spGo', () => {
 // ---- Panel navigation ----
 function onClick(id, fn) { const el = $('#' + id); if (el) el.onclick = fn; }
 onClick('settingsBtn', () => {
-  const n = $('#setName'), a = $('#setAudio'), l = $('#setLang');
+  const n = $('#setName'), a = $('#setAudio'), d = $('#setDayNight'), l = $('#setLang');
   if (n) n.value = playerName;
   if (a) a.value = audioOn ? 'on' : 'off';
+  if (d) d.value = dayNightOn ? 'on' : 'off';
   if (l) l.value = LANG;
   showPanel('settingsPanel');
 });
 onClick('settingsSave', () => {
-  const n = $('#setName'), a = $('#setAudio'), l = $('#setLang');
-  const name = n ? n.value.trim() : '';
+  const n = $('#setName'), a = $('#setAudio'), d = $('#setDayNight'), l = $('#setLang');
+  const name =n ? n.value.trim() : '';
   if (!name) { if (n) { n.focus(); n.placeholder = t('name.required'); } return; }
   playerName = name; store.set('name', playerName);
   audioOn = a ? a.value === 'on' : true; store.set('audio', audioOn);
-  applyAudioSetting();                           // takes effect immediately, even mid-match
+  dayNightOn = d ? d.value === 'on' : true; store.set('dayNight', dayNightOn);
+  applyAudioSetting();                         // takes effect immediately, even mid-match
   if (l && l.value !== LANG) setLang(l.value);   // re-applies all the wording straight away
   showMenu();
 });

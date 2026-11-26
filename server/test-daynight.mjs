@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import { readSource } from './render-test-kit.mjs';
@@ -232,6 +233,25 @@ const hasRotatedBlit = recording => {
   const gunshop = body.indexOf('drawGunshopMenu();'), dayNight = body.indexOf('drawDayNight();');
   ok(gunshop > 0 && dayNight > gunshop && dayNight < body.indexOf('drawMinimap();') && dayNight < body.indexOf('drawAim();'), 'render draws the night overlay after the gunshop menu and before the minimap and aim');
   ok(dayNight < body.indexOf('flashT > 0'), 'night overlay is drawn before the red hit flash');
+}
+
+{
+  const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const field = html.match(/<select id="setDayNight">[\s\S]*?<\/select>/);
+  ok(field && /<label for="setDayNight" data-i18n="set\.dayNight">/.test(html), 'settings has a labelled setDayNight select');
+  ok(field && /value="on"[^>]*data-i18n="set\.dayNightOn"/.test(field[0]) && /value="off"[^>]*data-i18n="set\.dayNightOff"/.test(field[0]), 'setDayNight has on and off options with i18n keys');
+  ok(/id="setAudio">[\s\S]*?<\/select>\s*<\/div>\s*<div class="field">\s*<label for="setDayNight"/.test(html), 'setDayNight sits right after the audio field');
+
+  const i18n = readSource('i18n.js');
+  const expected = { 'set.dayNight': ['Giorno/notte', 'Day/night'], 'set.dayNightOn': ['🌗 Attivo', '🌗 On'], 'set.dayNightOff': ['☀️ Sempre giorno', '☀️ Always day'] };
+  const countOf = line => i18n.split(line).length - 1;
+  ok(Object.entries(expected).every(([key, [it, en]]) => countOf(`'${key}': '${it}',`) === 1 && countOf(`'${key}': '${en}',`) === 1), 'IT and EN define the day/night keys');
+
+  const settingsUi = readSource('ui.js');
+  const openBody = settingsUi.slice(settingsUi.indexOf("onClick('settingsBtn'"), settingsUi.indexOf("onClick('settingsSave'"));
+  const saveBody = settingsUi.slice(settingsUi.indexOf("onClick('settingsSave'"), settingsUi.indexOf("onClick('settingsBack'"));
+  ok(/\$\('#setDayNight'\)/.test(openBody) && /d\.value = dayNightOn \? 'on' : 'off'/.test(openBody), 'settings open fills setDayNight from dayNightOn');
+  ok(/dayNightOn = d \? d\.value === 'on' : true; store\.set\('dayNight', dayNightOn\)/.test(saveBody), 'settings save sets dayNightOn and persists it');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
