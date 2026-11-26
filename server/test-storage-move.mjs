@@ -187,6 +187,15 @@ let threw = false;
 try { bootStorageMove(makeThrowingStorage(), location, history); } catch { threw = true; }
 ok(!threw && location.replaced === 'https://vibecity.schengatto.com/', 'throwing storage on legacy host still redirects');
 
+const navigationOrder = [];
+context.window = { stop() { navigationOrder.push('stop'); } };
+location = makeLocation('libre-city.schengatto.com', '', '');
+const recordingReplace = location.replace;
+location.replace = url => { navigationOrder.push('replace'); recordingReplace(url); };
+bootStorageMove(makeStorage({}), location, makeHistory());
+delete context.window;
+ok(navigationOrder.join(',') === 'stop,replace', 'legacy host stops loading before redirecting');
+
 console.log('auto-boot');
 const autoBootSource = fs.readFileSync(path.join(JS_DIR, 'storage-move.js'), 'utf8');
 const blockedStorageLocation = makeLocation('libre-city.schengatto.com', '', '');

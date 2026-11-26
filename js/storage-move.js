@@ -163,8 +163,9 @@ function bootStorageMove(storage, locationLike, historyLike) {
   }
   try { migrateStoragePrefix(storage); } catch {}
   if (onLegacyHost) {
-    locationLike.replace(legacyHostRedirectUrl(locationLike, storage));
+    const redirectUrl = legacyHostRedirectUrl(locationLike, storage);
     if (typeof window !== 'undefined' && typeof window.stop === 'function') window.stop();
+    locationLike.replace(redirectUrl);
   }
 }
 
