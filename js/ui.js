@@ -148,7 +148,7 @@ function renderScores() {
 function leaderboardUrl() {
   const ws = netServerUrl();
   if (!ws) return null;
-  return ws.replace(/^ws/, 'http').replace(/\/+$/, '') + '/leaderboard?limit=20';
+  return serverHttpBase(ws) + '/leaderboard?limit=20';
 }
 // "2h 05m" / "48m": the total played, which for a regular player quickly goes past the hour.
 function fmtPlayed(ms) {
