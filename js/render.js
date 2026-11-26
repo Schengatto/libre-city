@@ -2415,6 +2415,7 @@ function render() {
   drawFireGuide();
   drawPlayerArrows();                            // multiplayer: arrows towards the rivals
   drawGunshopMenu();
+  drawDayNight();
   // Red flash when hit.
   if (flashT > 0) { ctx.fillStyle = `rgba(200,20,20,${flashT / 30})`; ctx.fillRect(0, 0, vw, vh); }
   drawMinimap();
