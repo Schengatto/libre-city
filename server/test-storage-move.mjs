@@ -7,7 +7,7 @@ const { JS_DIR } = runtime;
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ', msg); } else { fail++; console.log('  XX FAIL:', msg); } };
 
-const context = vm.createContext({ TextEncoder, TextDecoder, btoa, atob, Uint8Array, JSON, Object, Array, String, Math });
+const context = vm.createContext({ TextEncoder, TextDecoder, URLSearchParams, btoa, atob, Uint8Array, JSON, Object, Array, String, Math });
 vm.runInContext(fs.readFileSync(path.join(JS_DIR, 'storage-move.js'), 'utf8'), context, { filename: 'storage-move.js' });
 const run = source => vm.runInContext(source, context);
 const migrateStoragePrefix = storage => { context.__s = storage; return run('migrateStoragePrefix(__s)'); };
@@ -94,15 +94,30 @@ s = makeStorage({ 'vibeCity.save': JSON.stringify({ v: 3, pad: 'x'.repeat(200000
 ok(encodeStorageExport(s) === '', 'oversize export is empty');
 ok(legacyHostRedirectUrl({ hostname: 'libre-city.schengatto.com', search: '?room=ABCD' }, s) === 'https://vibecity.schengatto.com/?room=ABCD', 'oversize export redirects without data');
 
+const importedScores = entries => JSON.parse(decodeEntries({ 'vibeCity.scores': JSON.stringify(entries) })['vibeCity.scores']);
+ok(JSON.stringify(importedScores([validScore, { name: 'B', score: 'x' }, null, { ...validScore, name: 'CARL' }])) === JSON.stringify([validScore, { ...validScore, name: 'CARL' }]), 'one bad score entry keeps the valid ones');
+
 console.log('import guard');
 s = makeStorage({});
 ok(importStorage(s, { 'vibeCity.lang': '"en"' }) && s.getItem('vibeCity.lang') === '"en"', 'imports into empty origin');
 s = makeStorage({ 'vibeCity.lang': '"it"' });
 ok(!importStorage(s, { 'vibeCity.lang': '"en"' }) && s.getItem('vibeCity.lang') === '"it"', 'refuses when origin already has data');
 
+s = makeStorage({});
+let writes = 0;
+const failingSetItem = s.setItem;
+s.setItem = (key, value) => { if (++writes === 2) throw new Error('quota'); failingSetItem(key, value); };
+ok(importStorage(s, { 'vibeCity.lang': '"en"', 'vibeCity.minutes': '5', 'vibeCity.audio': 'true' }) === false && s.length === 0, 'setItem failing partway leaves no vibeCity keys');
+
 console.log('redirect url');
 s = makeStorage({ 'vibeCity.lang': '"en"' });
-ok(legacyHostRedirectUrl({ hostname: 'libre-city.schengatto.com', search: '?room=ABCD' }, s) === `https://vibecity.schengatto.com/?room=ABCD#vc-import=${encodeStorageExport(s)}`, 'legacy host redirects with query and data');
+ok(legacyHostRedirectUrl({ hostname: 'libre-city.schengatto.com', search: '?room=ABCD', hash: '' }, s) === `https://vibecity.schengatto.com/?room=ABCD#vc-import=${encodeStorageExport(s)}`, 'legacy host redirects with query and data');
+ok(legacyHostRedirectUrl({ hostname: 'libre-city.schengatto.com', search: '', hash: '#room=ABCD' }, s) === `https://vibecity.schengatto.com/#vc-import=${encodeStorageExport(s)}&room=ABCD`, 'legacy fragment room code carried after the import payload');
+ok(legacyHostRedirectUrl({ hostname: 'libre-city.schengatto.com', search: '', hash: '#room=ABCD' }, makeStorage({})) === 'https://vibecity.schengatto.com/#room=ABCD', 'legacy fragment room code carried without data');
+ok(legacyHostRedirectUrl({ hostname: 'libre-city.schengatto.com', search: '', hash: '#room=a%26b' }, makeStorage({})) === 'https://vibecity.schengatto.com/', 'malformed room code not carried');
+s = makeStorage({ 'vibeCity.lang': '"en"', 'vibeCity.spIntent': '{"code":"X"}', 'vibeCity.hostIntent': '{}', 'vibeCity.joinIntent': '{}', 'vibeCity.loadIntent': '{}' });
+ok(JSON.stringify(decodeStorageImport(encodeStorageExport(s))) === JSON.stringify({ 'vibeCity.lang': '"en"' }), 'export excludes one-shot intent keys');
+ok(encodeStorageExport(makeStorage({ 'vibeCity.spIntent': '{}' })) === '', 'export of intent keys only is empty');
 ok(legacyHostRedirectUrl({ hostname: 'libre-city.schengatto.com', search: '' }, makeStorage({})) === 'https://vibecity.schengatto.com/', 'legacy host without data redirects without fragment');
 ok(legacyHostRedirectUrl({ hostname: 'vibecity.schengatto.com', search: '' }, s) === null, 'new host never redirects');
 
@@ -121,6 +136,37 @@ location = makeLocation('vibecity.schengatto.com', '', fragment);
 history = makeHistory();
 bootStorageMove(s, location, history);
 ok(s.getItem('vibeCity.lang') === '"it"' && history.calls.length === 1, 'existing data untouched, fragment still stripped');
+
+s = makeStorage({});
+location = makeLocation('vibecity.schengatto.com', '', `${fragment}&room=ABCD`);
+history = makeHistory();
+bootStorageMove(s, location, history);
+ok(s.getItem('vibeCity.lang') === '"en"' && history.calls.length === 1 && history.calls[0][2] === '/#room=ABCD', 'room code restored as fragment after import');
+
+s = makeStorage({ 'vibeCity.lang': '"it"' });
+location = makeLocation('vibecity.schengatto.com', '', `${fragment}&room=ABCD`);
+history = makeHistory();
+bootStorageMove(s, location, history);
+ok(s.getItem('vibeCity.lang') === '"it"' && history.calls[0][2] === '/#room=ABCD', 'room code preserved when import is refused');
+
+s = makeStorage({ 'libreCity.lang': '"en"' });
+location = makeLocation('libre-city.schengatto.com', '', '#room=ABCD');
+bootStorageMove(s, location, makeHistory());
+const roundTripLocation = makeLocation('vibecity.schengatto.com', '', new URL(location.replaced).hash);
+const roundTripStorage = makeStorage({});
+history = makeHistory();
+bootStorageMove(roundTripStorage, roundTripLocation, history);
+ok(roundTripStorage.getItem('vibeCity.lang') === '"en"' && history.calls[0][2] === '/#room=ABCD', 'legacy invite link survives the full handoff');
+
+s = makeStorage({});
+let partialWrites = 0;
+const originalSetItem = s.setItem;
+s.setItem = (key, value) => { if (++partialWrites === 2) throw new Error('quota'); originalSetItem(key, value); };
+const multiKeyFragment = `#vc-import=${encodeStorageExport(makeStorage({ 'vibeCity.lang': '"en"', 'vibeCity.minutes': '5' }))}&room=ABCD`;
+location = makeLocation('vibecity.schengatto.com', '', multiKeyFragment);
+history = makeHistory();
+bootStorageMove(s, location, history);
+ok(s.length === 0 && history.calls.length === 1 && history.calls[0][2] === '/#room=ABCD', 'boot continues with fragment stripped after a partial import failure');
 
 s = makeStorage({});
 location = makeLocation('vibecity.schengatto.com', '', '#other=1');
@@ -144,7 +190,7 @@ ok(!threw && location.replaced === 'https://vibecity.schengatto.com/', 'throwing
 console.log('auto-boot');
 const autoBootSource = fs.readFileSync(path.join(JS_DIR, 'storage-move.js'), 'utf8');
 const blockedStorageLocation = makeLocation('libre-city.schengatto.com', '', '');
-const blockedStorageContext = vm.createContext({ TextEncoder, TextDecoder, btoa, atob, Uint8Array, location: blockedStorageLocation, history: makeHistory() });
+const blockedStorageContext = vm.createContext({ TextEncoder, TextDecoder, URLSearchParams, btoa, atob, Uint8Array, location: blockedStorageLocation, history: makeHistory() });
 Object.defineProperty(blockedStorageContext, 'localStorage', { get() { throw new Error('SecurityError'); } });
 vm.runInContext(autoBootSource, blockedStorageContext, { filename: 'storage-move.js' });
 ok(blockedStorageLocation.replaced === 'https://vibecity.schengatto.com/', 'auto-boot redirects the legacy host when localStorage access throws');
