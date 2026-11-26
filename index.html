@@ -257,14 +257,27 @@
   .mbtn.back { font-family:inherit; font-weight:bold; background:none; border-color:transparent;
     box-shadow:none; opacity:.75; font-size:14px; padding:8px 0; }
   .mbtn.back:hover { opacity:1; transform:none; box-shadow:none; }
-  #playBtn { color:#2a0830; border-color:#fff1c2;
-    background:linear-gradient(#ffe27a, #ffab4c 55%, #ff7a5c);
-    box-shadow:0 5px 0 #a8324f, 0 0 22px rgba(255,150,80,.5); }
-  #playBtn:hover { box-shadow:0 3px 0 #a8324f, 0 0 28px rgba(255,150,80,.7); }
-  #playBtn:active { box-shadow:0 1px 0 #a8324f, 0 0 16px rgba(255,150,80,.5); }
+  #menuPanel { display:grid; grid-template-columns:1fr 1fr; gap:12px; width:min(400px,92vw); min-width:0;
+    padding:24px; border-color:rgba(51,224,255,.4); box-shadow:inset 0 0 40px rgba(0,0,0,.35); }
+  #menuPanel > * { grid-column:1 / -1; }
+  #menuPanel .mbtn { width:100%; box-shadow:0 4px 0 #7c1150; }
+  #menuPanel .mbtn:hover { box-shadow:0 2px 0 #7c1150; }
+  #menuPanel .mbtn:active { box-shadow:0 0 0 #7c1150; }
+  #menuPanel #playBtn { padding:16px 0; font-size:17px; color:#2a0830; border-color:#fff1c2;
+    background:linear-gradient(#ffe27a, #ffab4c 55%, #ff7a5c); box-shadow:0 4px 0 #a8324f; }
+  #menuPanel #playBtn:hover { box-shadow:0 2px 0 #a8324f; }
+  #menuPanel #playBtn:active { box-shadow:0 0 0 #a8324f; }
   #playBtn::before { color:#2a0830; text-shadow:none; }
+  #menuPanel .mbtn.minor { grid-column:auto; padding:11px 8px; border-width:2px; border-radius:10px;
+    font:bold 14px 'Trebuchet MS','Segoe UI',sans-serif; letter-spacing:0; color:#e6ddf5;
+    background:rgba(14,8,30,.55); border-color:rgba(255,255,255,.16); box-shadow:none;
+    transition:transform .12s, border-color .15s, color .15s; }
+  #menuPanel .mbtn.minor:hover { transform:none; border-color:#ff3ea5; color:#fff; box-shadow:none; }
+  #menuPanel .mbtn.minor:active { transform:scale(.98); box-shadow:none; }
+  #menuPanel .mbtn.minor::before { display:none; }
+  #menuPanel #installBtn { grid-column:1 / -1; }
   #menuHello { font:bold 14px 'Courier New',monospace; letter-spacing:.12em; opacity:.95; }
-  #menuHello b { color:#33e0ff; text-shadow:0 0 8px rgba(51,224,255,.6); }
+  #menuHello b { color:#33e0ff; }
   .field { display:flex; flex-direction:column; gap:6px; align-items:flex-start; width:min(320px,84vw); }
   .field label { font:bold 10px 'Courier New',monospace; letter-spacing:.24em; text-transform:uppercase;
     color:#33e0ff; text-shadow:0 0 6px rgba(51,224,255,.5); }
@@ -577,16 +590,16 @@
 
     <!-- Main menu -->
     <div id="menuPanel" class="panel hidden">
-      <div id="menuHello" data-i18n-html="menu.hello">Ciao, <b id="menuName"></b>!</div>
-      <button id="playBtn" class="mbtn" data-i18n="menu.play">▶ Giocatore singolo</button>
-      <button id="loadBtn" class="mbtn hidden" data-i18n="menu.load">💾 Riprendi partita</button>
-      <button id="mpBtn" class="mbtn" data-i18n="menu.mp">🌐 Multigiocatore</button>
-      <button id="settingsBtn" class="mbtn" data-i18n="menu.settings">⚙️ Impostazioni</button>
-      <button id="scoresBtn" class="mbtn" data-i18n="menu.scores">🏆 Record locali</button>
-      <button id="lbBtn" class="mbtn" data-i18n="menu.lb">🌐 Classifica online</button>
-      <button id="howtoBtn" class="mbtn" data-i18n="menu.howto">❓ Come si gioca</button>
+      <div id="menuHello" data-i18n-html="menu.hello">Ciao, <b id="menuName"></b></div>
+      <button id="playBtn" class="mbtn" data-i18n="menu.play">Giocatore singolo</button>
+      <button id="loadBtn" class="mbtn hidden" data-i18n="menu.load">Riprendi partita</button>
+      <button id="mpBtn" class="mbtn" data-i18n="menu.mp">Multigiocatore</button>
+      <button id="settingsBtn" class="mbtn minor" data-i18n="menu.settings">Impostazioni</button>
+      <button id="scoresBtn" class="mbtn minor" data-i18n="menu.scores">Record locali</button>
+      <button id="lbBtn" class="mbtn minor" data-i18n="menu.lb">Classifica online</button>
+      <button id="howtoBtn" class="mbtn minor" data-i18n="menu.howto">Come si gioca</button>
       <!-- Only appears when the browser offers installation (beforeinstallprompt) -->
-      <button id="installBtn" class="mbtn hidden" data-i18n="menu.install">📲 Installa l'app</button>
+      <button id="installBtn" class="mbtn minor hidden" data-i18n="menu.install">Installa l'app</button>
     </div>
 
     <!-- Single-player: create the match (violence, duration, map size) -->
