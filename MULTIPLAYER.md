@@ -141,12 +141,16 @@ simulati. Misurati i primi 10 s dopo 1 s di riscaldamento:
 | byte medi per frame raw | 3975 / 4656 B | 701 / 836 B |
 | senza context takeover | 184 / 211 KB/s | 54 / 64 KB/s |
 | con context takeover | 32 / 36 KB/s | 20 / 23 KB/s |
-| quota di frame delta | 0% / 0% | 100% / 100% |
+| quota di frame delta | 0% su tutti i seed | 100% su tutti i seed |
 
-Nessun frame scartato con gli ack a 100 ms. Il controllo `ACK=off` (nessun `sa`, solo frame
-pieni) riproduce la fase 2 entro lo 0,5%. Il raw cala di circa 5,7 volte e conta per il canale
-`fast` P2P, che invia senza deflate; il deflate guadagna meno sul delta (senza context takeover
--71%, con context takeover -38%) perché il delta ha già tolto la ridondanza tra un frame e l'altro.
+Nessun frame scartato con gli ack a 100 ms. Il 100% di frame delta è il caso migliore
+dell'harness, senza perdite né jitter sugli ack; su una rete reale i frame pieni tornano a ogni
+base persa, e i valori reali stanno tra la fase 2 e questa colonna. Il controllo `ACK=off`
+(nessun `sa`, solo frame pieni) riproduce la fase 2 entro lo 0,5%. Il raw cala di circa 5,7
+volte e conta per il canale `fast` P2P, che invia senza deflate. Il deflate guadagna meno sul
+delta (senza context takeover -13%, con context takeover -68%, contro -47% e -91% della fase 2)
+perché il delta ha già tolto la ridondanza tra un frame e l'altro. Rispetto alla fase 2 il
+totale deflate scende del 71% senza context takeover e del 38% con.
 
 Protocollo:
 
@@ -154,7 +158,7 @@ Protocollo:
   guest e codifica contro quel tick.
 - Host e guest tengono una storia di 32 snapshot; se il tick di base non c'è più o il delta non
   si applica, il guest svuota la storia e smette di mandare `sa`.
-- Frame pieno (senza `base`) a ingresso, cambio host e perdita della base.
+- Frame pieno (senza `base`) all'ingresso, cambio host e perdita della base.
 - Gli eventi (`fx`, `me.ev`) restano fuori dal delta: inline sul WS e nel messaggio `we` sul
   canale `rel`.
 
