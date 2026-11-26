@@ -402,7 +402,7 @@ async function fetchPublicGames() {
   const epoch = publicGamesEpoch;
   publicGamesFetching = true;
   try {
-    const res = await fetch(publicRoomsUrl(netServerUrl()), { cache: 'no-store' });
+    const res = await fetch(publicRoomsUrl(netServerUrl()), { cache: 'no-store', signal: AbortSignal.timeout(PUBLIC_GAMES_POLL_MS) });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (epoch !== publicGamesEpoch) return;
