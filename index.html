@@ -123,18 +123,57 @@
   /* The "fixed" children (scene, hi-score bar, ticker, credits) stay out of the flow. */
   #start > *:not(#scene):not(#arcTop):not(#ticker):not(#credits):not(#musicBtn) { position:relative; z-index:1; }
 
-  /* The scene stays fixed behind the menus even as the page scrolls: purple glow from the
-     sign, a perspective grid and fine scanlines. */
-  #scene { position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden;
-    background:radial-gradient(130% 100% at 50% 0%, #241245 0%, #12081f 46%, #0a0a12 78%); }
-  #scene .grid { position:absolute; left:-15%; right:-15%; bottom:-12px; height:36vh; opacity:.5;
-    background-image:
-      repeating-linear-gradient(90deg, rgba(51,224,255,.30) 0 2px, transparent 2px 64px),
-      repeating-linear-gradient(0deg, rgba(255,62,165,.28) 0 2px, transparent 2px 38px);
-    transform:perspective(340px) rotateX(58deg); transform-origin:50% 0; }
+  #scene { --horizon:64%; position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden;
+    background:
+      radial-gradient(1.5px 1.5px at 12% 10%, #fff 50%, transparent),
+      radial-gradient(1px 1px at 27% 22%, #ffe9f4 50%, transparent),
+      radial-gradient(1.5px 1.5px at 68% 8%, #fff 50%, transparent),
+      radial-gradient(1px 1px at 83% 19%, #ffe9f4 50%, transparent),
+      radial-gradient(1px 1px at 46% 14%, #fff 50%, transparent),
+      radial-gradient(70vmax 34vmax at 50% var(--horizon), rgba(255,150,90,.55), transparent 62%),
+      linear-gradient(180deg, #120a33 0%, #2c0f52 20%, #6b1b6e 38%, #c4306f 50%, #ff6a5c 58%, #ffb15c var(--horizon)); }
+  #scene .sun { position:absolute; left:50%; top:var(--horizon); width:min(56vmin,460px); aspect-ratio:1;
+    border-radius:50%; transform:translate(-50%,-78%);
+    background:linear-gradient(#fff1a8 0%, #ffc14d 38%, #ff6a6a 68%, #e0287f 100%);
+    -webkit-mask-image:linear-gradient(#000 40%, transparent 40% 43%, #000 43% 50%, transparent 50% 54%,
+      #000 54% 60%, transparent 60% 65%, #000 65% 70%, transparent 70% 76%, #000 76%);
+    mask-image:linear-gradient(#000 40%, transparent 40% 43%, #000 43% 50%, transparent 50% 54%,
+      #000 54% 60%, transparent 60% 65%, #000 65% 70%, transparent 70% 76%, #000 76%); }
+  #scene .skyline { position:absolute; left:0; right:0; bottom:calc(100% - var(--horizon)); }
+  #scene .skyline.far { height:min(24vh,220px); background:#4a1a60;
+    clip-path:polygon(0 100%,0 62%,4% 62%,4% 48%,8% 48%,8% 58%,11% 58%,11% 30%,13% 26%,15% 30%,15% 56%,
+      19% 56%,19% 44%,23% 44%,23% 64%,27% 64%,27% 40%,29% 40%,29% 20%,31% 20%,31% 40%,33% 40%,33% 60%,
+      38% 60%,38% 52%,42% 52%,42% 76%,58% 76%,58% 48%,61% 48%,61% 34%,63% 34%,63% 48%,66% 48%,66% 60%,
+      70% 60%,70% 36%,72% 28%,74% 36%,74% 58%,78% 58%,78% 44%,82% 44%,82% 24%,84% 24%,84% 14%,85% 14%,
+      85% 24%,87% 24%,87% 52%,91% 52%,91% 64%,95% 64%,95% 42%,98% 42%,98% 60%,100% 60%,100% 100%); }
+  #scene .skyline.near { height:min(15vh,140px);
+    background:radial-gradient(circle, rgba(255,206,140,.55) 0 1px, transparent 1.6px) 0 0/8px 10px, #1a0828;
+    clip-path:polygon(0 100%,0 40%,6% 40%,6% 20%,10% 20%,10% 50%,14% 50%,14% 30%,17% 30%,17% 10%,19% 3%,
+      21% 10%,21% 46%,26% 46%,26% 62%,32% 62%,32% 82%,68% 82%,68% 58%,73% 58%,73% 34%,77% 34%,77% 14%,
+      80% 14%,80% 40%,84% 40%,84% 24%,88% 24%,88% 50%,93% 50%,93% 30%,97% 30%,97% 56%,100% 56%,100% 100%); }
+  #scene .sea { position:absolute; left:0; right:0; top:var(--horizon); bottom:0; overflow:hidden;
+    border-top:1px solid rgba(255,214,160,.7);
+    background:linear-gradient(#3a1658 0%, #14194a 35%, #070d26 100%); }
+  #scene .sea::before { content:''; position:absolute; left:50%; top:0; width:min(44vmin,360px); height:80%;
+    transform:translateX(-50%);
+    background:repeating-linear-gradient(180deg, rgba(255,176,96,.8) 0 3px, transparent 3px 10px);
+    -webkit-mask-image:radial-gradient(50% 100% at 50% 0, #000 25%, transparent 80%);
+    mask-image:radial-gradient(50% 100% at 50% 0, #000 25%, transparent 80%);
+    animation:sunShimmer 3.4s ease-in-out infinite alternate; }
+  #scene .sea::after { content:''; position:absolute; left:-20%; right:-20%; top:0; height:100%;
+    background:repeating-linear-gradient(180deg, transparent 0 18px, rgba(51,224,255,.2) 18px 20px);
+    transform:perspective(320px) rotateX(56deg); transform-origin:50% 0; }
+  @keyframes sunShimmer { from { transform:translateX(-50%) scaleX(.88) } to { transform:translateX(-50%) scaleX(1.08) } }
+  #scene .palm { position:absolute; bottom:-3vh; height:clamp(260px,min(76vh,100vw),660px);
+    aspect-ratio:240/400; fill:#0d0419; transform-origin:45% 100%;
+    animation:palmSway 7s ease-in-out infinite alternate; }
+  #scene .palm-l { left:-7vw; }
+  #scene .palm-r { right:-9vw; height:clamp(220px,min(62vh,84vw),540px); scale:-1 1; animation-delay:-3s; }
+  @keyframes palmSway { from { rotate:-1.2deg } to { rotate:1.4deg } }
+  @media (max-width:640px) { #scene .palm-l { left:-24vw; } #scene .palm-r { right:-26vw; } }
   #scene .scan { position:absolute; inset:0;
-    background:repeating-linear-gradient(0deg, rgba(0,0,0,.16) 0 2px, transparent 2px 5px),
-               radial-gradient(120% 100% at 50% 50%, transparent 55%, rgba(0,0,0,.55) 100%); }
+    background:repeating-linear-gradient(0deg, rgba(0,0,0,.08) 0 2px, transparent 2px 5px),
+               radial-gradient(120% 100% at 50% 50%, transparent 55%, rgba(6,2,18,.6) 100%); }
 
   /* ---- Cabinet bar: HI-SCORE on the left, credits on the right ---- */
   #arcTop { position:fixed; top:0; left:0; right:0; z-index:2; display:flex; gap:12px;
@@ -162,11 +201,15 @@
     font-size:clamp(42px,9vw,92px); color:#fff; letter-spacing:.02em; line-height:.95;
     animation:titleIn .7s cubic-bezier(.2,.9,.3,1.15) both;
     text-shadow:0 0 6px #fff, 0 0 18px #ff3ea5, 0 0 44px #ff3ea5, 3px 3px 0 #7c1150; }
+  @supports ((-webkit-background-clip:text) or (background-clip:text)) {
+    #start h1 { background:linear-gradient(180deg, #fff3b0 0%, #ffd23a 30%, #ff8a3c 55%, #ff3ea5 80%, #c02bd6 100%);
+      -webkit-background-clip:text; background-clip:text; color:transparent; text-shadow:none;
+      filter:drop-shadow(3px 3px 0 #3a0a3e) drop-shadow(0 0 18px rgba(255,62,165,.55)); } }
   @keyframes titleIn { 0% { transform:translateY(-30px) scale(.92); opacity:0 }
     60% { transform:translateY(4px) scale(1.02); opacity:1 } 100% { transform:none; opacity:1 } }
   #start .tag { margin-top:10px; font-family:'Courier New',monospace; font-weight:bold;
     font-size:clamp(10px,1.9vw,14px); letter-spacing:.34em; text-transform:uppercase;
-    color:#33e0ff; text-shadow:0 0 10px rgba(51,224,255,.8); animation:tagIn .6s ease .3s both; }
+    color:#33e0ff; text-shadow:0 1px 2px #1a0628, 0 0 3px #1a0628, 0 0 10px rgba(51,224,255,.8); animation:tagIn .6s ease .3s both; }
   @keyframes tagIn { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:none } }
   #start p { margin-top:18px; opacity:.92; max-width:560px; line-height:1.7; font-size:15px; }
   #start .keys { margin-top:16px; display:grid; grid-template-columns:auto auto; gap:6px 20px;
@@ -183,14 +226,11 @@
 
   /* ---- Menu panels: the cabinet's control deck ---- */
   .panel { position:relative; margin-top:24px; display:flex; flex-direction:column; align-items:center;
-    gap:12px; min-width:min(420px,92vw); background:linear-gradient(#2b2140,#171126);
+    gap:12px; min-width:min(420px,92vw); background:linear-gradient(rgba(42,18,70,.8),rgba(18,9,36,.88));
+    -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
     border:3px solid #33e0ff; border-radius:18px; padding:24px 28px 26px;
-    box-shadow:0 0 24px rgba(51,224,255,.28), inset 0 0 40px rgba(0,0,0,.5);
+    box-shadow:0 0 24px rgba(51,224,255,.28), inset 0 0 40px rgba(0,0,0,.35);
     animation:panelIn .35s ease both; }
-  /* Screws at the corners of the deck. */
-  .panel::before, .panel::after { content:''; position:absolute; top:9px; width:8px; height:8px;
-    border-radius:50%; background:radial-gradient(circle at 35% 30%,#cfd6e4,#5a6274); }
-  .panel::before { left:9px; } .panel::after { right:9px; }
   @keyframes panelIn { from { opacity:0; transform:translateY(10px) } to { opacity:1; transform:none } }
   .panel h2 { font-family:'Bungee','Trebuchet MS',sans-serif; font-weight:normal;
     color:#ff3ea5; font-size:20px; letter-spacing:.03em; text-shadow:0 0 12px rgba(255,62,165,.8); }
@@ -205,7 +245,7 @@
     border-bottom:1px solid rgba(51,224,255,.45); }
   #start #credits a:hover { color:#ffd23a; border-color:#ffd23a; }
   @media (prefers-reduced-motion:reduce) {
-    #start h1, #start .tag, .panel, .mbtn::before, #ticker span,
+    #start h1, #start .tag, .panel, .mbtn::before, #ticker span, #scene .palm, #scene .sea::before,
     #pause h2, #goTitle, .roomcode { animation:none !important; } }
   .mbtn { position:relative; font-family:'Bungee','Trebuchet MS',sans-serif; font-weight:normal;
     font-size:15px; letter-spacing:.05em; padding:12px 0; width:min(320px,84vw); color:#fff;
@@ -217,6 +257,12 @@
   .mbtn.back { font-family:inherit; font-weight:bold; background:none; border-color:transparent;
     box-shadow:none; opacity:.75; font-size:14px; padding:8px 0; }
   .mbtn.back:hover { opacity:1; transform:none; box-shadow:none; }
+  #playBtn { color:#2a0830; border-color:#fff1c2;
+    background:linear-gradient(#ffe27a, #ffab4c 55%, #ff7a5c);
+    box-shadow:0 5px 0 #a8324f, 0 0 22px rgba(255,150,80,.5); }
+  #playBtn:hover { box-shadow:0 3px 0 #a8324f, 0 0 28px rgba(255,150,80,.7); }
+  #playBtn:active { box-shadow:0 1px 0 #a8324f, 0 0 16px rgba(255,150,80,.5); }
+  #playBtn::before { color:#2a0830; text-shadow:none; }
   #menuHello { font:bold 14px 'Courier New',monospace; letter-spacing:.12em; opacity:.95; }
   #menuHello b { color:#33e0ff; text-shadow:0 0 8px rgba(51,224,255,.6); }
   .field { display:flex; flex-direction:column; gap:6px; align-items:flex-start; width:min(320px,84vw); }
@@ -480,9 +526,25 @@
   </div>
 
   <div id="start">
-    <!-- Arcade scene: glow from the sign, synthwave grid, scanlines -->
     <div id="scene" aria-hidden="true">
-      <div class="grid"></div>
+      <svg width="0" height="0" style="position:absolute">
+        <symbol id="palmShape" viewBox="0 0 240 400">
+          <path d="M88 400C90 300 100 200 116 112L126 114C112 200 106 300 112 400Z"/>
+          <path d="M120 110Q170 60 222 112Q168 82 120 110Z"/>
+          <path d="M120 110Q70 55 14 104Q72 80 120 110Z"/>
+          <path d="M120 110Q150 40 196 36Q148 62 120 110Z"/>
+          <path d="M120 110Q96 38 50 30Q100 66 120 110Z"/>
+          <path d="M120 110Q178 100 204 172Q160 112 120 110Z"/>
+          <path d="M120 110Q62 104 38 172Q82 116 120 110Z"/>
+          <circle cx="114" cy="118" r="6"/><circle cx="126" cy="120" r="6"/>
+        </symbol>
+      </svg>
+      <div class="sun"></div>
+      <div class="skyline far"></div>
+      <div class="skyline near"></div>
+      <div class="sea"></div>
+      <svg class="palm palm-l" viewBox="0 0 240 400"><use href="#palmShape"/></svg>
+      <svg class="palm palm-r" viewBox="0 0 240 400"><use href="#palmShape"/></svg>
       <div class="scan"></div>
     </div>
 
