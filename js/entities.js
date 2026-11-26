@@ -1,4 +1,4 @@
-// LIBRE CITY · js/entities.js — game state, saved profile, player and weapons, traffic
+// VIBE CITY · js/entities.js — game state, saved profile, player and weapons, traffic
 // lights, entity factories (cars, pedestrians, service vehicles, coins) and initial spawn.
 
 // ---------- State ----------

@@ -1,4 +1,4 @@
-// LIBRE CITY · server/test-scoring.mjs — tests for scoring, bounties and the rocket
+// VIBE CITY · server/test-scoring.mjs — tests for scoring, bounties and the rocket
 // launcher in the authoritative simulation (Phase 2).
 //   Usage:  node server/test-scoring.mjs
 import runtime from './sim-runtime.js';

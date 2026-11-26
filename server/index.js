@@ -1,6 +1,6 @@
 'use strict';
 // =============================================================================
-// LIBRE CITY · server/index.js — multiplayer server (PHASE 1)
+// VIBE CITY · server/index.js — multiplayer server (PHASE 1)
 //
 // Replaces the P2P setup over PeerJS/WebRTC. The "server" used to be the host, i.e. one
 // of the phones: as soon as it was backgrounded the browser suspended it, its broker
@@ -1019,7 +1019,7 @@ if (PROFILE) {
   log('profilazione attiva (SIM_PROFILE): report ogni', PROFILE_MS + 'ms');
 }
 
-server.listen(PORT, HOST, () => log(`Libre City server in ascolto su ${HOST}:${PORT}`
+server.listen(PORT, HOST, () => log(`Vibe City server in ascolto su ${HOST}:${PORT}`
   + (STATIC_DIR ? ` · serve i file statici da ${STATIC_DIR}` : ' · solo WebSocket')));
 
 // Clean shutdown (Fly/Railway send SIGTERM on redeploy).

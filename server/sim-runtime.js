@@ -1,5 +1,5 @@
 'use strict';
-// LIBRE CITY · server/sim-runtime.js — HEADLESS harness for the simulation (Phase 2).
+// VIBE CITY · server/sim-runtime.js — HEADLESS harness for the simulation (Phase 2).
 //
 // Runs the SAME simulation as the client (core → city → entities → missions → army →
 // gameplay) on Node, without a browser, so the server can own the world (traffic,
@@ -30,7 +30,7 @@ const BUNDLE = SIM_FILES
   .map(f => `\n//# ${f} ------------------------------------------------------------\n` + fs.readFileSync(path.join(JS_DIR, f), 'utf8'))
   .join('\n');
 // Compiled ONCE and reused for every room (amortises the parse).
-const SCRIPT = new vm.Script(BUNDLE, { filename: 'libre-sim-bundle.js' });
+const SCRIPT = new vm.Script(BUNDLE, { filename: 'vibe-sim-bundle.js' });
 
 const { makeSimStubs } = require(path.join(JS_DIR, 'sim-stubs.js'));
 

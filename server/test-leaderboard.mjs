@@ -1,4 +1,4 @@
-// LIBRE CITY · server/test-leaderboard.mjs — tests for the SHARED leaderboard
+// VIBE CITY · server/test-leaderboard.mjs — tests for the SHARED leaderboard
 // (points per minute, persistence, wiring into the match lifecycle).
 //   Usage:  node server/test-leaderboard.mjs   (included in `npm test`)
 //

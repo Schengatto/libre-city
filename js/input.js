@@ -1,4 +1,4 @@
-// LIBRE CITY · js/input.js — keyboard, mouse and touch controls; enter/exit vehicles,
+// VIBE CITY · js/input.js — keyboard, mouse and touch controls; enter/exit vehicles,
 // carjacking, missions ON/OFF, horn/siren and the weapon bar.
 
 // ---------- Input ----------

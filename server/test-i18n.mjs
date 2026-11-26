@@ -1,4 +1,4 @@
-// LIBRE CITY · server/test-i18n.mjs — translation tests (it/en).
+// VIBE CITY · server/test-i18n.mjs — translation tests (it/en).
 //   Usage:  node server/test-i18n.mjs   (included in `npm test`)
 //
 // Covers the two things that break on their own:

@@ -1,8 +1,8 @@
 {
-  "name": "libre-city",
+  "name": "vibe-city",
   "version": "1.0.0",
   "private": true,
-  "description": "Libre City — gioco arcade di città con multigiocatore su server WebSocket.",
+  "description": "Vibe City - arcade city game with multiplayer over a WebSocket server.",
   "scripts": {
     "build": "node build.js",
     "server": "node server/index.js",

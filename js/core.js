@@ -1,4 +1,4 @@
-/* LIBRE CITY — top-down city driving game.
+/* VIBE CITY — top-down city driving game.
    Split into 10 classic scripts sharing the global scope (no modules, so it also
    runs from file://). Load order (see index.html): core → city → entities → input
    → missions → army → gameplay → render → audio → ui. Files call into each other

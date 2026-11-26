@@ -1,4 +1,4 @@
-// LIBRE CITY · server/test-sim.mjs — test of the headless harness (Phase 2, Stage 2a).
+// VIBE CITY · server/test-sim.mjs — test of the headless harness (Phase 2, Stage 2a).
 // Checks: ONE shared authoritative city per room; several players in the same world;
 // movement; area-of-interest snapshots; PvP combat with kill credit.
 //   Usage:  node server/test-sim.mjs

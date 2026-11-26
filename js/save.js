@@ -1,4 +1,4 @@
-// LIBRE CITY · js/save.js — SINGLE-PLAYER game saves.
+// VIBE CITY · js/save.js — SINGLE-PLAYER game saves.
 //
 // The city is generated deterministically from the room code (ROOM_CODE, see
 // core.js), so it is NOT saved: remembering the code is enough to regenerate it.

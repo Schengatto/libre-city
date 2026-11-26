@@ -1,9 +1,9 @@
-# Configurazione Fly.io per il server multigiocatore di Libre City.
+# Configurazione Fly.io per il server multigiocatore di Vibe City.
 # Deploy:  cd server && fly launch --no-deploy   (la prima volta, per creare l'app)
 #          fly deploy
-# Poi metti l'URL pubblico (wss://<app>.fly.dev) nel <meta name="lc-server"> di index.html.
+# Poi metti l'URL pubblico (wss://<app>.fly.dev) nel <meta name="vc-server"> di index.html.
 
-app = "libre-city"          # ← cambia con il nome della TUA app Fly
+app = "vibe-city"          # ← cambia con il nome della TUA app Fly
 primary_region = "cdg"      # ← una regione vicina ai giocatori (cdg=Parigi, iad=USA-est…)
 
 [build]

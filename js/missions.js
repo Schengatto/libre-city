@@ -1,4 +1,4 @@
-// LIBRE CITY · js/missions.js — missions: taxi 🚕, pizza 🍕, ambulance 🚑, patrol 🚔
+// VIBE CITY · js/missions.js — missions: taxi 🚕, pizza 🍕, ambulance 🚑, patrol 🚔
 // and fire brigade 🚒 (fires, hydrant and water droplets).
 
 // ---------- TAXI missions 🚕 ----------

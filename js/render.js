@@ -1,4 +1,4 @@
-// LIBRE CITY · js/render.js — all the drawing: world, buildings, vehicles, people,
+// VIBE CITY · js/render.js — all the drawing: world, buildings, vehicles, people,
 // effects, mission guides, crosshairs and minimap.
 
 // =============================================================================
