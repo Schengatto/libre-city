@@ -114,7 +114,7 @@ const STR = {
     'hud.fists': '👊 Pugni',
     'hud.gear': '⚙️ {g}ª',
     'hud.gearR': '⚙️ R',
-    'hud.miniTitle': 'Tocca per aprire la mappa a schermo intero',
+    'hud.miniTitle': 'Clicca o tocca per aprire la mappa a schermo intero (Maiusc+M)',
     'hud.mapClose': 'Chiudi mappa',
     'hud.mapCloseTitle': 'Chiudi (Esc)',
     'hud.meters': '{d} m',
@@ -122,7 +122,7 @@ const STR = {
     // ---- Controls guide, bottom left ----
     'hint.title': 'Mostra o nascondi la guida completa',
     'hint.short': '<b>WASD / frecce</b> muovi &amp; guida · <b>Mouse</b> mira · <b>Click sx</b> pugni/spari<br>' +
-      '<b>E</b> sali/scendi · <b>Spazio</b> clacson/sirena 🚨 · <b>1-5</b> armi · <b>M</b> missioni',
+      '<b>E</b> sali/scendi · <b>Spazio</b> clacson/sirena 🚨 · <b>1-5</b> armi · <b>M</b> missioni · <b>Maiusc+M</b> mappa',
     'hint.full': '<b>Tab</b> classifica della partita (in multigiocatore 🌐)<br>' +
       '👊 Parti a mani nude: 3 pugni stendono un passante<br>' +
       '🛒 Compra le armi all\'<b>ARMERIA</b> (pistola, mitra, fucile a pompa, lanciarazzi)<br>' +
@@ -169,7 +169,7 @@ const STR = {
     'lad.bounty': '🎯 Taglia',
 
     // ---- Title screen ----
-    'start.tag': 'La città è tua. Prenditela.',
+    'start.tag': 'Qui le regole sono solo un suggerimento.',
     'start.hiscore': 'HI-SCORE&nbsp; $0',
     'start.credits': 'CREDITI&nbsp;1',
     'start.credit': 'Realizzato da <a href="https://enricoschintu.com" target="_blank" rel="noopener">Enrico Schintu</a> · © 2026',
@@ -549,14 +549,14 @@ const STR = {
     'hud.fists': '👊 Fists',
     'hud.gear': '⚙️ {g}',
     'hud.gearR': '⚙️ R',
-    'hud.miniTitle': 'Tap to open the full-screen map',
+    'hud.miniTitle': 'Click or tap to open the full-screen map (Shift+M)',
     'hud.mapClose': 'Close map',
     'hud.mapCloseTitle': 'Close (Esc)',
     'hud.meters': '{d} m',
 
     'hint.title': 'Show or hide the full guide',
     'hint.short': '<b>WASD / arrows</b> move &amp; drive · <b>Mouse</b> aim · <b>Left click</b> punch/shoot<br>' +
-      '<b>E</b> enter/exit · <b>Space</b> horn/siren 🚨 · <b>1-5</b> weapons · <b>M</b> missions',
+      '<b>E</b> enter/exit · <b>Space</b> horn/siren 🚨 · <b>1-5</b> weapons · <b>M</b> missions · <b>Shift+M</b> map',
     'hint.full': '<b>Tab</b> match scoreboard (in multiplayer 🌐)<br>' +
       '👊 You start bare-handed: 3 punches knock a pedestrian down<br>' +
       '🛒 Buy weapons at the <b>GUN SHOP</b> (pistol, SMG, shotgun, rocket launcher)<br>' +
@@ -598,7 +598,7 @@ const STR = {
     'lad.deaths': '☠️ Deaths',
     'lad.bounty': '🎯 Bounty',
 
-    'start.tag': 'The city is yours. Take it.',
+    'start.tag': 'Around here, rules are just a suggestion.',
     'start.hiscore': 'HI-SCORE&nbsp; $0',
     'start.credits': 'CREDITS&nbsp;1',
     'start.credit': 'Made by <a href="https://enricoschintu.com" target="_blank" rel="noopener">Enrico Schintu</a> · © 2026',
