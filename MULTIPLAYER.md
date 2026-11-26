@@ -130,6 +130,34 @@ Il raw cala di circa 5 volte e conta per il canale `fast` P2P, che invia senza d
 deflate guadagna meno sul binario che sul JSON (senza context takeover solo -13%), perché il
 codec ha già tolto la ridondanza che deflate sfruttava; con context takeover resta un -44%.
 
+**LIBRE-34 fase 3** (snapshot delta rispetto all'ultimo snapshot confermato dal guest). Stessa
+misura, livello 6, seed 1-5, media / max, con `.tmp/host-bandwidth.mjs` esteso con una catena
+guest per `p2..p4` che risolve i frame come `netResolveSnapshot` e conferma il tick dopo 100 ms
+simulati. Misurati i primi 10 s dopo 1 s di riscaldamento:
+
+| Metrica | fase 2 | fase 3 |
+|---|---|---|
+| raw | 349 / 409 KB/s | 62 / 73 KB/s |
+| byte medi per frame raw | 3975 / 4656 B | 701 / 836 B |
+| senza context takeover | 184 / 211 KB/s | 54 / 64 KB/s |
+| con context takeover | 32 / 36 KB/s | 20 / 23 KB/s |
+| quota di frame delta | 0% / 0% | 100% / 100% |
+
+Nessun frame scartato con gli ack a 100 ms. Il controllo `ACK=off` (nessun `sa`, solo frame
+pieni) riproduce la fase 2 entro lo 0,5%. Il raw cala di circa 5,7 volte e conta per il canale
+`fast` P2P, che invia senza deflate; il deflate guadagna meno sul delta (senza context takeover
+-71%, con context takeover -38%) perché il delta ha già tolto la ridondanza tra un frame e l'altro.
+
+Protocollo:
+
+- Il guest manda `sa` (tick dell'ultimo snapshot risolto) in ogni input; l'host lo registra per
+  guest e codifica contro quel tick.
+- Host e guest tengono una storia di 32 snapshot; se il tick di base non c'è più o il delta non
+  si applica, il guest svuota la storia e smette di mandare `sa`.
+- Frame pieno (senza `base`) a ingresso, cambio host e perdita della base.
+- Gli eventi (`fx`, `me.ev`) restano fuori dal delta: inline sul WS e nel messaggio `we` sul
+  canale `rel`.
+
 ### Trasporto P2P (WebRTC)
 
 Snapshot e input dei guest non passano più dal VPS: viaggiano su un DataChannel WebRTC
@@ -150,7 +178,8 @@ guest ⇄ VPS ⇄ host      (solo signaling e fallback WS)
 - Solo STUN, nessun TURN: dove il NAT simmetrico impedisce il P2P il guest resta su WS.
 - `?rtc=off` disattiva il P2P sul client (guest sempre su WS), utile per confronti.
 - Cambio host: alla migrazione il guest chiude il link, azzera il tick dell'ultimo snapshot
-  (`net.lastSnapTick`) e si connette al nuovo host; chi viene eletto host chiude il lato guest.
+  (`net.lastSnapTick`) e la storia degli snapshot (`net.snapshotRing`, con `net.snapshotAckTick`),
+  poi si connette al nuovo host; chi viene eletto host chiude il lato guest.
 - Overlay `?netstats` (o F3): la riga `transport` vale `P2P`, `WS` oppure `host`.
 - Solo STUN: host e guest vedono l'IP pubblico l'uno dell'altro (candidate srflx), come in
   Fase 1 con PeerJS. `?rtc=off` lo evita per un guest; nasconderlo richiederebbe un relay TURN (non usato).
