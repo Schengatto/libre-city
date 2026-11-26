@@ -107,5 +107,18 @@ let threw = false;
 try { bootStorageMove(makeThrowingStorage(), location, history); } catch { threw = true; }
 ok(!threw && location.replaced === 'https://vibecity.schengatto.com/', 'throwing storage on legacy host still redirects');
 
+console.log('auto-boot');
+const autoBootSource = fs.readFileSync(path.join(JS_DIR, 'storage-move.js'), 'utf8');
+const blockedStorageLocation = makeLocation('libre-city.schengatto.com', '', '');
+const blockedStorageContext = vm.createContext({ TextEncoder, TextDecoder, btoa, atob, Uint8Array, location: blockedStorageLocation, history: makeHistory() });
+Object.defineProperty(blockedStorageContext, 'localStorage', { get() { throw new Error('SecurityError'); } });
+vm.runInContext(autoBootSource, blockedStorageContext, { filename: 'storage-move.js' });
+ok(blockedStorageLocation.replaced === 'https://vibecity.schengatto.com/', 'auto-boot redirects the legacy host when localStorage access throws');
+
+const throwingHistoryStorage = makeStorage({ 'libreCity.lang': '"en"' });
+location = makeLocation('vibecity.schengatto.com', '', fragment);
+bootStorageMove(throwingHistoryStorage, location, { replaceState() { throw new Error('history blocked'); } });
+ok(throwingHistoryStorage.getItem('vibeCity.lang') === '"en"' && throwingHistoryStorage.getItem('libreCity.lang') === null, 'prefix migration still runs when replaceState throws');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

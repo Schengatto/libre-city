@@ -82,18 +82,24 @@ function legacyHostRedirectUrl(locationLike, storage) {
 function bootStorageMove(storage, locationLike, historyLike) {
   const onLegacyHost = locationLike.hostname === LEGACY_HOST;
   if (!onLegacyHost) {
-    const hash = locationLike.hash || '';
-    const separator = hash.indexOf('=');
-    if (separator > 0 && hash.slice(1, separator) === IMPORT_FRAGMENT_KEY) {
-      const entries = decodeStorageImport(hash.slice(separator + 1));
-      if (entries) importStorage(storage, entries);
-      historyLike.replaceState(null, '', locationLike.pathname + locationLike.search);
-    }
+    try {
+      const hash = locationLike.hash || '';
+      const separator = hash.indexOf('=');
+      if (separator > 0 && hash.slice(1, separator) === IMPORT_FRAGMENT_KEY) {
+        const entries = decodeStorageImport(hash.slice(separator + 1));
+        if (entries) importStorage(storage, entries);
+        historyLike.replaceState(null, '', locationLike.pathname + locationLike.search);
+      }
+    } catch {}
   }
   try { migrateStoragePrefix(storage); } catch {}
   if (onLegacyHost) locationLike.replace(legacyHostRedirectUrl(locationLike, storage));
 }
 
 try {
-  if (typeof localStorage !== 'undefined' && typeof location !== 'undefined') bootStorageMove(localStorage, location, history);
+  if (typeof location !== 'undefined') {
+    let browserStorage = null;
+    try { browserStorage = localStorage; } catch {}
+    bootStorageMove(browserStorage, location, history);
+  }
 } catch {}
