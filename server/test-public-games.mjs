@@ -62,6 +62,7 @@ ok(indexHtml.indexOf('id="mpPublicBtn"') !== -1 && indexHtml.indexOf('id="mpPubl
 ok(/if \(id === 'publicPanel'\) startPublicGamesPolling\(\); else stopPublicGamesPolling\(\);/.test(functionSource('showPanel')), 'showPanel starts polling only for publicPanel and stops it for any other panel');
 ok(/if \(started\) return;\n\s*stopPublicGamesPolling\(\);/.test(functionSource('startMatch')), 'startMatch stops the polling');
 ok(/epoch !== publicGamesEpoch\) return;\n\s*publicGamesList =/.test(functionSource('fetchPublicGames')), 'a fetch resolving after leaving does not render');
+ok(/rooms\.length === 1 \? 'pub\.countOne' : 'pub\.count'/.test(functionSource('renderPublicGames')), 'the count line uses the singular key for exactly one game');
 ok(/signal: AbortSignal\.timeout\(PUBLIC_GAMES_POLL_MS\)/.test(functionSource('fetchPublicGames')), 'the rooms fetch times out so polling and Refresh never stay blocked');
 ok(/Number\.isInteger\(room\.leftSec\)/.test(functionSource('isRenderablePublicRoom')), 'only integer leftSec reaches formatTimeLeft');
 ok(/_joinIntent\.auto && ROOM_FROM_URL === _joinIntent\.code && playerName/.test(uiSource), 'auto-join boot branch is guarded by code and player name');

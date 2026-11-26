@@ -452,7 +452,7 @@ function renderPublicGames() {
   const rooms = loaded ? visiblePublicRooms(publicGamesList, elapsedSec) : [];
   msg.textContent = publicGamesFailed ? t('pub.error') : '';
   msg.classList.toggle('hidden', !publicGamesFailed);
-  count.textContent = loaded ? t('pub.count', { n: rooms.length }) : '';
+  count.textContent = loaded ? t(rooms.length === 1 ? 'pub.countOne' : 'pub.count', { n: rooms.length }) : '';
   table.classList.toggle('hidden', rooms.length === 0);
   empty.classList.toggle('hidden', !loaded || rooms.length > 0);
   create.classList.toggle('hidden', !loaded || rooms.length > 0);
