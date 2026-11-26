@@ -287,12 +287,14 @@ function onServerMessage(m) {
       break;
     }
     case 'rtc': if (simHostActive()) rtcHostOnSignal(m.from, m.k, m.d); else rtcGuestOnSignal(m.from, m.k, m.d); break;
-    case 'host':
+    case 'host': {
+      const hostChanged = (m.id ?? null) !== net.hostId;
       net.hostId = m.id ?? null;
       netResetSnapshotBaseline();
       netSyncHostRole();
-      if (net.hostId !== null && net.hostId !== net.myId) toast(t('net.newHost', { name: m.name }));
+      if (hostChanged && net.hostId !== null && net.hostId !== net.myId) toast(t('net.newHost', { name: m.name }));
       break;
+    }
     case 'end': simHostStop(); if (started) endGame('time'); break;
     case 'no':
       if (m.r === 'notfound') { net.wantOpen = false; clearTimeout(net.reconnT); if (started) endGame('time'); }

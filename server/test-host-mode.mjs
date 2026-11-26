@@ -345,6 +345,26 @@ try {
   check(keptRow && keptRow.s === 111, 'the oversized hst is ignored and the last valid hst is kept');
   closeAll([hardenedHost.ws, hardenedLink, relink]);
 
+  console.log('host rebind broadcast');
+  {
+  const rebindHost = await createRoom('HOSTR1', 'Ray');
+  const rebindGuest = await joinRoom('HOSTR1', 'Sue');
+  const countHostMessages = () => rebindGuest.ws.inbox.filter(message => message.t === 'host').length;
+  const hostMessagesBeforeFirstBind = countHostMessages();
+  const firstLink = await openHostLink('HOSTR1', rebindHost.token);
+  check(await waitFor(() => findType(firstLink, 'hoststart')), 'the first hostlink binds');
+  await wait(SILENCE_MS);
+  check(countHostMessages() === hostMessagesBeforeFirstBind,'the first bind after the election does not broadcast host again');
+  const secondLink = await openHostLink('HOSTR1', rebindHost.token);
+  check(await waitFor(() => findType(secondLink, 'hoststart')), 'the same host binds a second hostlink');
+  check(await waitFor(() => countHostMessages() === hostMessagesBeforeFirstBind + 1), 'rebinding the host link broadcasts host to the guest');
+  const rebindBroadcast = rebindGuest.ws.inbox.filter(message => message.t === 'host').pop();
+  check(rebindBroadcast.id === rebindHost.id && rebindBroadcast.name === 'Ray', 'the rebind broadcast names the same host');
+  await wait(SILENCE_MS);
+  check(countHostMessages() === hostMessagesBeforeFirstBind + 1, 'the rebind broadcasts host exactly once');
+  closeAll([rebindHost.ws, rebindGuest.ws, firstLink, secondLink]);
+  }
+
   console.log('binary snapshot relay');
   {
   const binaryHost = await createRoom('HOSTJ1', 'Joe');

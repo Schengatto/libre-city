@@ -128,7 +128,7 @@ ok(decodeBinary(5) === null && decodeBinary(null) === null && decodeBinary([1, 2
 ok(vm.runInContext('netDecodeBinarySnapshot(new Uint8Array([1, 2, 3, 4]).buffer)', codecContext) === null, 'garbage binary bytes are rejected');
 
 function createNetGuestHarness({ guestSendResult = false, hostActive = false } = {}) {
-  const calls = { netSend: [], simHostSendInput: [], rtcGuestSendInput: [], rtcGuestConnect: [], rtcGuestClose: 0, rtcHostSignal: [], rtcGuestSignal: [] };
+  const calls = { netSend: [], simHostSendInput: [], rtcGuestSendInput: [], rtcGuestConnect: [], rtcGuestClose: 0, rtcHostSignal: [], rtcGuestSignal: [], toasts: [] };
   const context = vm.createContext({
     net: { hostId: null, myId: 'p1', authoritative: true, lastSnapTick: 10, snapshotRing: new Map(), snapshotAckTick: null, snap: 'previous', inSeq: 0, firePending: false, enterEdge: false, hornEdge: false, weaponReq: null, lastVR: 0, stats: {} },
     performance, player: { x: 0, y: 0, car: null }, vw: 800, vh: 600, mDownL: false,
@@ -143,7 +143,7 @@ function createNetGuestHarness({ guestSendResult = false, hostActive = false } =
     rtcHostOnSignal: (from, k, d) => calls.rtcHostSignal.push([from, k, d]),
     rtcGuestOnSignal: (from, k, d) => calls.rtcGuestSignal.push([from, k, d]),
     rtcFreshSnapshot: (lastTick, tick) => !Number.isFinite(tick) || tick > lastTick,
-    toast: () => {}, t: key => key,
+    toast: message => calls.toasts.push(message), t: key => key,
   });
   const names = ['netSendInput', 'netOnSnapshot', 'netSyncHostRole', 'onServerMessage', 'netResetSnapshotBaseline', 'netResolveSnapshot'];
   const declarations = names.map(name => extractTopLevel(netSource, name)).join('\n');
@@ -188,6 +188,14 @@ migration.net.snapshotAckTick = 8;
 migration.api.onServerMessage({ t: 'host', id: 'p3', name: 'Zed' });
 ok(migration.net.lastSnapTick === -1 && migration.calls.rtcGuestConnect.join() === 'p3', 'host change resets the snapshot tick and connects to the new host');
 ok(migration.net.snapshotRing.size === 0 && migration.net.snapshotAckTick === null, 'host change drops the delta baseline');
+ok(migration.calls.toasts.length === 1, 'a host change to another player shows the new host toast');
+const sameHostRebind = createNetGuestHarness();
+sameHostRebind.net.hostId = 'p3';
+sameHostRebind.net.snapshotRing.set(8, { tick: 8 });
+sameHostRebind.net.snapshotAckTick = 8;
+sameHostRebind.api.onServerMessage({ t: 'host', id: 'p3', name: 'Zed' });
+ok(sameHostRebind.net.lastSnapTick === -1 && sameHostRebind.net.snapshotRing.size === 0 && sameHostRebind.net.snapshotAckTick === null, 'the same host rebinding its link resets the snapshot tick and the delta baseline');
+ok(sameHostRebind.calls.toasts.length === 0 && sameHostRebind.calls.rtcGuestConnect.join() === 'p3', 'the same host rebinding its link shows no toast and reconnects to it');
 const electedSelf = createNetGuestHarness();
 electedSelf.api.onServerMessage({ t: 'host', id: 'p1' });
 ok(electedSelf.calls.rtcGuestConnect.length === 0 && electedSelf.calls.rtcGuestClose === 1 && electedSelf.net.stats.transport === 'host', 'electing myself closes the guest link and shows host');
