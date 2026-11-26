@@ -260,7 +260,7 @@ l'URL a runtime con `window.VIBE_CITY_SERVER = 'wss://…'` o `?server=wss://…
 
 | msg | quando |
 |-----|--------|
-| `create {code,name,pass,max,minutes}` | l'host crea la stanza |
+| `create {code,name,pass,max,minutes[,title,public]}` | l'host crea la stanza |
 | `join {code,name,pass[,token]}` | entra (o riaggancia col `token`) |
 | `s {…}` | stato del giocatore (~15/s): posizione, mezzo, statistiche |
 | `shot`/`punch`/`rocket`/`park`/`gone` | eventi di gioco |
@@ -279,6 +279,34 @@ l'URL a runtime con `window.VIBE_CITY_SERVER = 'wss://…'` o `?server=wss://…
 
 Danni PvP: li decide **chi li subisce** (vittima autoritativa). Nessun conflitto
 tra simulazioni finché la Fase 2 non le unifica.
+
+---
+
+## Stanze pubbliche
+
+`create` accetta due campi facoltativi:
+
+- `title`: nome della partita. Privato dei caratteri di controllo, tagliato a 24
+  caratteri; se resta vuoto vale il nome del giocatore.
+- `public`: solo `true` rende la stanza pubblica, qualsiasi altro valore la lascia
+  privata (comportamento di sempre). Una stanza pubblica **ignora `pass`**: chiunque
+  abbia un posto libero può entrare.
+
+Il menu legge l'elenco in **HTTP semplice**, come la classifica (stessi header:
+`cache-control: no-store`, `access-control-allow-origin: *`):
+
+```
+GET /rooms
+→ { rooms:[ {code,title,players,max,leftSec} ] }
+```
+
+- Compaiono solo le stanze pubbliche non finite, con almeno un giocatore connesso e
+  almeno 60 s di partita davanti. Le private non compaiono mai.
+- `leftSec` sono i secondi rimasti; `null` per una partita senza limite di tempo.
+- Ordine: prima le stanze con un posto libero, poi più giocatori, poi più tempo
+  rimasto (`null` conta come il massimo).
+
+Test: `node server/test-public-rooms.mjs` (nella catena di `npm test` in `server/`).
 
 ---
 

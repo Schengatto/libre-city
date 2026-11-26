@@ -643,11 +643,12 @@ function onHostLinkClose(ws) {
 }
 
 // ---------- Entering a match ------------------------------------------------
+const normalizedPlayerName = hello => String(hello.name || 'Ospite').slice(0, 14);
 function addPlayer(ws, room, hello) {
   const n = ++room.idSeq;                    // 1 for the creator, then 2, 3, …
   const id = 'p' + n;
   const p = {
-    id, name: String(hello.name || 'Ospite').slice(0, 14), shirtIdx: (n - 1) % SHIRTS,  // creator → shirt 0
+    id, name: normalizedPlayerName(hello), shirtIdx: (n - 1) % SHIRTS,  // creator → shirt 0
     token: crypto.randomUUID(), ws: null, gone: false, dropTimer: null,
     playedMs: 0, activeSince: 0, recorded: false,   // shared-leaderboard accounting
     dev: deviceOf(hello), build: normalizedBuild(hello.build),
@@ -699,14 +700,38 @@ function handleCreate(ws, m) {
   if (liveRooms() >= MAX_ROOMS) { enqueue(ws, { ...m, code }); return; }
   createRoom(ws, m);
 }
+const ROOM_TITLE_MAX_LENGTH = 24;
+const PUBLIC_ROOM_MIN_LEFT_MS = 60_000;
+function sanitizeRoomTitle(rawTitle, fallbackName) {
+  const title = String(rawTitle || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, ROOM_TITLE_MAX_LENGTH).trim();
+  return title || fallbackName;
+}
+function publicRoomList() {
+  const nowMs = now();
+  const listed = [];
+  for (const room of rooms.values()) {
+    if (!room.public || room.ended) continue;
+    const players = activeCount(room);
+    const leftMs = roomFreeAt(room) - nowMs;
+    if (players === 0 || leftMs < PUBLIC_ROOM_MIN_LEFT_MS) continue;
+    listed.push({
+      code: room.code, title: room.title, players, max: room.max,
+      leftSec: room.minutes ? Math.round(leftMs / 1000) : null,
+    });
+  }
+  const leftRank = room => room.leftSec === null ? Infinity : room.leftSec;
+  return listed.sort((a, b) =>
+    (a.players >= a.max) - (b.players >= b.max) || b.players - a.players || leftRank(b) - leftRank(a));
+}
 // The actual creation: called immediately, or from the queue when your turn comes.
 function createRoom(ws, m) {
   const code = String(m.code || '').toUpperCase();
   const existing = rooms.get(code);
   if (existing && !existing.ended && activeCount(existing) > 0) { sendRaw(ws, { t: 'no', r: 'exists' }); return; }
   if (existing) destroyRoom(existing);
+  const isPublic = m.public === true;
   const room = {
-    code, pass: String(m.pass || ''), max: clamp(+m.max || 4, 2, MAX_PLAYERS_CAP),
+    code, pass: isPublic ? '' : String(m.pass || ''), title: sanitizeRoomTitle(m.title, normalizedPlayerName(m)), public: isPublic, max: clamp(+m.max || 4, 2, MAX_PLAYERS_CAP),
     minutes: Math.max(0, +m.minutes || 0), police: typeof m.police === 'boolean' ? m.police : true, startAt: now(),
     idSeq: 0, players: new Map(), endTimer: null, ended: false,
     hostId: null, hostLink: null, hostLinkBound: false, hostBindStartedAt: 0, hostLastFrameAt: 0, hostState: null, resigned: new Set(), hostWatchTimer: null,
@@ -752,7 +777,7 @@ function handleJoin(ws, m) {
   // there): to anyone arriving now it is as if it were gone, since the world is no longer
   // being simulated.
   if (room.ended) { sendRaw(ws, { t: 'no', r: 'notfound' }); return; }
-  if ((room.pass || '') !== String(m.pass || '')) { sendRaw(ws, { t: 'no', r: 'pass' }); return; }
+  if (!room.public && (room.pass || '') !== String(m.pass || '')) { sendRaw(ws, { t: 'no', r: 'pass' }); return; }
   if (activeCount(room) >= room.max) { sendRaw(ws, { t: 'no', r: 'full' }); return; }
   addPlayer(ws, room, m);
 }
@@ -905,6 +930,12 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8',
                          'cache-control': 'no-store', 'access-control-allow-origin': '*' });
     res.end(JSON.stringify(leaderboard.snapshot(limit)));
+    return;
+  }
+  if (route === '/rooms') {
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8',
+                         'cache-control': 'no-store', 'access-control-allow-origin': '*' });
+    res.end(JSON.stringify({ rooms: publicRoomList() }));
     return;
   }
   if (STATIC_DIR && (req.method === 'GET' || req.method === 'HEAD')) { serveStatic(req, res); return; }
