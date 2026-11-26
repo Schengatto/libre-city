@@ -200,6 +200,7 @@ console.log('client train clock');
   Object.assign(netClient, {
     updateTrainKinematics: clock => netClient.trainClocks.push(clock), playerSirenOn: () => false,
     netMakeWorldCar: () => ({}), makeGhost: () => ({}), evText: () => ' ', rtcFreshSnapshot: () => true,
+    netResolveSnapshot: snapshot => snapshot,
   });
   vm.runInContext([clockSource, ...['NET_SHIRTS', 'netOnSnapshot', 'updateNetClient'].map(name => extractTopLevel(netSource, name))].join('\n'), netClient);
   vm.runInContext('updateNetClient()', netClient);
