@@ -4,6 +4,10 @@ const LEGACY_STORAGE_PREFIX = 'libreCity.';
 const LEGACY_HOST = 'libre-city.schengatto.com';
 const CANONICAL_ORIGIN = 'https://vibecity.schengatto.com';
 const IMPORT_FRAGMENT_KEY = 'vc-import';
+const IMPORT_MAX_ENCODED_LENGTH = 200000;
+const IMPORT_NAME_MAX_LENGTH = 14;
+const IMPORT_SCORES_MAX_ENTRIES = 10;
+const IMPORT_LANGUAGES = ['it', 'en'];
 
 function listStorageKeys(storage, prefix) {
   const keys = [];
@@ -42,23 +46,51 @@ function encodeStorageExport(storage) {
   try {
     const entries = {};
     for (const key of listStorageKeys(storage, STORAGE_PREFIX)) entries[key] = storage.getItem(key);
-    return Object.keys(entries).length ? textToBase64Url(JSON.stringify(entries)) : '';
+    if (!Object.keys(entries).length) return '';
+    const encoded = textToBase64Url(JSON.stringify(entries));
+    return encoded.length > IMPORT_MAX_ENCODED_LENGTH ? '' : encoded;
   } catch { return ''; }
 }
 
-function isJsonText(text) {
-  try { JSON.parse(text); return true; } catch { return false; }
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isImportedName(value) {
+  return typeof value === 'string' && value.length >= 1 && value.length <= IMPORT_NAME_MAX_LENGTH;
+}
+
+function isImportedScore(value) {
+  return isPlainObject(value)
+    && isImportedName(value.name)
+    && Number.isFinite(value.score)
+    && (value.min === undefined || Number.isFinite(value.min))
+    && (value.date === undefined || Number.isFinite(value.date));
+}
+
+const IMPORT_VALIDATORS = {
+  [STORAGE_PREFIX + 'name']: isImportedName,
+  [STORAGE_PREFIX + 'minutes']: value => Number.isFinite(value),
+  [STORAGE_PREFIX + 'audio']: value => typeof value === 'boolean',
+  [STORAGE_PREFIX + 'music']: value => typeof value === 'boolean',
+  [STORAGE_PREFIX + 'lang']: value => IMPORT_LANGUAGES.includes(value),
+  [STORAGE_PREFIX + 'scores']: value => Array.isArray(value) && value.length <= IMPORT_SCORES_MAX_ENTRIES && value.every(isImportedScore),
+  [STORAGE_PREFIX + 'save']: isPlainObject,
+};
+
+function isImportableEntry(key, text) {
+  if (typeof text !== 'string' || !Object.hasOwn(IMPORT_VALIDATORS, key)) return false;
+  try { return IMPORT_VALIDATORS[key](JSON.parse(text)); } catch { return false; }
 }
 
 function decodeStorageImport(encoded) {
   try {
-    if (!/^[A-Za-z0-9_-]+$/.test(encoded)) return null;
+    if (typeof encoded !== 'string' || encoded.length > IMPORT_MAX_ENCODED_LENGTH || !/^[A-Za-z0-9_-]+$/.test(encoded)) return null;
     const parsed = JSON.parse(base64UrlToText(encoded));
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
     const entries = {};
     for (const key of Object.keys(parsed)) {
-      const value = parsed[key];
-      if (key.startsWith(STORAGE_PREFIX) && typeof value === 'string' && isJsonText(value)) entries[key] = value;
+      if (isImportableEntry(key, parsed[key])) entries[key] = parsed[key];
     }
     return entries;
   } catch { return null; }
