@@ -1,6 +1,6 @@
 (function () {
   // dev-only:begin
-  const SIM_SCRIPT_FILES = ['core.js', 'i18n.js', 'city.js', 'train.js', 'entities.js', 'missions.js', 'army.js', 'gameplay.js', 'snapshot-codec.js', 'server-sim-glue.js'];
+  const SIM_SCRIPT_FILES = ['core.js', 'i18n.js', 'city.js', 'train.js', 'entities.js', 'missions.js', 'army.js', 'gameplay.js', 'snapshot-codec.js', 'snapshot-delta.js', 'server-sim-glue.js'];
   // dev-only:end
   const STEP_MS = 1000 / 60;
   const MAX_CATCHUP_MS = 250;
@@ -23,6 +23,7 @@
   let tickCount = 0;
   const memberIds = new Set();
   const p2pGuestIds = new Set();
+  const guestBaselines = new Map();
 
   function post(message, transfer) { self.postMessage(message, transfer); }
 
@@ -68,21 +69,40 @@
     }
   }
 
-  function postGuestFrame(id, snapshot) {
-    const hasEvents = snapshot.me.ev !== null || snapshot.fx.length > 0;
-    const events = hasEvents ? JSON.stringify({ t: 'we', tick: snapshot.tick, ev: snapshot.me.ev, fx: snapshot.fx }) : null;
-    snapshot.me.ev = null;
-    snapshot.fx = [];
-    const frame = snapshotEncode(snapshot);
+  function guestBaselineFor(id) {
+    let baseline = guestBaselines.get(id);
+    if (!baseline) {
+      baseline = { history: new Map(), ackTick: null };
+      guestBaselines.set(id, baseline);
+    }
+    return baseline;
+  }
+
+  function noteSnapshotAck(id, acknowledgedTick) {
+    if (id === hostId || !memberIds.has(id)) return;
+    guestBaselineFor(id).ackTick = Number.isFinite(acknowledgedTick) ? acknowledgedTick : null;
+  }
+
+  function guestWireSnapshot(id, state) {
+    const baseline = guestBaselineFor(id);
+    const base = baseline.ackTick === null ? undefined : baseline.history.get(baseline.ackTick);
+    const wire = (base && snapshotDeltaEncode(base, state)) || state;
+    snapshotDeltaRemember(baseline.history, state);
+    return wire;
+  }
+
+  function postGuestFrame(id, state, fx, ev) {
+    const events = ev !== null || fx.length > 0 ? JSON.stringify({ t: 'we', tick: state.tick, ev, fx }) : null;
+    const frame = snapshotEncode(guestWireSnapshot(id, state));
     post({ type: 'guestFrame', id, snapshot: frame, events }, [frame.buffer]);
   }
 
-  function sendBinarySnapshot(id, snapshot) {
+  function sendBinarySnapshot(id, state, fx, ev) {
     if (!socket || socket.readyState !== OPEN_SOCKET_STATE) return;
     if (guestIdEncoder === null) guestIdEncoder = new TextEncoder();
     const idBytes = guestIdEncoder.encode(id);
     if (idBytes.length === 0 || idBytes.length > MAX_GUEST_ID_BYTES) return;
-    const frame = snapshotEncode(snapshot);
+    const frame = snapshotEncode(snapshotDeltaWithEvents(guestWireSnapshot(id, state), fx, ev));
     const message = new Uint8Array(2 + idBytes.length + frame.length);
     message[0] = BINARY_SNAPSHOT_FRAME_BYTE;
     message[1] = idBytes.length;
@@ -97,9 +117,13 @@
       const snapshot = sim.snapshotFor(id);
       if (!snapshot) continue;
       snapshot.sc = scores;
-      if (id === hostId) post({ type: 'snapshot', snapshot });
-      else if (p2pGuestIds.has(id)) postGuestFrame(id, snapshot);
-      else sendBinarySnapshot(id, snapshot);
+      if (id === hostId) {
+        post({ type: 'snapshot', snapshot });
+        continue;
+      }
+      const { state, fx, ev } = snapshotDeltaSplitEvents(snapshot);
+      if (p2pGuestIds.has(id)) postGuestFrame(id, state, fx, ev);
+      else sendBinarySnapshot(id, state, fx, ev);
     }
     sim.clearFx();
   }
@@ -143,13 +167,17 @@
         post({ type: 'ready' });
         break;
       case 'i':
-        if (sim && typeof message.id === 'string') sim.applyInput(message.id, message);
+        if (sim && typeof message.id === 'string') {
+          noteSnapshotAck(message.id, message.sa);
+          sim.applyInput(message.id, message);
+        }
         break;
       case 'join':
         if (sim && typeof message.id === 'string') addMember(message.id, message.name, message.shirtIdx);
         break;
       case 'leave':
         p2pGuestIds.delete(message.id);
+        guestBaselines.delete(message.id);
         if (sim && memberIds.delete(message.id)) sim.removePlayer(message.id);
         break;
     }
@@ -162,7 +190,9 @@
   }
 
   function applyGuestInput(id, input) {
-    if (sim && input && typeof id === 'string' && id !== hostId && memberIds.has(id)) sim.applyInput(id, input);
+    if (!sim || !input || typeof id !== 'string' || id === hostId || !memberIds.has(id)) return;
+    noteSnapshotAck(id, input.sa);
+    sim.applyInput(id, input);
   }
 
   function openHostLink(url, roomCode, token) {
@@ -189,6 +219,7 @@
     sim = null;
     memberIds.clear();
     p2pGuestIds.clear();
+    guestBaselines.clear();
     if (socket) {
       const closingSocket = socket;
       socket = null;

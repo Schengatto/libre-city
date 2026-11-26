@@ -166,6 +166,147 @@ harness.advance(20);
 const ticksAfterStall = lastGuestTick() - tickBeforeStall;
 ok(ticksAfterStall >= 14 && ticksAfterStall <= 20, 'a long stall catches up at most 250 ms of ticks (' + ticksAfterStall + ')');
 
+console.log('delta frames');
+const { snapshotDeltaApply } = require('../js/snapshot-delta.js');
+const SNAPSHOT_ROUND_MS = 40;
+function startGuestRoom() {
+  const room = createWorkerHarness();
+  room.run('sim-worker.js');
+  room.send({ type: 'start', url: 'ws://fake/host', code: 'test', token: 'tok-d', hostId: 'p1' });
+  const roomSocket = FakeSocket.instances[FakeSocket.instances.length - 1];
+  roomSocket.onopen();
+  deliver(roomSocket, { t: 'hoststart', roster: [{ id: 'p1', name: 'Host', shirtIdx: 0 }, { id: 'p2', name: 'Guest', shirtIdx: 1 }], state: [] });
+  let seq = 0;
+  return {
+    room,
+    socket: roomSocket,
+    frames: () => binaryFramesTo(roomSocket, 'p2').map(decodeGuestFrame),
+    p2pFrames: () => room.posted.filter(m => m.type === 'guestFrame' && m.id === 'p2'),
+    ackOverSocket: sa => deliver(roomSocket, { t: 'i', id: 'p2', seq: ++seq, sa }),
+    ackOverP2p: sa => room.send({ type: 'guestInput', id: 'p2', input: { seq: ++seq, sa } }),
+    round: (rounds = 1) => room.advance(rounds * SNAPSHOT_ROUND_MS),
+    queueEvent: () => vm.runInContext('playerById("p2").events = [{ k: "toast", m: "hello" }]', room.scope),
+  };
+}
+const lastTick = frames => frames[frames.length - 1].tick;
+
+const noAck = startGuestRoom();
+noAck.round(10);
+ok(noAck.frames().length >= 5 && noAck.frames().every(frame => !('base' in frame)), 'without sa every frame to p2 is full');
+
+const acked = startGuestRoom();
+acked.round(5);
+const ackedFullFrame = acked.frames().pop();
+const framesBeforeAck = acked.frames().length;
+acked.ackOverSocket(ackedFullFrame.tick);
+acked.round(2);
+const firstDelta = acked.frames()[framesBeforeAck];
+ok(firstDelta && firstDelta.base === ackedFullFrame.tick, 'the first frame after a valid sa is a delta against that tick');
+const appliedDelta = firstDelta && snapshotDeltaApply(ackedFullFrame, firstDelta);
+ok(appliedDelta !== null && appliedDelta && appliedDelta.tick === firstDelta.tick, 'the delta applies on the decoded acked frame');
+ok(acked.frames().slice(framesBeforeAck).every(frame => frame.base === ackedFullFrame.tick), 'frames keep using the acked base until a newer ack arrives');
+acked.round(40);
+ok(!('base' in acked.frames().pop()), 'after 40 rounds without a new ack the base left the history and the frame is full');
+
+for (const [label, invalidAck] of [['an unknown tick', 999999], ['a non-numeric value', 'x'], ['an infinite value', Infinity]]) {
+  const invalid = startGuestRoom();
+  invalid.round(5);
+  invalid.ackOverSocket(lastTick(invalid.frames()));
+  invalid.round(2);
+  ok('base' in invalid.frames().pop(), 'precondition: a valid ack gives deltas (' + label + ')');
+  invalid.ackOverSocket(invalidAck);
+  const framesBeforeInvalid = invalid.frames().length;
+  invalid.round(2);
+  ok(invalid.frames().slice(framesBeforeInvalid).every(frame => !('base' in frame)), 'sa as ' + label + ' gives full frames');
+}
+
+const dropped = startGuestRoom();
+dropped.round(5);
+dropped.ackOverSocket(lastTick(dropped.frames()));
+dropped.round(2);
+dropped.socket.onmessage({ data: JSON.stringify({ t: 'i', id: 'p2', seq: 99 }) });
+const framesBeforeDrop = dropped.frames().length;
+dropped.round(2);
+ok(dropped.frames().slice(framesBeforeDrop).every(frame => !('base' in frame)), 'an input without sa after a valid one gives full frames');
+
+const hostAck = startGuestRoom();
+hostAck.round(5);
+const hostSnapshotTick = hostAck.room.posted.filter(m => m.type === 'snapshot').pop().snapshot.tick;
+deliver(hostAck.socket, { t: 'i', id: 'p1', seq: 1, sa: hostSnapshotTick });
+hostAck.room.send({ type: 'input', input: { ax: 0, ay: 0, sa: hostSnapshotTick } });
+hostAck.round(3);
+const hostAckSnapshots = hostAck.room.posted.filter(m => m.type === 'snapshot');
+ok(hostAckSnapshots.length > 5 && hostAckSnapshots.every(m => !('base' in m.snapshot) && m.snapshot.fx !== undefined && m.snapshot.me.ev !== undefined), 'the host frame stays full even after an sa for its own tick');
+
+const rejoin = startGuestRoom();
+rejoin.round(5);
+const oldP2Tick = lastTick(rejoin.frames());
+rejoin.ackOverSocket(oldP2Tick);
+rejoin.round(2);
+ok('base' in rejoin.frames().pop(), 'precondition: p2 gets deltas before leaving');
+deliver(rejoin.socket, { t: 'leave', id: 'p2' });
+deliver(rejoin.socket, { t: 'join', id: 'p2', name: 'Guest', shirtIdx: 1 });
+rejoin.ackOverSocket(oldP2Tick);
+const framesBeforeRejoin = rejoin.frames().length;
+rejoin.round(2);
+ok(rejoin.frames().length > framesBeforeRejoin && rejoin.frames().slice(framesBeforeRejoin).every(frame => !('base' in frame)), 'after leave and rejoin an old sa gives full frames');
+
+const ackBeforeJoin = startGuestRoom();
+ackBeforeJoin.round(5);
+deliver(ackBeforeJoin.socket, { t: 'leave', id: 'p2' });
+deliver(ackBeforeJoin.socket, { t: 'i', id: 'p2', seq: 50, sa: 1 });
+deliver(ackBeforeJoin.socket, { t: 'join', id: 'p2', name: 'Guest', shirtIdx: 1 });
+const framesBeforeLateJoin = ackBeforeJoin.frames().length;
+ackBeforeJoin.round(2);
+ok(ackBeforeJoin.frames().slice(framesBeforeLateJoin).every(frame => !('base' in frame)), 'an input from a non-member does not leave a baseline behind');
+
+const closedRound = startGuestRoom();
+closedRound.round(5);
+closedRound.socket.readyState = 3;
+const hostSnapshotsBeforeClosedRound = closedRound.room.posted.filter(m => m.type === 'snapshot').length;
+closedRound.round(1);
+const hostSnapshotsDuringClosedRound = closedRound.room.posted.filter(m => m.type === 'snapshot');
+ok(hostSnapshotsDuringClosedRound.length > hostSnapshotsBeforeClosedRound, 'precondition: a snapshot round ran while the socket was closed');
+const unsentTick = hostSnapshotsDuringClosedRound.pop().snapshot.tick;
+closedRound.socket.readyState = 1;
+closedRound.ackOverSocket(unsentTick);
+const framesBeforeReopen = closedRound.frames().length;
+closedRound.round(2);
+ok(closedRound.frames().length > framesBeforeReopen && closedRound.frames().slice(framesBeforeReopen).every(frame => !('base' in frame)), 'a round never handed to the socket is not a baseline');
+
+const p2pDelta = startGuestRoom();
+p2pDelta.room.send({ type: 'p2p', id: 'p2', open: true });
+p2pDelta.round(5);
+const p2pFullFrames = p2pDelta.p2pFrames().map(m => snapshotDecode(m.snapshot));
+ok(p2pFullFrames.length >= 3 && p2pFullFrames.every(frame => !('base' in frame)), 'p2p frames are full without an ack');
+const p2pAckedTick = lastTick(p2pFullFrames);
+p2pDelta.ackOverP2p(p2pAckedTick);
+const p2pFramesBeforeAck = p2pDelta.p2pFrames().length;
+p2pDelta.queueEvent();
+p2pDelta.round(5);
+const p2pAfterAck = p2pDelta.p2pFrames().slice(p2pFramesBeforeAck);
+const p2pDecodedAfterAck = p2pAfterAck.map(m => snapshotDecode(m.snapshot));
+const p2pAckedState = p2pFullFrames[p2pFullFrames.length - 1];
+ok(p2pDecodedAfterAck.length >= 3 && p2pDecodedAfterAck.every(frame => frame.base === p2pAckedTick), 'p2p frames after the ack are deltas');
+ok(p2pDecodedAfterAck.every(frame => (frame.fx === undefined || frame.fx.length === 0) && (frame.me.ev === undefined || frame.me.ev === null)), 'p2p delta frames carry no events');
+ok(p2pDecodedAfterAck.every(frame => { const applied = snapshotDeltaApply(p2pAckedState, frame); return applied && applied.fx.length === 0 && applied.me.ev === null; }), 'applying a p2p delta gives an event-free state');
+const p2pEventMessages = p2pAfterAck.filter(m => m.events !== null).map(m => JSON.parse(m.events));
+ok(p2pEventMessages.filter(message => message.ev && message.ev.length === 1 && message.ev[0].m === 'hello').length === 1, 'a queued event reaches the events JSON exactly once while frames are deltas');
+ok(p2pEventMessages.every(message => message.t === 'we' && typeof message.tick === 'number'), 'events JSON keeps the we shape');
+ok(p2pAfterAck.every((m, index) => m.events === null || JSON.parse(m.events).tick === p2pDecodedAfterAck[index].tick), 'events carry the tick of their own frame');
+
+const inlineEvents = startGuestRoom();
+inlineEvents.round(5);
+const inlineAckedTick = lastTick(inlineEvents.frames());
+inlineEvents.ackOverSocket(inlineAckedTick);
+const inlineFramesBeforeEvent = inlineEvents.frames().length;
+inlineEvents.queueEvent();
+inlineEvents.round(5);
+const inlineAfterEvent = inlineEvents.frames().slice(inlineFramesBeforeEvent);
+const inlineWithEvents = inlineAfterEvent.filter(frame => Array.isArray(frame.me.ev) && frame.me.ev.length > 0);
+ok(inlineAfterEvent.length >= 3 && inlineAfterEvent.every(frame => frame.base === inlineAckedTick), 'ws frames after the ack are deltas');
+ok(inlineWithEvents.length === 1 && inlineWithEvents[0].base === inlineAckedTick && inlineWithEvents[0].me.ev[0].m === 'hello', 'a ws delta carries the one-shot me.ev exactly once');
+
 console.log('stop and errors');
 harness.send({ type: 'stop' });
 ok(socket.closed, 'stop closes the hostlink socket');

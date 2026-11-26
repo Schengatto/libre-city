@@ -25,7 +25,7 @@ if (!JS_DIR) throw new Error('sim-runtime: sorgenti della simulazione non trovat
 // The browser's load order minus input/render/audio/ui/net, plus the glue. i18n.js is needed
 // because the sim calls t()/tList() (pedestrian speech bubbles, and messages that locally end
 // up in toasts): without it the bundle does not run.
-const SIM_FILES = ['core.js', 'i18n.js', 'city.js', 'train.js', 'entities.js', 'missions.js', 'army.js', 'gameplay.js', 'snapshot-codec.js', 'server-sim-glue.js'];
+const SIM_FILES = ['core.js', 'i18n.js', 'city.js', 'train.js', 'entities.js', 'missions.js', 'army.js', 'gameplay.js', 'snapshot-codec.js', 'snapshot-delta.js', 'server-sim-glue.js'];
 const BUNDLE = SIM_FILES
   .map(f => `\n//# ${f} ------------------------------------------------------------\n` + fs.readFileSync(path.join(JS_DIR, f), 'utf8'))
   .join('\n');
