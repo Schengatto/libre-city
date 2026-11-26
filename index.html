@@ -665,6 +665,17 @@
     <div id="hostPanel" class="panel hidden">
       <h2 data-i18n="host.title">🏠 Crea una partita</h2>
       <div class="field">
+        <label for="hostTitle" data-i18n="host.gameName">Nome della partita</label>
+        <input id="hostTitle" maxlength="24" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="hostVisibility" data-i18n="host.visibility">Visibilità</label>
+        <select id="hostVisibility">
+          <option value="private" selected data-i18n="host.visPrivate">Privata — solo con link o codice</option>
+          <option value="public" data-i18n="host.visPublic">Pubblica — visibile a tutti</option>
+        </select>
+      </div>
+      <div class="field" id="hostPassField">
         <label for="hostPass" data-i18n="host.pass">Password (facoltativa)</label>
         <input id="hostPass" maxlength="20" data-i18n-ph="host.passPh" placeholder="Nessuna password" autocomplete="off">
       </div>

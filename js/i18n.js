@@ -230,6 +230,11 @@ const STR = {
     'mp.noMissions': '🌐 In multigiocatore non ci sono missioni — dai la caccia agli altri!',
 
     'host.title': '🏠 Crea una partita',
+    'host.gameName': 'Nome della partita',
+    'host.titleDefault': 'Partita di {name}',
+    'host.visibility': 'Visibilità',
+    'host.visPrivate': 'Privata — solo con link o codice',
+    'host.visPublic': 'Pubblica — visibile a tutti',
     'host.pass': 'Password (facoltativa)',
     'host.passPh': 'Nessuna password',
     'host.max': 'Numero massimo di giocatori',
@@ -658,6 +663,11 @@ const STR = {
     'mp.noMissions': '🌐 No missions in multiplayer — hunt the other players instead!',
 
     'host.title': '🏠 Create a game',
+    'host.gameName': 'Game name',
+    'host.titleDefault': "{name}'s game",
+    'host.visibility': 'Visibility',
+    'host.visPrivate': 'Private — only with link or code',
+    'host.visPublic': 'Public — visible to everyone',
     'host.pass': 'Password (optional)',
     'host.passPh': 'No password',
     'host.max': 'Maximum number of players',

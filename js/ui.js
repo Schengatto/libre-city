@@ -355,7 +355,19 @@ onClick('mpBtn', () => {
   showPanel('mpPanel');
 });
 onClick('mpBack', showMenu);
-onClick('mpHostBtn', () => { const s = $('#hostStatus'); if (s) s.textContent = ''; showPanel('hostPanel'); });
+function syncHostPassField() {
+  const visibility = $('#hostVisibility');
+  const passField = $('#hostPassField');
+  if (passField) passField.classList.toggle('hidden', !!visibility && visibility.value === 'public');
+}
+if ($('#hostVisibility')) $('#hostVisibility').onchange = syncHostPassField;
+onClick('mpHostBtn', () => {
+  const s = $('#hostStatus'); if (s) s.textContent = '';
+  const titleInput = $('#hostTitle');
+  if (titleInput && !titleInput.value.trim() && playerName) titleInput.value = t('host.titleDefault', { name: playerName });
+  syncHostPassField();
+  showPanel('hostPanel');
+});
 onClick('mpJoinBtn', () => showJoinPanel());
 onClick('hostBack', () => showPanel('mpPanel'));
 onClick('joinBack', () => showPanel('mpPanel'));
@@ -376,7 +388,10 @@ function makeSizedRoomCode(sizeChar) {
 }
 onClick('hostGo', () => {
   const st = $('#hostStatus');
-  const pass = $('#hostPass') ? $('#hostPass').value : '';
+  const isPublic = !!$('#hostVisibility') && $('#hostVisibility').value === 'public';
+  const pass = !isPublic && $('#hostPass') ? $('#hostPass').value : '';
+  const typedTitle = $('#hostTitle') ? $('#hostTitle').value.trim() : '';
+  const title = typedTitle || t('host.titleDefault', { name: playerName });
   const maxP = $('#hostMax') ? +$('#hostMax').value : 4;
   const mins = $('#hostDuration') ? +$('#hostDuration').value : 10;
   const size = $('#hostSize') ? $('#hostSize').value : 'P';
@@ -385,7 +400,7 @@ onClick('hostGo', () => {
   // The city of the chosen size is generated at LOAD time from the seed = code: as when
   // joining with a code, we reload onto the right room; on the way back, once the hostIntent
   // is recognised, we actually create the room and show the invite.
-  store.set('hostIntent', { code, pass, maxP, mins, police, name: playerName });
+  store.set('hostIntent', { code, pass, maxP, mins, police, title, isPublic, name: playerName });
   if (st) st.textContent = t('host.creating');
   location.hash = 'room=' + code;
   location.reload();
@@ -523,7 +538,7 @@ else if (_hostIntent && ROOM_FROM_URL === _hostIntent.code) {
     }
     showPanel('invitePanel');       // if we were in the waiting room: the room is ours now
     netRefreshBadge();
-  });
+  }, { title: _hostIntent.title, isPublic: _hostIntent.isPublic === true });
 }
 // Very first run: language first of all (then name, then menu).
 else if (!langChosen()) showPanel('langPanel');

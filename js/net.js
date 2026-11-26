@@ -89,7 +89,7 @@ function makeGhost(id, name, shirtIdx) {
 // drop.
 
 // Host: creates the room and sets its parameters (duration, max players, password).
-function netStartHost(pass, maxPlayers, police, done) {
+function netStartHost(pass, maxPlayers, police, done, options) {
   const url = netServerUrl();
   if (!url) { done('noserver'); return; }
   net.mode = 'host'; net.url = url;
@@ -98,7 +98,8 @@ function netStartHost(pass, maxPlayers, police, done) {
   document.body.classList.add('mp');
   net.rejoin = { code: ROOM_CODE, name: playerName, pass: net.pass };
   net.hello  = { t: 'create', code: ROOM_CODE, name: playerName, pass: net.pass,
-                 max: net.maxPlayers, minutes: gameMinutes, police };
+                 max: net.maxPlayers, minutes: gameMinutes, police,
+                 title: (options && options.title) || '', public: !!(options && options.isPublic) };
   netDial(done);
 }
 // Client: joins a room that already exists.
