@@ -37,3 +37,6 @@ server/sim/
 
 # classifica condivisa: dati di runtime del server (in produzione è un volume)
 server/data/
+
+# log della sessione Playwright MCP
+.playwright-mcp/
