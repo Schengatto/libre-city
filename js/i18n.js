@@ -280,6 +280,9 @@ const STR = {
     'set.audio': 'Audio',
     'set.audioOn': '🔊 Attivo',
     'set.audioOff': '🔇 Disattivato',
+    'set.dayNight': 'Giorno/notte',
+    'set.dayNightOn': '🌗 Attivo',
+    'set.dayNightOff': '☀️ Sempre giorno',
     'set.save': '💾 Salva',
     'music.toggle': 'Musica del menu: accendi o spegni',
 
@@ -704,6 +707,9 @@ const STR = {
     'set.audio': 'Audio',
     'set.audioOn': '🔊 On',
     'set.audioOff': '🔇 Off',
+    'set.dayNight': 'Day/night',
+    'set.dayNightOn': '🌗 On',
+    'set.dayNightOff': '☀️ Always day',
     'set.save': '💾 Save',
     'music.toggle': 'Menu music: turn on or off',
 

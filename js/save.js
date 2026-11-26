@@ -28,6 +28,7 @@ function captureSave() {
     minutes: gameMinutes,
     violence: violenceOn,
     timeLeft,                              // frames left (0 = untimed game)
+    matchElapsed: matchElapsedFrames,
     cash,
     wanted, wantedHeat, crimeCd,
     lightClock,
@@ -52,6 +53,7 @@ function applySave(s) {
   gameMinutes = s.minutes | 0; store.set('minutes', gameMinutes);
   violenceOn = s.violence !== false;     // old saves (no field) = violence on
   timeLeft = s.timeLeft | 0;
+  matchElapsedFrames = s.matchElapsed | 0;
   cash = s.cash | 0;
   wanted = s.wanted | 0; wantedHeat = +s.wantedHeat || 0; crimeCd = s.crimeCd | 0;
   lightClock = s.lightClock | 0;

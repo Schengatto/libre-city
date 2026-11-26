@@ -2407,6 +2407,7 @@ function render() {
   drawRockets();
   drawWater();
   drawParts();
+  drawDayNight();
   drawPops();
   drawTaxiGuide();
   drawPizzaGuide();
