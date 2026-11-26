@@ -429,6 +429,30 @@
     padding:10px 14px 8px 24px; border-radius:10px; text-shadow:0 0 14px rgba(61,255,158,.9); }
   .mpstatus { min-height:18px; font:bold 12px 'Courier New',monospace; letter-spacing:.08em; color:#ff6a5a; }
   .mpnote { font-size:13px; opacity:.8; max-width:440px; line-height:1.5; }
+  .pubhead { display:flex; justify-content:space-between; align-items:center; width:min(560px,94vw);
+    font:bold 11px 'Courier New',monospace; letter-spacing:.08em; opacity:.75; }
+  .pubhead button { font:bold 12px 'Courier New',monospace; color:#33e0ff; background:none;
+    border:1px solid rgba(51,224,255,.5); border-radius:8px; padding:5px 10px; cursor:pointer; }
+  #pubTable { border-collapse:collapse; width:min(560px,94vw); font-family:'Courier New',monospace;
+    font-weight:bold; font-size:13px; letter-spacing:.06em; background:rgba(0,0,0,.45);
+    border:2px solid #1d4436; border-radius:10px; overflow:hidden; }
+  #pubTable th { font-size:10px; letter-spacing:.22em; text-transform:uppercase; color:#ff3ea5;
+    text-shadow:0 0 8px rgba(255,62,165,.7); padding:9px 8px; border-bottom:1px solid rgba(51,224,255,.25); }
+  #pubTable td { padding:8px; text-align:center; color:#c9cde8; border-bottom:1px solid rgba(255,255,255,.06); }
+  #pubTable td.nm { text-align:left; color:#fff; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #pubTable td.tm { color:#3dff9e; text-shadow:0 0 8px rgba(61,255,158,.6); }
+  #pubTable td.tm.low { color:#ff9a5a; text-shadow:0 0 8px rgba(255,154,90,.6); }
+  #pubTable tr.full td { opacity:.45; }
+  .pubjoin { font-family:'Bungee','Trebuchet MS',sans-serif; font-size:12px; color:#fff; padding:6px 10px;
+    background:linear-gradient(#31195e,#1b0e38); border:2px solid #ff3ea5; border-radius:9px; cursor:pointer;
+    box-shadow:0 3px 0 #7c1150; }
+  .pubjoin:disabled { border-color:#555; box-shadow:none; color:#999; cursor:default; }
+  #pubEmpty { max-width:min(420px,90vw); text-align:center; opacity:.8; font-size:15px; line-height:1.5; }
+  @media (max-width:480px) { #publicPanel { min-width:0; width:calc(100vw - 16px); padding:18px 8px 20px; box-sizing:border-box; }
+    #pubTable, .pubhead { width:100%; }
+    #pubTable th, #pubTable td { padding:7px 3px; font-size:11px; letter-spacing:.02em; }
+    #pubTable th { letter-spacing:.08em; font-size:9px; }
+    #pubTable td.nm { max-width:120px; white-space:normal; } .pubjoin { padding:5px 6px; font-size:10px; } }
   #lobbyLine { font:bold 13px 'Courier New',monospace; letter-spacing:.1em; }
   #lobbyLine b { color:#3dff9e; text-shadow:0 0 8px rgba(61,255,158,.6); }
   /* Waiting room: the same LED display as the room code, but in a "please wait" amber. */
@@ -656,9 +680,23 @@
       <p class="mpnote" data-i18n-html="mp.note">Ospita una partita e condividi il link (con password facoltativa e numero
          massimo di giocatori), oppure entra nella stanza di un amico. In partita la
          <b>classifica</b> (stesi / morti / soldi) si apre con <b>Tab</b> o col pulsante 🏆.</p>
+      <button id="mpPublicBtn" class="mbtn" data-i18n="mp.public">🌍 Partite pubbliche</button>
       <button id="mpHostBtn" class="mbtn" data-i18n="mp.host">🏠 Crea una partita</button>
       <button id="mpJoinBtn" class="mbtn" data-i18n="mp.join">🔗 Entra con un codice</button>
       <button id="mpBack" class="mbtn back" data-i18n="common.back">↩ Indietro</button>
+    </div>
+
+    <div id="publicPanel" class="panel hidden">
+      <h2 data-i18n="pub.title">🌍 Partite pubbliche</h2>
+      <div class="pubhead"><span id="pubCount"></span><button id="pubRefresh" data-i18n="pub.refresh">⟳ Aggiorna</button></div>
+      <div id="pubMsg" class="mpstatus hidden"></div>
+      <table id="pubTable" class="hidden">
+        <thead><tr><th data-i18n="pub.name">Nome</th><th data-i18n="pub.players">Giocatori</th><th data-i18n="pub.map">Mappa</th><th data-i18n="pub.time">Tempo</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div id="pubEmpty" class="hidden" data-i18n="pub.empty">Nessuna partita pubblica in corso. Creane una e falla trovare agli altri!</div>
+      <button id="pubCreate" class="mbtn hidden" data-i18n="mp.host">🏠 Crea una partita</button>
+      <button id="publicBack" class="mbtn back" data-i18n="common.back">↩ Indietro</button>
     </div>
 
     <!-- Multiplayer: create the room -->

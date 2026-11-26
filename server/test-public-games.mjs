@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import vm from 'node:vm';
 import { readSource } from './render-test-kit.mjs';
 
@@ -41,6 +43,28 @@ ok(!helpers.isPublicRoomFull({ players: 3, max: 4 }), '3/4 not full');
 console.log('5) rooms url');
 ok(helpers.publicRoomsUrl('wss://vibecity.example/') === 'https://vibecity.example/rooms', 'wss with trailing slash');
 ok(helpers.publicRoomsUrl('ws://localhost:8787') === 'http://localhost:8787/rooms', 'ws with port');
+
+const uiSource = readSource('ui.js');
+const indexHtml = fs.readFileSync(path.join(import.meta.dirname, '..', 'index.html'), 'utf8');
+const functionSource = name => {
+  const start = uiSource.indexOf(`function ${name}(`);
+  const end = uiSource.indexOf('\n}\n', start);
+  return start === -1 || end === -1 ? '' : uiSource.slice(start, end);
+};
+
+console.log('6) public games screen guards');
+const rowBuilderSource = functionSource('buildPublicGameRow');
+ok(rowBuilderSource.includes('.textContent = room.title'), 'row builder writes the game name with textContent');
+ok(rowBuilderSource.length > 0 && !/innerHTML|insertAdjacentHTML/.test(rowBuilderSource), 'row builder never uses innerHTML');
+ok(!/innerHTML|insertAdjacentHTML/.test(functionSource('renderPublicGames')), 'table render never uses innerHTML');
+ok(/const PANELS = \[[^\]]*'publicPanel'/.test(uiSource), "PANELS contains 'publicPanel'");
+ok(indexHtml.indexOf('id="mpPublicBtn"') !== -1 && indexHtml.indexOf('id="mpPublicBtn"') < indexHtml.indexOf('id="mpHostBtn"'), '#mpPublicBtn comes before #mpHostBtn');
+ok(/if \(id === 'publicPanel'\) startPublicGamesPolling\(\); else stopPublicGamesPolling\(\);/.test(functionSource('showPanel')), 'showPanel starts polling only for publicPanel and stops it for any other panel');
+ok(/if \(started\) return;\n\s*stopPublicGamesPolling\(\);/.test(functionSource('startMatch')), 'startMatch stops the polling');
+ok(/epoch !== publicGamesEpoch\) return;\n\s*publicGamesList =/.test(functionSource('fetchPublicGames')), 'a fetch resolving after leaving does not render');
+ok(/Number\.isInteger\(room\.leftSec\)/.test(functionSource('isRenderablePublicRoom')), 'only integer leftSec reaches formatTimeLeft');
+ok(/_joinIntent\.auto && ROOM_FROM_URL === _joinIntent\.code && playerName/.test(uiSource), 'auto-join boot branch is guarded by code and player name');
+ok(/store\.set\('joinIntent', \{ code, pass: '', auto: true \}\)/.test(functionSource('joinPublicGame')), 'joining another city stores an auto joinIntent');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
