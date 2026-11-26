@@ -118,7 +118,7 @@
               cyan #33e0ff · gold #ffd23a · phosphor #3dff9e
      ========================================================== */
   #start { position:absolute; inset:0; z-index:50; display:flex; flex-direction:column;
-    align-items:center; justify-content:center; text-align:center; background:#0a0a12;
+    align-items:center; justify-content:center; justify-content:safe center; text-align:center; background:#0a0a12;
     padding:56px 12px 76px; }
   /* The "fixed" children (scene, hi-score bar, ticker, credits) stay out of the flow. */
   #start > *:not(#scene):not(#arcTop):not(#ticker):not(#credits):not(#musicBtn) { position:relative; z-index:1; }
@@ -207,15 +207,24 @@
       filter:drop-shadow(3px 3px 0 #3a0a3e) drop-shadow(0 0 18px rgba(255,62,165,.55)); } }
   @keyframes titleIn { 0% { transform:translateY(-30px) scale(.92); opacity:0 }
     60% { transform:translateY(4px) scale(1.02); opacity:1 } 100% { transform:none; opacity:1 } }
-  #start .tag { margin-top:10px; font-family:'Courier New',monospace; font-weight:bold;
-    font-size:clamp(10px,1.9vw,14px); letter-spacing:.34em; text-transform:uppercase;
-    color:#33e0ff; text-shadow:0 1px 2px #1a0628, 0 0 3px #1a0628, 0 0 10px rgba(51,224,255,.8); animation:tagIn .6s ease .3s both; }
+  #start .tag { margin-top:10px; font:600 clamp(15px,2.2vw,20px) 'Trebuchet MS','Segoe UI',sans-serif;
+    letter-spacing:.02em; color:#ffe3f1;
+    text-shadow:0 1px 2px #1a0628, 0 0 3px #1a0628, 0 0 8px rgba(26,6,40,.9); animation:tagIn .6s ease .3s both; }
   @keyframes tagIn { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:none } }
   #start p { margin-top:18px; opacity:.92; max-width:560px; line-height:1.7; font-size:15px; }
   #start .keys { margin-top:16px; display:grid; grid-template-columns:auto auto; gap:6px 20px;
     font-size:14px; text-align:left; background:rgba(0,0,0,.4); padding:14px 20px;
     border:1px solid rgba(51,224,255,.25); border-radius:12px; }
   #start .keys b { color:#ffd23a; }
+  #howtoPanel { width:min(640px,94vw); align-items:stretch; text-align:left; }
+  #howtoPanel #howtoBack { align-self:center; }
+  #howtoPanel .goal, #howtoPanel .note { margin:0; max-width:none; line-height:1.5; opacity:.85; }
+  #howtoPanel .note { font-size:13px; opacity:.7; }
+  #howtoPanel .howtoSection { display:grid; gap:8px; }
+  #howtoPanel h3 { font:600 13px 'Trebuchet MS','Segoe UI',sans-serif; color:#33e0ff; }
+  #howtoPanel ul { list-style:none; margin:0; padding:0; display:grid; gap:8px; font-size:14px; line-height:1.5; }
+  #howtoPanel b { color:#ffd23a; }
+  #howtoPanel .keys { margin-top:0; }
   /* The cabinet's ▶ cursor blinks next to the highlighted entry. */
   .mbtn:not(.back)::before { content:'▶'; position:absolute; left:16px; top:50%;
     transform:translateY(-50%); color:#33e0ff; font-size:13px;
@@ -391,11 +400,11 @@
     #start p { margin-top:10px; }
     #ticker { height:24px; }
   }
-  body.touch #start .desc { display:none; }
   body.touch #start .keys.kb { display:none; }
   #start .keys.touchhelp { display:none; }
   body.touch #start .keys.touchhelp { display:grid; }
   body.touch #start p { font-size:14px; padding:0 14px; }
+  body.touch #howtoPanel .goal, body.touch #howtoPanel .note { padding:0; }
 
   /* ---- Multiplayer ---- */
   #mpBadge { position:absolute; top:12px; left:50%; transform:translateX(-50%); z-index:5;
@@ -569,7 +578,7 @@
     <button id="musicBtn" type="button" aria-pressed="true" data-i18n-title="music.toggle" data-i18n-aria="music.toggle">♪ ON</button>
 
     <h1>VIBE CITY</h1>
-    <div class="tag" data-i18n="start.tag">Corri · Consegna · Soccorri</div>
+    <div class="tag" data-i18n="start.tag">La città è tua. Prenditela.</div>
 
     <!-- First run (before anything else): language choice -->
     <div id="langPanel" class="panel hidden">
@@ -802,44 +811,49 @@
 
     <!-- How to play -->
     <div id="howtoPanel" class="panel hidden">
-    <p class="desc" data-i18n-html="howto.desc">Esplora una grande città con <b>quartieri diversi</b> — case, uffici, fabbriche — e strutture
-       come <b>ospedali 🏥</b> (dove curarti), <b>centrali di polizia 🚔</b>, caserme dei pompieri,
-       banche e mercati. <b>Ruba qualsiasi auto</b>, sfreccia nel traffico e raccogli le
-       <b>monetine 🪙</b> nascoste nei <b>vicoli</b>. Sali su un <b>taxi 🚕</b> per fare il tassista:
-       carica i clienti e portali a destinazione seguendo la <b>freccia</b> — più la corsa è lunga
-       (e veloce!), più guadagni. Oppure salta su una <b>moto delle consegne 🏍️</b>: ritira il cibo
-       alla <b>pizzeria 🍕</b> e portalo ai clienti affamati finché è caldo — consegna in fretta e
-       prendi la mancia! Davanti a ogni struttura trovi i suoi <b>mezzi parcheggiati</b>: prendi
-       l'<b>ambulanza 🚑</b> all'ospedale per soccorrere i feriti, la <b>volante 🚔</b> alla
-       centrale per inseguire i <b>rapinatori</b> di banche e mercati, o l'<b>autopompa 🚒</b>
-       dei pompieri per spegnere gli <b>incendi</b> sparando acqua con l'idrante — e con
-       <b>Spazio</b> accendi la sirena! La <b>caserma dell'esercito 🪖</b> è un'<b>area recintata</b>:
-       oltre il cancello, nel cortile, trovi <b>jeep militari</b> e il <b>carro armato</b> — spara
-       <b>razzi</b> (ricarica lenta!) e passa sopra le altre auto schiacciandole. Ma la base è
-       presidiata da <b>tanti soldati</b>: appena entri nella zona militare ti sparano a vista,
-       e le <b>jeep armate</b> ti danno la caccia!
-       Parti <b>a mani nude</b>: i <b>pugni 👊</b> feriscono i passanti e al <b>terzo colpo</b>
-       li stendono. Coi soldi guadagnati passa all'<b>ARMERIA 🔫</b>: la <b>pistola</b> costa
-       pochi dollari, poi arrivano <b>mitra, fucile a pompa e lanciarazzi</b>. Ma attento: se investi,
-       picchi o spari la gente, la <b>polizia</b> ti darà la caccia — più stelle ⭐ hai, più diventano cattivi!</p>
+    <h2 data-i18n="menu.howto">Come si gioca</h2>
+    <p class="goal" data-i18n="howto.goal">Fai soldi in una città aperta: lavora, esplora, e quando serve scappa dalla polizia.</p>
+    <section class="howtoSection">
+      <h3 data-i18n="howto.jobsTitle">Lavori</h3>
+      <p class="note" data-i18n="howto.jobsNote">Ogni struttura ha i suoi mezzi parcheggiati davanti: sali a bordo per iniziare.</p>
+      <ul>
+        <li data-i18n-html="howto.job1"><b>Taxi</b>: carica i clienti e segui la freccia fino a destinazione. Più la corsa è lunga e veloce, più paga.</li>
+        <li data-i18n-html="howto.job2"><b>Consegne</b>: prendi la moto alla pizzeria e porta il cibo ai clienti finché è caldo. Se sei veloce arriva la mancia.</li>
+        <li data-i18n-html="howto.job3"><b>Ambulanza</b>: parte dall'ospedale, soccorri i feriti.</li>
+        <li data-i18n-html="howto.job4"><b>Volante</b>: parte dalla centrale, insegui i rapinatori di banche e mercati.</li>
+        <li data-i18n-html="howto.job5"><b>Autopompa</b>: parte dalla caserma dei pompieri, spegni gli incendi con l'idrante.</li>
+      </ul>
+    </section>
+    <section class="howtoSection">
+      <h3 data-i18n="howto.cityTitle">In città</h3>
+      <ul>
+        <li data-i18n-html="howto.city1"><b>Auto</b>: puoi rubare qualsiasi veicolo e sfrecciare nel traffico.</li>
+        <li data-i18n-html="howto.city2"><b>Monetine</b>: sono nascoste nei vicoli.</li>
+        <li data-i18n-html="howto.city3"><b>Ospedale</b>: entra per curarti.</li>
+        <li data-i18n-html="howto.city4"><b>Armeria</b>: parti a mani nude, tre pugni stendono un passante. Coi soldi compri pistola, mitra, fucile a pompa e lanciarazzi.</li>
+        <li data-i18n-html="howto.city5"><b>Caserma dell'esercito</b>: area recintata con jeep militari e carro armato, che spara razzi e schiaccia le auto. I soldati sparano a vista.</li>
+        <li data-i18n-html="howto.city6"><b>Polizia</b>: se investi, picchi o spari la gente ti dà la caccia. Più stelle hai, più si fa dura.</li>
+      </ul>
+    </section>
+    <h3 data-i18n="howto.controlsTitle">Comandi</h3>
     <div class="keys kb">
       <span data-i18n-html="howto.kb1"><b>WASD</b> / frecce</span><span data-i18n="howto.kb1v">muovere / guidare</span>
       <span data-i18n-html="howto.kb2"><b>Mouse</b></span><span data-i18n="howto.kb2v">mirare</span>
       <span data-i18n-html="howto.kb3"><b>Click sinistro</b></span><span data-i18n="howto.kb3v">pugni / sparare (a piedi)</span>
       <span data-i18n-html="howto.kb4"><b>E</b></span><span data-i18n="howto.kb4v">salire / scendere dall'auto</span>
-      <span data-i18n-html="howto.kb5"><b>Spazio</b></span><span data-i18n="howto.kb5v">clacson / sirena 🚨</span>
+      <span data-i18n-html="howto.kb5"><b>Spazio</b></span><span data-i18n="howto.kb5v">clacson / sirena</span>
       <span data-i18n-html="howto.kb6"><b>M</b></span><span data-i18n="howto.kb6v">missioni on / off</span>
       <span data-i18n-html="howto.kb7"><b>1-5</b></span><span data-i18n="howto.kb7v">cambiare / comprare arma</span>
     </div>
     <div class="keys touchhelp">
-      <span data-i18n-html="howto.t1"><b>🕹️ Stick sinistro</b></span><span data-i18n="howto.t1v">muovere / guidare</span>
-      <span data-i18n-html="howto.t2"><b>🎯 Stick destro</b></span><span data-i18n="howto.t2v">mirare — spingi a fondo per sparare</span>
+      <span data-i18n-html="howto.t1"><b>Stick sinistro</b></span><span data-i18n="howto.t1v">muovere / guidare</span>
+      <span data-i18n-html="howto.t2"><b>Stick destro</b></span><span data-i18n="howto.t2v">mirare, spingi a fondo per sparare</span>
       <span data-i18n-html="howto.t3"><b>🚗</b></span><span data-i18n="howto.t3v">salire / scendere dal mezzo</span>
-      <span data-i18n-html="howto.t4"><b>📣</b></span><span data-i18n="howto.t4v">clacson / sirena 🚨</span>
+      <span data-i18n-html="howto.t4"><b>📣</b></span><span data-i18n="howto.t4v">clacson / sirena</span>
       <span data-i18n-html="howto.t5"><b>📋</b></span><span data-i18n="howto.t5v">missioni on / off</span>
       <span data-i18n-html="howto.t6"><b>Icone in alto</b></span><span data-i18n="howto.t6v">cambiare / comprare arma</span>
     </div>
-    <p style="font-size:13px;opacity:.7;margin-top:16px;" data-i18n="howto.volume">🔊 Alza il volume per motori, spari e sirene!</p>
+    <p class="note" data-i18n="howto.volume">Alza il volume: motori, spari e sirene fanno metà del gioco.</p>
     <button id="howtoBack" class="mbtn back" data-i18n="common.back">↩ Indietro</button>
     </div><!-- /howtoPanel -->
 
