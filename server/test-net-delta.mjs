@@ -84,5 +84,22 @@ let hostileThrew = false;
 try { netOnSnapshot(hostileDelta); } catch { hostileThrew = true; }
 ok(!hostileThrew && net.snap.tick === tickF && net.snapshotAckTick === null && ({}).p === undefined, 'hostile delta is dropped without throwing or polluting prototypes');
 
+console.log('9) hostile me.own');
+const ownedBefore = [true, false];
+const reconcileNet = { snap: null };
+const reconcileContext = vm.createContext({
+  net: reconcileNet, player: { health: 10, weaponIdx: 0, owned: ownedBefore, car: null, x: 0, y: 0 }, cash: 5, wanted: 0, downT: 0,
+  $: () => null, dist: () => 0, updateHealth: () => {}, updateCash: () => {}, updateWeapon: () => {}, updateStars: () => {},
+});
+vm.runInContext(extractTopLevel(netSource, 'netReconcileMe') + '\n;globalThis.reconcile = netReconcileMe;', reconcileContext);
+const reconcileWithOwn = own => {
+  reconcileNet.snap = { me: { hp: 10, cash: 5, x: 0, y: 0, own } };
+  reconcileContext.reconcile();
+  return reconcileContext.player.owned;
+};
+ok([1, true, {}].every(own => reconcileWithOwn(own) === ownedBefore), 'non-array me.own neither throws nor replaces player.owned');
+const copiedOwned = reconcileWithOwn([false, true]);
+ok(copiedOwned !== ownedBefore && copiedOwned.join() === 'false,true', 'array me.own is copied into player.owned');
+
 console.log(`\n${fail === 0 ? '✅' : '❌'}  ${pass} ok, ${fail} fail`);
 process.exit(fail === 0 ? 0 : 1);

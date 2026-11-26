@@ -1026,7 +1026,7 @@ function netReconcileMe() {
   if (player.health !== me.hp) { player.health = me.hp; updateHealth(); }
   if (cash !== me.cash) { cash = me.cash; updateCash(); }
   if (me.wp != null && player.weaponIdx !== me.wp) { player.weaponIdx = me.wp; updateWeapon(); }
-  if (me.own) player.owned = me.own.slice();
+  if (Array.isArray(me.own)) player.owned = me.own.slice();
   if (me.wanted != null && me.wanted !== wanted) { wanted = me.wanted; updateStars(); }
   if (me.k != null) net.kills = me.k;
   if (me.d != null) net.deaths = me.d;
