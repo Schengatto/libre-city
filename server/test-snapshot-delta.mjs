@@ -142,8 +142,8 @@ const dentsGone = capture();
 const dentAppears = snapshotDeltaEncode(withoutDents, withDents);
 const dentVanishes = snapshotDeltaEncode(withDents, dentsGone);
 const fullEntry = (delta, carId) => delta.cars.find(entry => entry.id === carId);
-ok(dentAppears.rm.cars.includes(dentCarId) && fullEntry(dentAppears, dentCarId).dn === 5 && 'x' in fullEntry(dentAppears, dentCarId), 'dn appearing removes and re-adds the full car');
-ok(dentVanishes.rm.cars.includes(dentCarId) && 'x' in fullEntry(dentVanishes, dentCarId) && fullEntry(dentVanishes, dentCarId).dn === undefined, 'dn vanishing removes and re-adds the full car');
+ok((dentAppears.rm?.cars ?? []).includes(dentCarId) && fullEntry(dentAppears, dentCarId)?.dn === 5 && 'x' in (fullEntry(dentAppears, dentCarId) ?? {}), 'dn appearing removes and re-adds the full car');
+ok((dentVanishes.rm?.cars ?? []).includes(dentCarId) && 'x' in (fullEntry(dentVanishes, dentCarId) ?? {}) && fullEntry(dentVanishes, dentCarId).dn === undefined, 'dn vanishing removes and re-adds the full car');
 ok(applies(withoutDents, withDents) && applies(withDents, dentsGone), 'key-set changes apply');
 
 console.log('8) coins and fires');
@@ -164,7 +164,7 @@ host.run(`coins.splice(coins.findIndex(coin => coin.val === 50), 1); fires.lengt
 advance(2);
 const withoutPickups = capture();
 const pickupsDelta = snapshotDeltaEncode(withPickupsLater, withoutPickups);
-ok(pickupsDelta.rm.coins.includes(bigCoin(withPickups).id) && pickupsDelta.rm.fires.includes(withPickups.fires[0].id), 'removed coin and fire are listed in rm');
+ok((pickupsDelta.rm?.coins ?? []).includes(bigCoin(withPickups).id) && (pickupsDelta.rm?.fires ?? []).includes(withPickups.fires[0].id), 'removed coin and fire are listed in rm');
 ok(applies(withPickups, withPickupsLater) && applies(withPickupsLater, withoutPickups), 'coin and fire deltas apply');
 
 console.log('9) owned copy');
@@ -244,6 +244,12 @@ ok(({}).polluted === undefined, 'Object.prototype not polluted');
 console.log('13) apply ignores unknown rm ids');
 const withUnknownRm = { ...validDelta, rm: { ...validDelta.rm, cars: [...(validDelta.rm ? validDelta.rm.cars || [] : []), 987654321] } };
 ok(isDeepStrictEqual(canonical(snapshotDeltaApply(baseWire, withUnknownRm)), canonical(snapshotDeltaApply(baseWire, validDelta))), 'unknown rm id changes nothing');
+
+console.log('13b) apply returns an event-free state');
+const eventfulApplied = snapshotDeltaApply(baseWire, snapshotDeltaWithEvents(validDelta, [{ k: 1 }], ['x']));
+ok(eventfulApplied !== null && isDeepStrictEqual(eventfulApplied.fx, []) && eventfulApplied.me.ev === null, 'delta events do not stay in the applied state');
+const withoutAck = Object.fromEntries(Object.entries(validDelta).filter(([key]) => key !== 'ack'));
+ok(snapshotDeltaApply(baseWire, withoutAck).ack === undefined, 'ack comes from the delta');
 
 console.log('14) no mutation');
 const invalidDelta = { ...validDelta, zz: 1 };

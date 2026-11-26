@@ -198,7 +198,10 @@ function snapshotDeltaApply(base, delta) {
   return {
     ...base,
     ...snapshotDeltaPickKeys(delta, changedTopKeys),
-    me: { ...base.me, ...delta.me },
+    tick: delta.tick,
+    ack: delta.ack,
+    me: { ...base.me, ...delta.me, ev: null },
+    fx: [],
     ...lists,
   };
 }
