@@ -49,7 +49,7 @@ jobs:
     env:
       DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
       DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/root/libre-city' }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/root/vibe-city' }}
     steps:
       - name: Check deploy secrets
         run: |

@@ -118,8 +118,8 @@ over `GET /leaderboard`.
 You need **Node.js 18 or newer**. Nothing else.
 
 ```bash
-git clone https://github.com/Schengatto/libre-city.git
-cd libre-city
+git clone https://github.com/Schengatto/vibe-city.git
+cd vibe-city
 ```
 
 ### Single player
