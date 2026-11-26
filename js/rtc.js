@@ -7,7 +7,7 @@ const RTC_RETRY_MAX_MS = 60000;
 const RTC_MAX_BUFFERED_BYTES = 262144;
 const RTC_MAX_INPUT_BYTES = 2048;
 const RTC_MAX_SNAPSHOT_BYTES = 256 * 1024;
-const RTC_INPUT_NUMBER_FIELDS = ['seq', 'ax', 'ay', 'aim', 'b', 'px', 'py', 'cx', 'cy', 'ca', 'csp', 'w', 'vr', 'lg'];
+const RTC_INPUT_NUMBER_FIELDS = ['seq', 'ax', 'ay', 'aim', 'b', 'px', 'py', 'cx', 'cy', 'ca', 'csp', 'w', 'vr', 'lg', 'sa'];
 const RTC_DEAD_CONNECTION_STATES = ['failed', 'closed'];
 
 const rtcHostPeers = new Map();

@@ -41,6 +41,8 @@ const net = {
   authoritative: false,   // true = the server owns the world; here we only render it
   snap: null,             // last 'w' snapshot received
   lastSnapTick: -1,
+  snapshotRing: new Map(),
+  snapshotAckTick: null,
   trainOffset: null, trainOffsetTarget: 0, trainSlewFrame: 0,
   inSeq: 0,               // running id of the input sent
   firePending: false, enterEdge: false, hornEdge: false, weaponReq: null,  // one-shot actions → server
@@ -220,7 +222,7 @@ function netOnJoined(m) {
   if (m.token) net.token = m.token;
   net.authoritative = !!m.sim;                       // Phase 2: the server simulates the world
   net.hostId = m.host ?? null;
-  net.lastSnapTick = -1;
+  netResetSnapshotBaseline();
   netSyncHostRole();
   player.shirt = NET_SHIRTS[m.shirtIdx % NET_SHIRTS.length];
   if (m.minutes != null) gameMinutes = m.minutes;   // the server sets the match's pace
@@ -287,7 +289,7 @@ function onServerMessage(m) {
     case 'rtc': if (simHostActive()) rtcHostOnSignal(m.from, m.k, m.d); else rtcGuestOnSignal(m.from, m.k, m.d); break;
     case 'host':
       net.hostId = m.id ?? null;
-      net.lastSnapTick = -1;
+      netResetSnapshotBaseline();
       netSyncHostRole();
       if (net.hostId !== null && net.hostId !== net.myId) toast(t('net.newHost', { name: m.name }));
       break;
@@ -305,7 +307,7 @@ function onServerMessage(m) {
 // Shuts everything down and returns to single-player mode (ghosts included).
 function netShutdown() {
   net.wantOpen = false; net.dropped = false;
-  simHostStop(); rtcGuestClose(); net.hostId = null; net.lastSnapTick = -1;
+  simHostStop(); rtcGuestClose(); net.hostId = null; netResetSnapshotBaseline();
   clearTimeout(net.reconnT); net.reconnT = null;
   clearInterval(net.queueT); net.queueT = null; net.queue = null; net.qtoken = null;
   try { if (net.wake) net.wake.release(); } catch (e) {}
@@ -861,10 +863,35 @@ function netApplyWorldEvents(fx, ev) {
     if (txt[0] === '💀' || txt[0] === '🎯') sfx.coin();
   }
 }
+function netResetSnapshotBaseline() {
+  net.lastSnapTick = -1;
+  net.snapshotRing.clear();
+  net.snapshotAckTick = null;
+}
+function netResolveSnapshot(m) {
+  const { state, fx, ev } = snapshotDeltaSplitEvents(m);
+  if (m.base === undefined) {
+    snapshotDeltaRemember(net.snapshotRing, state);
+    if (Number.isFinite(m.tick)) net.snapshotAckTick = m.tick;
+    return m;
+  }
+  const result = snapshotDeltaApply(net.snapshotRing.get(m.base), state);
+  if (!result) {
+    net.snapshotRing.clear();
+    net.snapshotAckTick = null;
+    return null;
+  }
+  snapshotDeltaRemember(net.snapshotRing, result);
+  net.snapshotAckTick = result.tick;
+  return snapshotDeltaWithEvents(result, fx, ev);
+}
 // A snapshot arrives: update the interpolation targets for the world and the ghosts.
 function netOnSnapshot(m) {
   if (!rtcFreshSnapshot(net.lastSnapTick, m.tick)) { netApplyWorldEvents(m.fx, m.me && m.me.ev); return; }
   if (Number.isFinite(m.tick)) net.lastSnapTick = m.tick;
+  const resolved = netResolveSnapshot(m);
+  if (!resolved) { netApplyWorldEvents(m.fx, m.me && m.me.ev); return; }
+  m = resolved;
   net.snap = m;
   netNoteTrainTick(m);
   netStatsOnSnapshot(net.stats, m, performance.now());
@@ -999,7 +1026,7 @@ function netReconcileMe() {
   if (player.health !== me.hp) { player.health = me.hp; updateHealth(); }
   if (cash !== me.cash) { cash = me.cash; updateCash(); }
   if (me.wp != null && player.weaponIdx !== me.wp) { player.weaponIdx = me.wp; updateWeapon(); }
-  if (me.own) player.owned = me.own;
+  if (Array.isArray(me.own)) player.owned = me.own.slice();
   if (me.wanted != null && me.wanted !== wanted) { wanted = me.wanted; updateStars(); }
   if (me.k != null) net.kills = me.k;
   if (me.d != null) net.deaths = me.d;
@@ -1052,6 +1079,7 @@ function netSendInput() {
            cmd.ca = Math.round(c.angle * 256) / 256; cmd.csp = Math.round(c.speed * 100) / 100; }
   if (typeof touchDrive !== 'undefined' && touchDrive.active) cmd.drive = { active: true, angle: touchDrive.angle };
   if (net.weaponReq != null) { cmd.w = net.weaponReq; net.weaponReq = null; }
+  if (Number.isFinite(net.snapshotAckTick)) cmd.sa = net.snapshotAckTick;
   // Adaptive area of interest: ask the server ONLY for entities my screen can actually show
   // (+ a margin for interpolation/pop-in), rather than a fixed 1200 tuned for desktop. On a
   // phone that cuts entities/bandwidth/GC considerably → smoother. Sent only when it changes

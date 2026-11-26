@@ -212,6 +212,12 @@ try {
   check(forwardedInput && forwardedInput.ax === 1 && !('aim' in forwardedInput) && !('junk' in forwardedInput) &&
     JSON.stringify(forwardedInput.drive) === '{"active":true,"angle":0.5}', 'only the known numeric input fields are forwarded');
   check(!findMessage(hostLinkA, message => message.t === 'i' && message.seq === HOST_INPUT_SEQ), 'the host own input is not echoed to its hostlink');
+  send(playerB.ws, { t: 'i', seq: GUEST_INPUT_SEQ + 1, sa: 42 });
+  send(playerB.ws, { t: 'i', seq: GUEST_INPUT_SEQ + 2, sa: 'x' });
+  const forwardedAck = await waitFor(() => findMessage(hostLinkA, message => message.t === 'i' && message.seq === GUEST_INPUT_SEQ + 1));
+  check(forwardedAck && forwardedAck.sa === 42, 'the snapshot ack tick sa is forwarded to the hostlink');
+  const forwardedBadAck = await waitFor(() => findMessage(hostLinkA, message => message.t === 'i' && message.seq === GUEST_INPUT_SEQ + 2));
+  check(forwardedBadAck && !('sa' in forwardedBadAck), 'a non numeric sa is not forwarded');
 
   console.log('W frame routed to target only');
   hostLinkA.send('W|' + playerB.id + '|{"t":"w","x":1}');

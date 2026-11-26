@@ -221,6 +221,16 @@ function playerView(p) {
            gun: !WEAPONS[p.weaponIdx].melee, hp: R2(p.health), down: p.downT > 0,
            punch: p.punchT > 0, car: p.car ? carPayload(p.car) : null };
 }
+const SNAPSHOT_PAYLOAD_IDS = new WeakMap();
+let snapshotPayloadIdSeq = 1;
+function snapshotPayloadId(entity) {
+  let id = SNAPSHOT_PAYLOAD_IDS.get(entity);
+  if (id === undefined) {
+    id = snapshotPayloadIdSeq++;
+    SNAPSHOT_PAYLOAD_IDS.set(entity, id);
+  }
+  return id;
+}
 // ---- Cosmetic effects → 'fx' events for the client ----
 // Particles are of no use on the server: we intercept gameplay.js's spawn* calls and turn
 // them into lightweight events (position + type), sent inside the snapshots. The client
@@ -243,7 +253,7 @@ function snapshotFor(id) {
   const out = {
     t: 'w', tick: frame, ack: me.input.seq || 0,
     me: { x: R2(me.x), y: R2(me.y), aim: round2(me.aim), hp: R2(me.health), cash: me.cash,
-          wanted: me.wanted | 0, down: me.downT > 0, dt: me.downT, dk: me.downKind, wp: me.weaponIdx, own: me.owned,
+          wanted: me.wanted | 0, down: me.downT > 0, dt: me.downT, dk: me.downKind, wp: me.weaponIdx, own: me.owned.slice(),
           k: me.kills, d: me.deaths, sco: me.score | 0, stk: me.streak | 0, bty: me.bounty | 0,
           ev: (me.events && me.events.length) ? me.events.splice(0) : null,   // queued toasts → consumed here
           car: me.car ? drivenCarPayload(me.car) : null },
@@ -263,8 +273,8 @@ function snapshotFor(id) {
     out.bul.push(entry);
   }
   for (const r of rockets) if (near(r.x, r.y)) out.rkt.push({ x: R2(r.x), y: R2(r.y), a: round2(Math.atan2(r.vy, r.vx)), gr: r.grenade ? 1 : 0 });
-  for (const k of coins) if (near(k.x, k.y)) out.coins.push({ x: R2(k.x), y: R2(k.y), v: k.val });
-  for (const f of fires) if (near(f.x, f.y)) out.fires.push({ x: R2(f.x), y: R2(f.y) });
+  for (const k of coins) if (near(k.x, k.y)) out.coins.push({ id: snapshotPayloadId(k), x: R2(k.x), y: R2(k.y), v: k.val });
+  for (const f of fires) if (near(f.x, f.y)) out.fires.push({ id: snapshotPayloadId(f), x: R2(f.x), y: R2(f.y) });
   return out;
 }
 

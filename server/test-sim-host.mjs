@@ -130,7 +130,7 @@ ok(vm.runInContext('netDecodeBinarySnapshot(new Uint8Array([1, 2, 3, 4]).buffer)
 function createNetGuestHarness({ guestSendResult = false, hostActive = false } = {}) {
   const calls = { netSend: [], simHostSendInput: [], rtcGuestSendInput: [], rtcGuestConnect: [], rtcGuestClose: 0, rtcHostSignal: [], rtcGuestSignal: [] };
   const context = vm.createContext({
-    net: { hostId: null, myId: 'p1', authoritative: true, lastSnapTick: 10, snap: 'previous', inSeq: 0, firePending: false, enterEdge: false, hornEdge: false, weaponReq: null, lastVR: 0, stats: {} },
+    net: { hostId: null, myId: 'p1', authoritative: true, lastSnapTick: 10, snapshotRing: new Map(), snapshotAckTick: null, snap: 'previous', inSeq: 0, firePending: false, enterEdge: false, hornEdge: false, weaponReq: null, lastVR: 0, stats: {} },
     performance, player: { x: 0, y: 0, car: null }, vw: 800, vh: 600, mDownL: false,
     held: () => false, mouseWX: () => 0, mouseWY: () => 0, netLagCompMs: () => 0, netStatsOnInputSent: () => {},
     simHostActive: () => hostActive,
@@ -145,8 +145,9 @@ function createNetGuestHarness({ guestSendResult = false, hostActive = false } =
     rtcFreshSnapshot: (lastTick, tick) => !Number.isFinite(tick) || tick > lastTick,
     toast: () => {}, t: key => key,
   });
-  const names = ['netSendInput', 'netOnSnapshot', 'netSyncHostRole', 'onServerMessage'];
+  const names = ['netSendInput', 'netOnSnapshot', 'netSyncHostRole', 'onServerMessage', 'netResetSnapshotBaseline', 'netResolveSnapshot'];
   const declarations = names.map(name => extractTopLevel(netSource, name)).join('\n');
+  vm.runInContext(fs.readFileSync(path.join(JS_DIR, 'snapshot-delta.js'), 'utf8'), context);
   vm.runInContext(declarations + '\n;globalThis.api = { ' + names.join(', ') + ' };', context);
   return { api: context.api, net: context.net, calls, context };
 }
@@ -161,6 +162,20 @@ const hostInput = createNetGuestHarness({ hostActive: true });
 hostInput.api.netSendInput();
 ok(hostInput.calls.simHostSendInput.length === 1 && hostInput.calls.rtcGuestSendInput.length === 0 && hostInput.calls.netSend.length === 0, 'host input goes only to the local worker');
 
+const ackedOverWs = createNetGuestHarness({ guestSendResult: false });
+ackedOverWs.net.snapshotAckTick = 30;
+ackedOverWs.api.netSendInput();
+ok(ackedOverWs.calls.rtcGuestSendInput[0].sa === 30 && ackedOverWs.calls.netSend[0].sa === 30, 'the ack rides every input over the websocket fallback');
+const ackedOverP2P = createNetGuestHarness({ guestSendResult: true });
+ackedOverP2P.net.snapshotAckTick = 30;
+ackedOverP2P.api.netSendInput();
+ok(ackedOverP2P.calls.rtcGuestSendInput[0].sa === 30, 'the ack rides every input over the data channel');
+const ackedHost = createNetGuestHarness({ hostActive: true });
+ackedHost.net.snapshotAckTick = 30;
+ackedHost.api.netSendInput();
+ok(ackedHost.calls.simHostSendInput[0].sa === 30, 'the ack rides every input to the local worker');
+ok(!('sa' in guestOverWs.calls.netSend[0]) && !('sa' in hostInput.calls.simHostSendInput[0]), 'no ack key while the baseline is unknown');
+
 const staleEvents = [];
 guestOverWs.context.netApplyWorldEvents = (fx, ev) => staleEvents.push({ fx, ev });
 guestOverWs.api.netOnSnapshot({ tick: 9, t: 'w', fx: ['spark'], me: { ev: ['kill'] } });
@@ -168,8 +183,11 @@ ok(guestOverWs.net.snap === 'previous' && guestOverWs.net.lastSnapTick === 10, '
 ok(staleEvents.length === 1 && staleEvents[0].fx[0] === 'spark' && staleEvents[0].ev[0] === 'kill', 'a stale snapshot still delivers its inline events');
 
 const migration = createNetGuestHarness();
+migration.net.snapshotRing.set(8, { tick: 8 });
+migration.net.snapshotAckTick = 8;
 migration.api.onServerMessage({ t: 'host', id: 'p3', name: 'Zed' });
 ok(migration.net.lastSnapTick === -1 && migration.calls.rtcGuestConnect.join() === 'p3', 'host change resets the snapshot tick and connects to the new host');
+ok(migration.net.snapshotRing.size === 0 && migration.net.snapshotAckTick === null, 'host change drops the delta baseline');
 const electedSelf = createNetGuestHarness();
 electedSelf.api.onServerMessage({ t: 'host', id: 'p1' });
 ok(electedSelf.calls.rtcGuestConnect.length === 0 && electedSelf.calls.rtcGuestClose === 1 && electedSelf.net.stats.transport === 'host', 'electing myself closes the guest link and shows host');
