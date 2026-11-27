@@ -76,6 +76,7 @@ try {
   ok(entry?.title === 'Rapina al porto', `title trimmed (${entry?.title})`);
   ok(entry?.players === 1 && entry?.max === 4, `players 1 of max 4 (${entry?.players}/${entry?.max})`);
   ok(entry?.leftSec >= 290 && entry?.leftSec <= 300, `leftSec in 290..300 (${entry?.leftSec})`);
+  ok(entry?.hostRttMs === 0, `server-sim rooms report hostRttMs 0 (${entry?.hostRttMs})`);
 
   console.log('\n2) public room ignores the password');
   const guest = await joinRoom('PPUB01');
