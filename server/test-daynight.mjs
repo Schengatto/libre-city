@@ -16,23 +16,25 @@ const SAMPLE_STEP = 60;
 const DAY = { r: 255, g: 255, b: 255, light: 0 };
 const NIGHT = { r: 70, g: 85, b: 140, light: 1 };
 
-ok(DAY_CYCLE_FRAMES === 39600, 'cycle is 11 minutes');
+ok(DAY_CYCLE_FRAMES === 28800, 'cycle is 8 minutes');
 ok(dayCycleFrame(0) === 0, 'cycle frame at start is 0');
 ok(dayCycleFrame(DAY_CYCLE_FRAMES + 5) === 5, 'cycle frame wraps');
-ok(dayCycleFrame(-5) === 39595, 'cycle frame wraps negative elapsed');
+ok(dayCycleFrame(-5) === 28795, 'cycle frame wraps negative elapsed');
 
 ok(same({ ...dayNightAmbient(0) }, DAY), 'start of cycle is full day');
-ok(same({ ...dayNightAmbient(3 * FRAMES_PER_MINUTE) }, DAY), 'midday is full day');
-const sunset = dayNightAmbient(6.5 * FRAMES_PER_MINUTE);
+ok(same({ ...dayNightAmbient(2 * FRAMES_PER_MINUTE) }, DAY), 'midday is full day');
+const sunset = dayNightAmbient(4.5 * FRAMES_PER_MINUTE);
 ok(sunset.r === 255 && sunset.g === 170, 'sunset is orange');
-for (const minute of [7, 9, 10.5]) ok(same({ ...dayNightAmbient(minute * FRAMES_PER_MINUTE) }, NIGHT), `minute ${minute} is full night`);
-ok(same({ ...dayNightAmbient(10.75 * FRAMES_PER_MINUTE) }, { r: 230, g: 190, b: 200, light: 0.4 }), 'dawn keyframe');
+ok(same({ ...dayNightAmbient(4 * FRAMES_PER_MINUTE) }, DAY), 'sunset starts in the last minute of the day');
+for (const minute of [5, 6.5, 7.5]) ok(same({ ...dayNightAmbient(minute * FRAMES_PER_MINUTE) }, NIGHT), `minute ${minute} is full night`);
+ok(same({ ...dayNightAmbient(7.5 * FRAMES_PER_MINUTE) }, NIGHT), 'dawn starts in the last 30 seconds of the night');
+ok(same({ ...dayNightAmbient(7.75 * FRAMES_PER_MINUTE) }, { r: 230, g: 190, b: 200, light: 0.4 }), 'dawn keyframe');
 
 const samples = [];
 for (let frame = 0; frame < DAY_CYCLE_FRAMES; frame += SAMPLE_STEP) samples.push(dayNightAmbient(frame));
 const minutesWhere = predicate => samples.filter(predicate).length * SAMPLE_STEP / FRAMES_PER_MINUTE;
-ok(Math.abs(minutesWhere(s => s.light < 0.5) - 7) <= 0.5, 'about 7 minutes of low light');
-ok(Math.abs(minutesWhere(s => s.light >= 0.5) - 4) <= 0.5, 'about 4 minutes of high light');
+ok(Math.abs(minutesWhere(s => s.light < 0.5) - 5) <= 0.5, 'about 5 minutes of low light');
+ok(Math.abs(minutesWhere(s => s.light >= 0.5) - 3) <= 0.5, 'about 3 minutes of high light');
 
 const MAX_CHANNEL_STEP = 12;
 const steps = samples.map((sample, i) => [sample, samples[(i + 1) % samples.length]]);
@@ -56,7 +58,7 @@ ok(/matchElapsed: matchElapsedFrames/.test(save) && /matchElapsedFrames = s\.mat
 import { createRecordingContext } from './render-test-kit.mjs';
 
 const GRASS = 3, SIDEWALK = 1, ROAD = 0, BUILDING = 2;
-const NIGHT_ELAPSED = 9 * FRAMES_PER_MINUTE;
+const NIGHT_ELAPSED = 6 * FRAMES_PER_MINUTE;
 const DAY_ELAPSED = 3 * FRAMES_PER_MINUTE;
 
 function createNightWorld(rows, buildingList = []) {
