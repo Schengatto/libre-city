@@ -51,11 +51,13 @@ const formatRunScore = value => Number(value).toLocaleString('en-US');
 
 const formatRunDelta = delta => (delta < 0 ? '−' : '+') + formatRunScore(Math.abs(delta));
 
+const hasRunMutators = () => !!runConfig.mutators && runConfig.mutators.length > 0;
+
 function runBestLine(result) {
   if (!result.complete) return '';
   if (result.bestBefore === null) return t('shift.firstRun');
   const delta = formatRunDelta(result.score - result.bestBefore);
-  return result.newBest ? t('shift.newBest') + ' (' + delta + ')' : t('shift.bestDelta', { delta });
+  return result.newBest ? t('shift.newBest') + ' (' + delta + ')' : t('shift.bestDelta', { best: formatRunScore(result.bestBefore), delta });
 }
 
 function runTargetLine(target) {
@@ -79,9 +81,10 @@ function renderRunStats(container, stats) {
 function showRunResult(result) {
   const panel = $('#runResultPanel'); if (!panel) return;
   const hud = $('#shiftHud'); if (hud) hud.classList.add('hidden');
-  $('#runResultTitle').textContent = t(result.titleKey || (result.complete ? 'go.time' : 'go.quit'));
+  const jobName = result.job ? t('shift.job.' + result.job).toUpperCase() : '';
+  $('#runResultTitle').textContent = t(result.titleKey || (result.complete ? 'go.time' : 'go.quit'), { job: jobName });
   $('#runResultScore').textContent = '🏆 ' + formatRunScore(result.score);
-  $('#runResultMedal').textContent = RUN_MEDAL_GLYPHS[result.medal] || RUN_NO_MEDAL_GLYPH;
+  $('#runResultMedal').textContent = RUN_MEDAL_GLYPHS[result.medal] ? t('shift.medal.' + result.medal) : RUN_NO_MEDAL_GLYPH;
   const bestLine = runBestLine(result);
   $('#runResultBest').textContent = bestLine;
   $('#runResultBest').classList.toggle('hidden', !bestLine);

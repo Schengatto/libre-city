@@ -4,7 +4,6 @@ const SHIFT_RECOVERY_FRAMES = 180;
 const SHIFT_RECOVERY_RADIUS = 400;
 const SHIFT_SPAWN_MAX_DISTANCE = SHIFT_RECOVERY_RADIUS - HALF_ROAD;
 const SHIFT_GO_MESSAGE_MS = 2000;
-const SHIFT_MEDAL_ICONS = RUN_MEDAL_GLYPHS;
 const SHIFT_MEDAL_ORDER = ['bronze', 'silver', 'gold'];
 const SHIFT_VEHICLE_KINDS = { taxi: 'taxi', pizza: 'delivery', ambulance: 'ambulance', patrol: 'police', fire: 'fire' };
 const SHIFT_SERVICE_TYPES = { pizza: 'pizzeria', ambulance: 'hospital', patrol: 'police', fire: 'fire' };
@@ -12,10 +11,6 @@ const SHIFT_SERVICE_TYPES = { pizza: 'pizzeria', ambulance: 'hospital', patrol: 
 let shiftOnFootFrames = 0;
 
 const isShiftRun = () => !!runConfig && runConfig.mode === 'shift';
-
-const formatShiftScore = formatRunScore;
-
-const hasRunMutators = () => !!runConfig.mutators && runConfig.mutators.length > 0;
 
 function readShiftBests() {
   const bests = store.get('shiftBests', {});
@@ -109,7 +104,7 @@ function renderShiftPanel() {
     const bestLabel = document.createElement('span'); bestLabel.className = 'shiftBest';
     if (!best) bestLabel.textContent = t('shift.noBest');
     else {
-      bestLabel.textContent = t('shift.best', { score: formatShiftScore(best.score) }) + (best.medal ? ' ' + SHIFT_MEDAL_ICONS[best.medal] : '');
+      bestLabel.textContent = t('shift.best', { score: formatRunScore(best.score) }) + (best.medal ? ' ' + RUN_MEDAL_GLYPHS[best.medal] : '');
       if (!best.current) { bestLabel.classList.add('old'); bestLabel.title = t('shift.oldRules'); }
     }
     const start = document.createElement('button'); start.className = 'mbtn shiftStart'; start.textContent = t('shift.start');
@@ -122,7 +117,7 @@ function renderShiftPanel() {
   }
   const nextLabel = $('#shiftNext'); if (!nextLabel) return;
   nextLabel.textContent = closest
-    ? t('shift.nextMedal', { medal: SHIFT_MEDAL_ICONS[closest.next.medal], score: formatShiftScore(closest.next.threshold), job: t('shift.job.' + closest.job) })
+    ? t('shift.nextMedal', { medal: RUN_MEDAL_GLYPHS[closest.next.medal], score: formatRunScore(closest.next.threshold), job: t('shift.job.' + closest.job) })
     : '';
 }
 
@@ -151,16 +146,16 @@ runModes.shift = {
   },
   hud(state) {
     const head = t('shift.hud', {
-      job: t('shift.job.' + state.job).toUpperCase(), score: formatShiftScore(state.score), done: state.jobsDone, failed: state.jobsFailed,
+      job: t('shift.job.' + state.job).toUpperCase(), score: formatRunScore(state.score), done: state.jobsDone, failed: state.jobsFailed,
     });
     const next = nextShiftMedal(state.job, state.score);
-    return next ? head + '   ' + t('shift.hudNext', { medal: SHIFT_MEDAL_ICONS[next.medal], score: formatShiftScore(next.threshold) }) : head;
+    return next ? head + '   ' + t('shift.hudNext', { medal: RUN_MEDAL_GLYPHS[next.medal], score: formatRunScore(next.threshold) }) : head;
   },
 };
 
 gameEvents.on('job:complete', payload => {
   if (!isShiftRun() || !runState || runState.ended || payload.job !== runState.job) return;
-  const points = jobScore(payload) * runScoreMultiplier(payload);
+  const points = Math.round(jobScore(payload) * runScoreMultiplier(payload));
   runState.score += points;
   runState.jobsDone++;
   scorePop(points, player.x, player.y);

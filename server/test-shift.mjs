@@ -60,6 +60,17 @@ ok(run('runState.score') === expectedPoints * 3 && run('runState.jobsDone') === 
 exec('runConfig = null');
 exec(`gameEvents.emit('job:complete', ${JSON.stringify(taxiComplete)})`);
 ok(run('runState.jobsDone') === 2, 'no scoring outside a shift');
+resetRun('taxi');
+exec('runScoreMultiplier = () => 1.5');
+exec(`gameEvents.emit('job:complete', ${JSON.stringify(taxiComplete)})`);
+ok(run('runState.score') === Math.round(expectedPoints * 1.5) && Number.isInteger(run('runState.score')), 'points are rounded before they accumulate');
+resetRun('taxi');
+exec('var savedMultiplayerState = MP; MP = null; pops.length = 0');
+exec(`gameEvents.emit('job:complete', ${JSON.stringify(taxiComplete)}); addScore(150, player.x, player.y)`);
+ok(run('pops.length') === 1 && run('pops[0].text') === '+' + expectedPoints, 'a scored shift job leaves exactly one pop, with the shift points');
+exec('pops.length = 0; runConfig = null; addScore(150, player.x, player.y)');
+ok(run('pops.length') === 1 && run('pops[0].text') === '+150', 'free play still pops the trophy points');
+exec('MP = savedMultiplayerState; pops.length = 0');
 
 console.log('3) HUD, medals and result');
 resetRun('taxi');

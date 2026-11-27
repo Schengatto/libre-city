@@ -104,7 +104,7 @@ const finished = evaluate(context, `(() => {
   finishRun('time');
   finishRun('quit');
   gameEvents.enabled = true;
-  return { resultCalls, shown, ended, enabledAfter: false, lastLogType: runState.log[runState.log.length - 1].type, stateEnded: runState.ended };
+  return { resultCalls, shown, ended, lastLogType: runState.log[runState.log.length - 1].type, stateEnded: runState.ended };
 })()`);
 ok(finished.resultCalls.join() === 'time' && finished.shown.length === 1, 'result is built and shown once, a second finishRun is ignored');
 ok(finished.ended.length === 1 && finished.ended[0].jobsDone === 3 && finished.ended[0].jobsFailed === 1 && finished.ended[0].complete === true
@@ -164,6 +164,7 @@ const resultScreenSetup = `
 const shownResult = evaluate(makeContext(), `(() => {
   ${resultScreenSetup}
   const calls = [];
+  t = (key, params) => (params && !key.startsWith('ch.') ? key + '|' + Object.values(params).join('|') : key);
   launchRun = config => calls.push(['launch', config.job]);
   gameEvents.enabled = true;
   runConfig = { mode: 'shift', job: 'taxi', roomCode: 'PSHIFT' };
@@ -182,14 +183,14 @@ const shownResult = evaluate(makeContext(), `(() => {
   elements['#runShare'].onclick();
   return { newBest, behind, first, quit, withShare: panelState(), calls, reloads: location.reloads };
 })()`);
-ok(shownResult.newBest.title === 'shift.done' && shownResult.newBest.score === '🏆 4,210' && shownResult.newBest.medal === '🥈', 'result shows title, formatted score and medal glyph');
+ok(shownResult.newBest.title === 'shift.done|SHIFT.JOB.TAXI' && shownResult.newBest.score === '🏆 4,210' && shownResult.newBest.medal === 'shift.medal.silver', 'result shows the job-named title, formatted score and medal label');
 ok(shownResult.newBest.best === 'shift.newBest (+620)' && !shownResult.newBest.bestHidden, 'new best line carries the positive delta');
-ok(JSON.stringify(shownResult.newBest.stats) === '[["shift.jobsDone","14"],["shift.jobsFailed","2"]]' || JSON.stringify(shownResult.newBest.stats) === '[["shift.jobsDone",14],["shift.jobsFailed",2]]', 'stats rows render in order');
+ok(JSON.stringify(shownResult.newBest.stats) === '[["shift.jobsDone",14],["shift.jobsFailed",2]]', 'stats rows render in order');
 ok(shownResult.newBest.targetHidden && shownResult.newBest.shareHidden && !shownResult.newBest.panelHidden && shownResult.newBest.hudHidden, 'no target slot or Share without data, panel shown, shift HUD hidden');
-ok(shownResult.behind.best === 'shift.bestDelta' && !shownResult.behind.bestHidden, 'a worse run shows the delta line');
+ok(shownResult.behind.best === 'shift.bestDelta|3,590|−590' && !shownResult.behind.bestHidden, 'a worse run shows the best value and the signed delta');
 ok(shownResult.behind.targetHidden === true, 'target slot stays hidden while the challenge keys are not in the catalogue');
 ok(shownResult.first.best === 'shift.firstRun', 'first run line when there is no previous best');
-ok(shownResult.quit.medal === '—' && shownResult.quit.bestHidden === true && shownResult.quit.title === 'shift.abandoned', 'abandoned run: no medal glyph, no best line');
+ok(shownResult.quit.medal === '—' && shownResult.quit.bestHidden === true && shownResult.quit.title === 'shift.abandoned|SHIFT.JOB.TAXI', 'abandoned run: no medal glyph, no best line');
 ok(shownResult.calls[0][0] === 'launch' && shownResult.calls[0][1] === 'taxi' && shownResult.reloads === 1, 'Retry relaunches the run config and Menu reloads');
 ok(shownResult.withShare.shareHidden === false && shownResult.calls[1][0] === 'share' && shownResult.calls[1][1] === 4210, 'Share appears only with a handler and receives the result');
 

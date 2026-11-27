@@ -1068,6 +1068,7 @@ function carScore(c) {
 function awardScore(pl, n, x, y) {
   if (!pl || !n) return;
   pl.score = (pl.score | 0) + n;
+  if (pl === player && typeof isShiftRun === 'function' && isShiftRun()) return;
   scorePop(n, x, y);
 }
 // As above, but on the current player (global `player`, the way `cash += …` does).
