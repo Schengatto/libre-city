@@ -16,7 +16,7 @@
 const SAVE_VERSION = 1;
 
 // In multiplayer the server owns the state: no local saving.
-function canSave() { return started && !netActive(); }
+function canSave() { return started && !netActive() && !runConfig; }
 function hasSave() { const s = store.get('save', null); return !!(s && s.v === SAVE_VERSION && s.code); }
 
 function captureSave() {

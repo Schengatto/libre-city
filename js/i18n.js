@@ -150,6 +150,7 @@ const STR = {
     'pause.saveFail': '⚠️ Salvataggio non riuscito',
     'pause.share': '📤 Invita un amico',
     'pause.quit': '🏁 Termina e salva il punteggio',
+    'shift.quit': '🏁 Termina il turno',
 
     // ---- End of match ----
     'go.time': '⏱ Tempo scaduto!',
@@ -607,6 +608,7 @@ const STR = {
     'pause.saveFail': '⚠️ Save failed',
     'pause.share': '📤 Invite a friend',
     'pause.quit': '🏁 End and save the score',
+    'shift.quit': '🏁 End run',
 
     'go.time': '⏱ Time\'s up!',
     'go.quit': '🏁 Game over',
