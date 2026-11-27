@@ -302,7 +302,7 @@ function startMatch(resume) {
   const wpn = $('#weapon'); if (wpn) wpn.style.display = peace ? 'none' : '';
   const wb = $('#wpnBar'); if (wb) wb.style.display = peace ? 'none' : '';
   updateStars(); updateHealth(); updateCash(); updateScore(); updateWeapon(); updateTimer(); updateMutatorBadges();
-  const hi =t(usingTouch ? 'game.hintTouch' : 'game.hintKb');
+  const hi = t(usingTouch ? 'game.hintTouch' : 'game.hintKb');
   const mp = netActive() ? t(usingTouch ? 'game.mpLadderTouch' : 'game.mpLadderKb') : '';
   toast(resume ? t('game.welcomeBack', { name: playerName })
                : t('game.welcome', { name: playerName, hint: hi, mp }));
@@ -315,6 +315,7 @@ function updateMutatorBadges() {
   const visible = activeMutatorIds.length > 0 && !netActive();
   badges.classList.toggle('hidden', !visible);
   if (!visible) return;
+  badges.title = t('hud.mutators');
   for (const id of activeMutatorIds) {
     const badge = document.createElement('span');
     badge.textContent = MUTATORS[id].icon;

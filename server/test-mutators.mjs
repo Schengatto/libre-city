@@ -128,6 +128,7 @@ ok(ui.indexOf('applyMutators(runConfig ? (runConfig.mutators || []) : (_spIntent
 ok(ui.includes("store.set('mutatorsPick', mutators);") && ui.includes('name: playerName, mutators }'), 'spGo stores the pick and the intent mutators');
 ok(ui.includes("onClick('playBtn', () => openSpPanel(store.get('mutatorsPick', [])));") && ui.includes('fillSpMutatorPick(mutatorIds);'), 'the SP panel restores the last pick');
 ok(/activeMutatorIds\.length > 0 && !netActive\(\)/.test(ui), 'badges are hidden when empty or in multiplayer');
+ok(ui.includes("badges.title = t('hud.mutators');"), 'the badge row is labelled with hud.mutators');
 ok(daynightSource.includes('TUNING.forceNight && !netActive()'), 'forced night is ignored in multiplayer');
 const endGameBody = ui.slice(ui.indexOf('function endGame('), ui.indexOf('// ---- Starting a match'));
 ok(endGameBody.includes("$('#goMutators')") && endGameBody.includes("MUTATORS[id].icon + ' ' + t('mut.' + id)") && endGameBody.includes('netActive() ? [] : activeMutatorIds'), 'endGame lists the active mutators on the free-play results screen, none in multiplayer');
