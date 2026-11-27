@@ -259,6 +259,12 @@ function endGame(reason) {
     if (glw) glw.classList.add('hidden');
     if (r) r.textContent = rank > 0 ? t('go.rank', { name: playerName, rank }) : t('go.noRank');
   }
+  const goMutators = $('#goMutators');
+  if (goMutators) {
+    const listed = netActive() ? [] : activeMutatorIds;
+    goMutators.textContent = listed.map(id => MUTATORS[id].icon + ' ' + t('mut.' + id)).join(' · ');
+    goMutators.classList.toggle('hidden', listed.length === 0);
+  }
   const go = $('#gameOver'); if (go) go.classList.remove('hidden');
   sfx.coin();
 }
@@ -296,9 +302,6 @@ function startMatch(resume) {
   _loopLast = 0; _loopAcc = 0;                    // start clean (no catch-up from the previous match)
   loop();
 }
-// ---- Single-player: creation panel (violence, duration, map size) ----
-// As for the host, the map size lives in the code's seed → a reload onto the right city is
-// needed; violence and duration travel inside the intent and are applied on the way back.
 function updateMutatorBadges() {
   const badges = $('#mutatorBadges'); if (!badges) return;
   badges.textContent = '';
@@ -340,6 +343,9 @@ function buildSpMutatorChips() {
     box.appendChild(chip);
   }
 }
+// ---- Single-player: creation panel (violence, duration, map size) ----
+// As for the host, the map size lives in the code's seed → a reload onto the right city is
+// needed; violence and duration travel inside the intent and are applied on the way back.
 onClick('playBtn', () => {
   const d = $('#spDuration'); if (d) d.value = String(gameMinutes);
   const v = $('#spViolence'); if (v) v.value = violenceOn ? 'on' : 'off';

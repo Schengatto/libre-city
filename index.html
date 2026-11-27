@@ -351,6 +351,8 @@
   @keyframes neonFlick { 0%,92%,100% { opacity:1 } 93%,95% { opacity:.4 } 96%,98% { opacity:.85 } }
   #goScore, #runResultScore { font-family:'Courier New',monospace; font-weight:bold; font-size:clamp(36px,8vw,68px);
     letter-spacing:.14em; color:#ffd23a; text-shadow:0 0 18px rgba(255,210,58,.8); }
+  #goMutators { font:14px 'Courier New',monospace; color:#e9e6ff; text-align:center; padding:0 12px; }
+  #goMutators.hidden { display:none; }
   #goRank, #runResultBest, #runResultTarget { font:bold 14px 'Courier New',monospace; letter-spacing:.1em; color:#33e0ff;
     text-shadow:0 0 8px rgba(51,224,255,.6); text-align:center; }
   #runResultMedal { font-size:clamp(36px,7vw,56px); line-height:1; }
@@ -588,6 +590,7 @@
     <div id="goTitle" data-i18n="go.time">⏱ Tempo scaduto!</div>
     <div id="goScore">$0</div>
     <div id="goRank"></div>
+    <div id="goMutators" class="hidden"></div>
     <div id="goLadderWrap" class="hidden">
       <table class="ladtab" id="goLadderTable">
         <thead><tr><th>#</th><th data-i18n="lad.name">Nome</th><th data-i18n="lad.points">🏆 Punti</th>

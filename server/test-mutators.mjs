@@ -129,7 +129,13 @@ ok(ui.includes("store.set('mutatorsPick', mutators);") && ui.includes('name: pla
 ok(ui.includes("fillSpMutatorPick(store.get('mutatorsPick', []));"), 'the SP panel restores the last pick');
 ok(/activeMutatorIds\.length > 0 && !netActive\(\)/.test(ui), 'badges are hidden when empty or in multiplayer');
 ok(daynightSource.includes('TUNING.forceNight && !netActive()'), 'forced night is ignored in multiplayer');
-const i18nKeys = ['hud.mutators', 'mut.title', ...mutatorIds.flatMap(id => ['mut.' + id, 'mut.' + id + 'Desc'])];
+const endGameBody = ui.slice(ui.indexOf('function endGame('), ui.indexOf('// ---- Starting a match'));
+ok(endGameBody.includes("$('#goMutators')") && endGameBody.includes("MUTATORS[id].icon + ' ' + t('mut.' + id)") && endGameBody.includes('netActive() ? [] : activeMutatorIds'), 'endGame lists the active mutators on the free-play results screen, none in multiplayer');
+ok(endGameBody.indexOf('finishRun(reason); return;') < endGameBody.indexOf("$('#goMutators')"), 'the mutator line is filled only on the non-run path');
+const gameOverBlock = indexHtml.slice(indexHtml.indexOf('<div id="gameOver"'));
+ok(gameOverBlock.indexOf('id="goMutators"') > 0 && gameOverBlock.indexOf('id="goMutators"') < gameOverBlock.indexOf('id="goLadderWrap"'), 'index.html has #goMutators inside #gameOver');
+ok(ui.indexOf('function updateMutatorBadges()') > ui.indexOf('function startMatch(') && ui.indexOf('function updateMutatorBadges()') < ui.indexOf('// ---- Single-player: creation panel'), 'mutator UI helpers sit next to startMatch, above the single-player banner');
+const i18nKeys =['hud.mutators', 'mut.title', ...mutatorIds.flatMap(id => ['mut.' + id, 'mut.' + id + 'Desc'])];
 ok(i18nKeys.every(key => occurrences(i18nSource, `'${key}':`) === 2), 'every mutator i18n key exists in both catalogs');
 
 console.log(`\n${pass} passed, ${fail} failed`);
