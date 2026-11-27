@@ -255,6 +255,7 @@ function armMissionForCar() {
 }
 function toggleMissions() {
   if (!started) return;
+  if (isShiftRun()) { toast(t('shift.missionsLocked')); return; }
   if (netActive()) { toast(t('mp.noMissions')); return; }
   missionsOn = !missionsOn;
   if (!missionsOn) {

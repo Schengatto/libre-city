@@ -18,6 +18,7 @@ function updateCash() { const c = $('#cash'); if (c) c.textContent = '$' + cash;
 // single-player the local player's.
 function updateScore() {
   const el = $('#score'); if (!el) return;
+  el.classList.toggle('hidden', isShiftRun());
   el.textContent = '🏆 ' + (netActive() ? (net.score | 0) : (player.score | 0));
 }
 // Clock for a timed match (hidden in untimed mode).
@@ -84,7 +85,7 @@ function loop(nowT) {
 // =========================================================
 //  MAIN MENU · SETTINGS · HIGH SCORES · PAUSE
 // =========================================================
-const PANELS = ['langPanel', 'namePanel', 'menuPanel', 'spPanel', 'settingsPanel', 'scoresPanel', 'lbPanel',
+const PANELS = ['langPanel', 'namePanel', 'menuPanel', 'spPanel', 'shiftPanel', 'settingsPanel', 'scoresPanel', 'lbPanel',
                 'howtoPanel', 'mpPanel', 'publicPanel', 'hostPanel', 'queuePanel', 'invitePanel', 'joinPanel'];
 const PUBLIC_GAMES_POLL_MS = 5000;
 const PUBLIC_GAMES_TICK_MS = 1000;
@@ -302,6 +303,8 @@ onClick('playBtn', () => {
   showPanel('spPanel');
 });
 onClick('spBack', showMenu);
+onClick('shiftBtn', () => { renderShiftPanel(); showPanel('shiftPanel'); });
+onClick('shiftBack', showMenu);
 onClick('spGo', () => {
   const mins = $('#spDuration') ? +$('#spDuration').value : 0;
   const viol = $('#spViolence') ? $('#spViolence').value === 'on' : true;

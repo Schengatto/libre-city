@@ -1373,6 +1373,7 @@ function update() {
   updateRescue();
   updatePatrol();
   updateFirejob();
+  if (typeof runConfig !== 'undefined' && runConfig && runConfig.mode === 'shift') updateShiftRecovery();
   updateArmy();
   updateFires();
   updateBurningCars();
