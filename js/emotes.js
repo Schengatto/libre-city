@@ -93,6 +93,7 @@ function drawEmoteBubble(emoji, anchor, look) {
 }
 
 function drawEmoteBubbles() {
+  if (!net.mode && !emoteState.bubbles.size) return;
   refreshEmoteCooldownUi();
   if (!emoteState.bubbles.size) return;
   const nowMs = performance.now();

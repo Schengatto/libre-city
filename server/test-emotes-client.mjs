@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import vm from 'node:vm';
 import { readSource } from './render-test-kit.mjs';
 
@@ -105,6 +107,32 @@ emotes.emoteState.bubbles.set('gone', { index: 1, at: fakeNow });
 emotes.drawEmoteBubbles();
 ok(!emotes.emoteState.bubbles.has('gone'), 'bubble of a player who left is dropped');
 ok(context.ctx.globalAlpha === 1 && context.ctx.textAlign === 'left' && context.ctx.textBaseline === 'alphabetic', 'ctx state restored');
+
+console.log('6) single player skips the cooldown ui refresh');
+resetScene();
+let domLookups = 0;
+context.document.getElementById = () => { domLookups++; return null; };
+context.net.mode = null;
+emotes.drawEmoteBubbles();
+ok(domLookups === 0, 'no dom lookups outside multiplayer');
+context.net.mode = 'client';
+emotes.drawEmoteBubbles();
+ok(domLookups > 0, 'dom refreshed in multiplayer');
+context.document.getElementById = () => null;
+
+console.log('7) wiring guards (source text)');
+const renderSource = readSource('render.js');
+const inputSource = readSource('input.js');
+const netSource = readSource('net.js');
+const htmlSource = fs.readFileSync(path.join(import.meta.dirname, '..', 'index.html'), 'utf8').replace(/\r\n/g, '\n');
+const before = (source, first, second) => source.indexOf(first) >= 0 && source.indexOf(first) < source.indexOf(second);
+ok(before(renderSource, 'drawDayNight();', 'drawEmoteBubbles();') && before(renderSource, 'drawEmoteBubbles();', 'drawPops();'), 'bubbles drawn after the night overlay and before the pops');
+ok(before(inputSource, "e.code === 'Escape' && emoteState.barOpen", 'togglePause()'), 'Escape closes the emoji bar before toggling pause');
+ok(before(inputSource, 'if (paused) return;', "e.code === 'KeyT'"), 'T is ignored while paused');
+ok(before(inputSource, 'emoteState.barOpen && /^Digit[1-8]$/', "e.code.startsWith('Digit')"), 'emoji digits take precedence over weapon digits');
+ok(inputSource.includes("bindBtn('btnEmote', toggleEmoteBar);"), 'touch button toggles the bar');
+ok(netSource.includes("case 'emo': onRemoteEmote(m.id, m.e)"), 'network routes emo to onRemoteEmote');
+ok(before(htmlSource, 'id="emoteBar"', 'js/emotes.js') && before(htmlSource, 'js/emotes.js', 'js/input.js'), 'emotes.js loads after the bar element and before input.js');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
