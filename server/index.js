@@ -696,7 +696,7 @@ function handleCreate(ws, m) {
     }
   }
   const existing = rooms.get(code);
-  if (existing && !existing.ended && activeCount(existing) > 0) { sendRaw(ws, { t: 'no', r: 'exists' }); return; }
+  if (existing && !existing.ended && existing.players.size > 0) { sendRaw(ws, { t: 'no', r: 'exists' }); return; }
   if (liveRooms() >= MAX_ROOMS) { enqueue(ws, { ...m, code }); return; }
   createRoom(ws, m);
 }
@@ -727,7 +727,7 @@ function publicRoomList() {
 function createRoom(ws, m) {
   const code = String(m.code || '').toUpperCase();
   const existing = rooms.get(code);
-  if (existing && !existing.ended && activeCount(existing) > 0) { sendRaw(ws, { t: 'no', r: 'exists' }); return; }
+  if (existing && !existing.ended && existing.players.size > 0) { sendRaw(ws, { t: 'no', r: 'exists' }); return; }
   if (existing) destroyRoom(existing);
   const isPublic = m.public === true;
   const room = {

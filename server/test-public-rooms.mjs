@@ -133,7 +133,19 @@ try {
   ok(response.headers.get('cache-control') === 'no-store', 'cache-control is no-store');
   ok(response.headers.get('content-type').startsWith('application/json'), 'content-type is JSON');
 
-  console.log('\n8) emptied public room disappears after the grace window');
+  console.log('\n8) create cannot replace a room whose players are all in the grace window');
+  const graceHost = await createRoom({ code: 'PGRACE', public: true, title: 'Grace' });
+  const graceToken = findT(graceHost, 'ok')?.token;
+  graceHost.close();
+  await wait(300);
+  const hijacker = await createRoom({ code: 'PGRACE', public: true, title: 'Hijack' });
+  clients.push(hijacker);
+  ok(findT(hijacker, 'no')?.r === 'exists', 'create during grace is rejected with exists');
+  const resumedHost = await joinRoom('PGRACE', { name: 'Ann', token: graceToken });
+  clients.push(resumedHost);
+  ok(findT(resumedHost, 'ok')?.resumed === true, 'original host still resumes with its token');
+
+  console.log('\n9) emptied public room disappears after the grace window');
   const lonelyHost = await createRoom({ code: 'PGONE1', public: true, title: 'Leaving' });
   ok(!!(await listedRoom('PGONE1')), 'room listed while the host is connected');
   lonelyHost.close();
@@ -144,6 +156,10 @@ try {
     vanished = !(await listedRoom('PGONE1'));
   }
   ok(vanished, 'room no longer listed after everyone left');
+  await wait(GRACE_MS + 300);
+  const reuser = await createRoom({ code: 'PGONE1', public: true, title: 'Reused' });
+  clients.push(reuser);
+  ok(!!findT(reuser, 'ok'), 'code is reusable once the grace window has expired');
 
   for (const ws of clients) { try { ws.close(); } catch {} }
   await wait(200);
