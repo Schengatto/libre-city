@@ -229,7 +229,10 @@ function netOnJoined(m) {
   if (m.minutes != null) gameMinutes = m.minutes;   // the server sets the match's pace
   policeOn = m.police !== false;
   net.clockLeft = m.left;
-  if (resumed && started && gameMinutes > 0) timeLeft = net.clockLeft;
+  if (resumed && started && gameMinutes > 0) {
+    timeLeft = net.clockLeft;
+    matchElapsedFrames = gameMinutes * 60 * 60 - net.clockLeft;
+  }
   // Sync the roster without clearing ghosts that are already there (important on reconnect).
   for (const p of (m.players || [])) if (!net.players.has(p.id)) net.players.set(p.id, makeGhost(p.id, p.name, p.shirtIdx));
   if (!resumed && !net.authoritative) {

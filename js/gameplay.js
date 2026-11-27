@@ -1328,6 +1328,7 @@ function updateCamera() {
 // ---------- Main update ----------
 const SERVER_END_GRACE_FRAMES = 5 * 60;
 function update() {
+  matchElapsedFrames++;
   // Timed match: the clock always runs, even while dead/busted and even on an
   // authoritative server (where updateNetClient RENDERS the rest of the world). In MP the
   // real END is called by the server ('end' message); here the countdown starts from the
