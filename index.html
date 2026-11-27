@@ -480,6 +480,30 @@
   #goLadderWrap { max-height:220px; overflow-y:auto; background:rgba(0,0,0,.3); border-radius:12px; }
   #btnLadder { display:none; left:calc(12px + env(safe-area-inset-left,0px)); top:152px; width:44px; height:44px; font-size:19px; }
   body.mp #btnLadder { display:flex; }
+  #emoteBar { position:absolute; left:50%; bottom:22px; transform:translate(-50%,12px); z-index:20;
+    display:none; gap:6px; padding:8px 10px; border-radius:16px; background:rgba(15,15,22,.82);
+    border:1px solid #ffd23a55; box-shadow:0 8px 26px rgba(0,0,0,.55);
+    opacity:0; pointer-events:none; transition:opacity .15s, transform .15s; }
+  body.mp #emoteBar { display:flex; }
+  #emoteBar.open { opacity:1; transform:translate(-50%,0); pointer-events:auto; }
+  #emoteBar.cooling { filter:grayscale(1) brightness(.7); }
+  .emo { position:relative; width:52px; height:52px; border-radius:12px; border:2px solid rgba(255,255,255,.18);
+    background:rgba(255,255,255,.06); font-size:28px; line-height:1; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; font-family:inherit; color:#fff; }
+  .emo:hover { border-color:#ffd23a; background:rgba(255,210,58,.18); }
+  .emo kbd { position:absolute; top:2px; left:4px; font:bold 10px 'Courier New',monospace; color:#8fd6ff; opacity:.85; }
+  #emoteHint { position:absolute; left:50%; bottom:92px; transform:translateX(-50%); z-index:20; display:none;
+    font-size:12px; opacity:.8; text-shadow:0 1px 2px #000; white-space:nowrap; pointer-events:none; }
+  body.mp #emoteHint { display:block; }
+  #emoteHint b { color:#8fd6ff; }
+  #emoteHint.cooling { color:#ffd23a; font-weight:bold; opacity:1; }
+  #btnEmote { display:none; right:calc(92px + env(safe-area-inset-right,0px)); bottom:calc(86px + env(safe-area-inset-bottom,0px)); width:56px; height:56px; font-size:22px; }
+  body.mp #btnEmote { display:flex; }
+  #btnEmote svg { position:absolute; inset:-2px; width:56px; height:56px; transform:rotate(-90deg); pointer-events:none; }
+  body.touch #emoteHint { display:none; }
+  body.touch #emoteBar { left:auto; top:auto; right:calc(14px + env(safe-area-inset-right,0px)); bottom:calc(150px + env(safe-area-inset-bottom,0px));
+    transform:translate(0,12px); flex-wrap:wrap; width:244px; }
+  body.touch #emoteBar.open { transform:translate(0,0); }
 </style>
 </head>
 <body>
@@ -520,6 +544,7 @@
   </div>
 
   <div id="toast"></div>
+  <div id="emoteHint"></div><div id="emoteBar"></div>
 
   <div id="bigMsg" class="hidden">
     <div id="bigTitle" data-i18n="big.dead">Ti hanno ucciso</div>
@@ -572,6 +597,7 @@
     <button id="btnMissions" class="tbtn">📋</button>
     <button id="btnPause" class="tbtn">⏸</button>
     <button id="btnLadder" class="tbtn">🏆</button>
+    <button id="btnEmote" class="tbtn">💬<svg viewBox="0 0 58 58"><circle cx="29" cy="29" r="27" fill="none" stroke="#ffd23a" stroke-width="4" stroke-dasharray="169.6" stroke-dashoffset="169.6"/></svg></button>
   </div>
 
   <div id="start">
@@ -938,6 +964,7 @@
   <script src="js/city.js"></script>
   <script src="js/train.js"></script>
   <script src="js/entities.js"></script>
+  <script src="js/emotes.js"></script>
   <script src="js/input.js"></script>
   <script src="js/missions.js"></script>
   <script src="js/army.js"></script>

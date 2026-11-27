@@ -306,6 +306,7 @@ function onServerMessage(m) {
     case 'kill': netScoreKill(m.id); break;
     case 'w': netOnSnapshot(m); break;             // Phase 2: authoritative world snapshot
     case 'pong': netStatsOnPong(net.stats, m.c, performance.now()); break;
+    case 'emo': onRemoteEmote(m.id, m.e); break;
     default: if (m.id && m.id !== net.myId) netApplyRemote(m.id, m);
   }
 }
@@ -327,6 +328,7 @@ function netShutdown() {
   net.stats = createNetStats();
   net.score = 0; net.streak = 0; net.bounty = 0; updateBountyHud(0);
   policeOn = true;
+  closeEmoteBar();
   document.body.classList.remove('mp');
   netRefreshBadge();
 }
