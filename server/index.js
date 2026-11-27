@@ -49,6 +49,8 @@ const HOST = process.env.HOST || '0.0.0.0';
 // Empty = WebSocket only (site deployed separately).
 const STATIC_DIR = process.env.STATIC_DIR ? path.resolve(process.env.STATIC_DIR) : '';
 const GRACE_MS = Number(process.env.GRACE_MS) || 30_000;          // reconnection window after a network drop
+const EMOTE_COUNT = 8;
+const EMOTE_COOLDOWN_MS = Number(process.env.EMOTE_COOLDOWN_MS) || 5000;
 const SIM_MODE = process.env.SIM_MODE === 'server' ? 'server' : 'host';
 const HOST_MODE = SIM_MODE === 'host';
 const HOST_STALL_MS = 2000;
@@ -217,6 +219,12 @@ function broadcast(room, msg, exceptId) {
 }
 function sendRaw(ws, msg) {
   if (ws && ws.readyState === 1) { try { ws.send(JSON.stringify(msg)); } catch {} }
+}
+function acceptEmote(player, index, nowMs) {
+  const isValidIndex = Number.isInteger(index) && index >= 0 && index < EMOTE_COUNT;
+  if (!isValidIndex || nowMs - (player.lastEmoteAt ?? -Infinity) < EMOTE_COOLDOWN_MS) return false;
+  player.lastEmoteAt = nowMs;
+  return true;
 }
 function pongFor(ping) {
   return Number.isFinite(ping.c) ? { t: 'pong', c: ping.c } : { t: 'pong' };
@@ -812,6 +820,9 @@ function onGameMessage(ws, m) {
       if (target && !target.gone) sendRaw(target.ws, { t: 'kill', id: p.id });
       break;
     }
+    case 'emo':
+      if (acceptEmote(p, m.e, now())) broadcast(room, { t: 'emo', e: m.e, id: p.id }, p.id);
+      break;
     case 'ping':
       sendRaw(ws, pongFor(m));
       break;
