@@ -77,7 +77,7 @@ jobs:
           for file in $sim_files; do cp "js/$file" release/sim/; done
           cp js/sim-stubs.js release/sim/
           cp server/Dockerfile server/docker-compose.yml server/index.js server/sim-runtime.js \
-             server/leaderboard.js server/package.json server/package-lock.json release/
+             server/leaderboard.js server/boards.js server/package.json server/package-lock.json release/
           cp -r dist release/public
 
       - name: Configure SSH
