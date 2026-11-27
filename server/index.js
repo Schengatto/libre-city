@@ -63,6 +63,8 @@ const HOST_LINK_MAX_PAYLOAD = 256 * 1024;
 const HOST_LINK_HELLO_MS = Number(process.env.HOST_LINK_HELLO_MS) || 5000;
 const HOST_LINK_MESSAGES_PER_SECOND = 400;
 const HOST_LINK_MESSAGE_BURST = 800;
+const HOST_LINK_PING_MS = Number(process.env.HOST_LINK_PING_MS) || 5000;
+const HOST_RTT_SMOOTHING = 0.2;
 const MAX_RELAY_BUFFERED_BYTES = 1024 * 1024;
 const MAX_HOST_INPUT_BUFFERED_BYTES = 256 * 1024;
 const RTC_SIGNAL_KINDS = new Set(['offer', 'answer', 'ice']);
@@ -484,6 +486,8 @@ function electHost(room, excludeId) {
   closeHostLink(room);
   room.hostId = next ? next.id : null;
   room.hostLinkBound = false;
+  room.hostRttMs = null;
+  room.hostPingSentAt = null;
   awaitFirstHostFrame(room);
   if (!next) { fallbackToServerSim(room); return; }
   broadcast(room, { t: 'host', id: next.id, name: next.name });
@@ -533,8 +537,27 @@ function handleHostLink(ws, m) {
     state: room.hostState?.players || [],
     police: room.police,
   });
+  pingHostLink(room);
   if (rebinding) broadcast(room, { t: 'host', id: p.id, name: p.name });
   log('hostlink', room.code, p.id);
+}
+function pingHostLink(room) {
+  if (!room.hostLink || room.hostLink.readyState !== 1) return;
+  room.hostPingSentAt = performance.now();
+  sendRaw(room.hostLink, { t: 'hp', c: room.hostPingSentAt });
+}
+function pingHostLinks() {
+  for (const room of rooms.values()) if (hostModeActive(room) && room.hostLink) pingHostLink(room);
+}
+function onHostPingEcho(room, m) {
+  if (room.hostPingSentAt === null || m.c !== room.hostPingSentAt) return;
+  const sample = performance.now() - m.c;
+  room.hostRttMs = room.hostRttMs === null ? sample : room.hostRttMs + (sample - room.hostRttMs) * HOST_RTT_SMOOTHING;
+  room.hostPingSentAt = null;
+}
+function publicHostRttMs(room) {
+  if (room.sim) return 0;
+  return room.hostRttMs === null ? null : Math.round(room.hostRttMs);
 }
 function startsWithSnapshotPayload(data, payloadStart) {
   const payloadEnd = payloadStart + SNAPSHOT_PAYLOAD_PREFIX.length;
@@ -594,10 +617,11 @@ function onHostLinkMessage(ws, data, isBinary) {
   }
   const isSnapshot = data[0] === SNAPSHOT_FRAME_BYTE && data[1] === FRAME_SEPARATOR_BYTE;
   if (!isSnapshot && data.length > MAX_PAYLOAD) return;
+  if (isSnapshot) { room.hostLastFrameAt = now(); relaySnapshot(room, data); return; }
+  let m = null;
+  try { m = JSON.parse(data); } catch {}
+  if (m && m.t === 'hpo') { onHostPingEcho(room, m); return; }
   room.hostLastFrameAt = now();
-  if (isSnapshot) { relaySnapshot(room, data); return; }
-  let m;
-  try { m = JSON.parse(data); } catch { return; }
   if (!m || m.t !== 'hst') return;
   room.hostState = {
     players: roomHostRows(room, m.players),
@@ -727,6 +751,7 @@ function publicRoomList() {
     listed.push({
       code: room.code, title: room.title, players, max: room.max,
       leftSec: room.minutes ? Math.round(leftMs / 1000) : null,
+      hostRttMs: publicHostRttMs(room),
     });
   }
   const leftRank = room => room.leftSec === null ? Infinity : room.leftSec;
@@ -745,6 +770,7 @@ function createRoom(ws, m) {
     minutes: Math.max(0, +m.minutes || 0), police: typeof m.police === 'boolean' ? m.police : true, dayNight: typeof m.dayNight === 'boolean' ? m.dayNight : true, startAt: now(),
     idSeq: 0, players: new Map(), endTimer: null, ended: false,
     hostId: null, hostLink: null, hostLinkBound: false, hostBindStartedAt: 0, hostLastFrameAt: 0, hostState: null, resigned: new Set(), hostWatchTimer: null,
+    hostRttMs: null, hostPingSentAt: null,
   };
   rooms.set(code, room);
   scheduleEnd(room);
@@ -1031,7 +1057,8 @@ const heartbeat = setInterval(() => {
     try { ws.ping(); } catch {}
   }
 }, HEARTBEAT_MS);
-wss.on('close', () => clearInterval(heartbeat));
+const hostLinkPingTimer = HOST_MODE ? setInterval(pingHostLinks, HOST_LINK_PING_MS) : null;
+wss.on('close', () => { clearInterval(heartbeat); clearInterval(hostLinkPingTimer); });
 
 // ---------- Profiling report (only with SIM_PROFILE) ------------------------
 if (PROFILE) {

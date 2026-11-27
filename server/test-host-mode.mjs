@@ -24,6 +24,10 @@ const BINARY_SNAPSHOT_FRAME_BYTE = 0x57;
 const BACKLOG_FRAME_COUNT = 96;
 const BACKLOG_FRAME_BYTES = 200_000;
 const HOST_LINK_HELLO_MS = 1000;
+const HOST_LINK_PING_MS = 300;
+const HOST_PING_ECHO_DELAY_MS = 150;
+const HOST_PING_REPLAY_COUNT = 20;
+const ROOM_ROW_POLL_MS = 100;
 const ABNORMAL_CLOSE_CODE = 1006;
 const HOST_LINK_FLOOD_COUNT = 2000;
 const HOST_LINK_LEGIT_BURST = 300;
@@ -55,7 +59,7 @@ function startServer(port, simMode, label) {
       LEADERBOARD_FILE: path.join(LEADERBOARD_DIR, `${label}.json`),
       LEADERBOARD_QUALIFY_MS: '200', LEADERBOARD_MIN_SESSION_MS: '50',
       LEADERBOARD_MAX_PPM: String(TEST_MAX_PPM), LEADERBOARD_MAX_KILLS_PER_MINUTE: String(TEST_MAX_KILLS_PER_MINUTE),
-      HOST_LINK_HELLO_MS: String(HOST_LINK_HELLO_MS),
+      HOST_LINK_HELLO_MS: String(HOST_LINK_HELLO_MS), HOST_LINK_PING_MS: String(HOST_LINK_PING_MS),
     },
     stdio: ['ignore', 'ignore', 'pipe'],
   });
@@ -189,6 +193,32 @@ async function punchPedestrians(ws, isDone) {
 }
 
 const closeAll = sockets =>{ for (const ws of sockets) { try { ws.close(); } catch {} } };
+
+async function publicRoomRow(code) {
+  const response = await fetch(`http://127.0.0.1:${PORT}/rooms`);
+  return (await response.json()).rooms.find(row => row.code === code);
+}
+
+async function waitForRoomRow(code, predicate, timeoutMs = MESSAGE_TIMEOUT_MS) {
+  const deadline = performance.now() + timeoutMs;
+  for (;;) {
+    const row = await publicRoomRow(code);
+    if ((row && predicate(row)) || performance.now() > deadline) return row;
+    await wait(ROOM_ROW_POLL_MS);
+  }
+}
+
+function echoHostPings(link, echoState) {
+  link.addEventListener('message', event => {
+    if (typeof event.data !== 'string') return;
+    let message;
+    try { message = JSON.parse(event.data); } catch { return; }
+    if (message.t !== 'hp' || echoState.mode === 'none') return;
+    const reply = () => { echoState.lastAnsweredC = message.c; send(link, { t: 'hpo', c: message.c }); };
+    if (echoState.mode === 'delayed') setTimeout(reply, HOST_PING_ECHO_DELAY_MS);
+    else reply();
+  });
+}
 
 try {
   console.log('creator is host');
@@ -494,12 +524,20 @@ try {
   console.log('stall check skips a lone player');
   check(/room\.players\.size > 1 && hostStalled\(room\)/.test(fs.readFileSync(path.join(import.meta.dirname, 'index.js'), 'utf8')),
     'the stall check runs pickHost only with more than one player');
+  const serverSource = fs.readFileSync(path.join(import.meta.dirname, 'index.js'), 'utf8');
+  const hostLinkMessageStart = serverSource.indexOf('function onHostLinkMessage(');
+  const hostLinkMessageSource = serverSource.slice(hostLinkMessageStart, serverSource.indexOf('\nfunction ', hostLinkMessageStart + 1));
+  const snapshotLineEnd = hostLinkMessageSource.indexOf('\n', hostLinkMessageSource.indexOf('if (isSnapshot)'));
+  const frameClockIndex = hostLinkMessageSource.indexOf('room.hostLastFrameAt = now();', snapshotLineEnd);
+  const hostPingEchoIndex = hostLinkMessageSource.indexOf("'hpo'");
+  check(hostPingEchoIndex > 0 && frameClockIndex > hostPingEchoIndex, 'hpo is handled before the frame clock');
 
   console.log('bind deadline before the first frame');
   const slowHost = await createRoom('HOSTB1', 'Hal');
   const slowHostElectedAt = performance.now();
   const slowGuest = await joinRoom('HOSTB1', 'Gus');
   const slowLink = await openHostLink('HOSTB1', slowHost.token);
+  echoHostPings(slowLink, { mode: 'instant' });
   await waitFor(() => findType(slowLink, 'hoststart'));
   await wait(HOST_STALL_MS + 1000 - (performance.now() - slowHostElectedAt));
   check(!findType(slowGuest.ws, 'host'), 'a host without its first frame is not replaced after the stall time');
@@ -627,6 +665,11 @@ try {
   check(guestSnapshot && guestSnapshot.me && guestSnapshot.me.sco === 0 && guestSnapshot.sc.length === 2,
     'the fallback sim tracks both players once');
   closeAll([oldCreator.ws, oldGuest.ws]);
+  const publicOldCreator = await enter(PORT, { t: 'create', code: 'FALL03', name: 'Fay', max: 8, minutes: 5, build: OLD_BUILD, public: true, title: 'Fallback' });
+  check(publicOldCreator.ok && publicOldCreator.ok.sim === true && publicOldCreator.ok.host === null, 'a public old-build room falls back to the server sim');
+  const fallbackRow = await publicRoomRow('FALL03');
+  check(fallbackRow && fallbackRow.hostRttMs === 0, `a HOST_MODE room on the server-sim fallback reports hostRttMs 0 (${fallbackRow && fallbackRow.hostRttMs})`);
+  closeAll([publicOldCreator.ws]);
 
   console.log('fallback restores the hst state');
   const resigningHost = await createRoom('FALL02', 'Rita');
@@ -669,6 +712,43 @@ try {
   const laterElection = await waitFor(() => findType(staleResigner.ws, 'host'));
   check(laterElection && laterElection.id === staleResigner.id, 'a later election can still pick the player whose resign was ignored');
   closeAll([stayingHost.ws, staleResigner.ws]);
+
+  console.log('host link ping and hostRttMs');
+  const pingHost = await enter(PORT, { t: 'create', code: 'HPING1', name: 'Pia', dev: 'desktop', max: 4, minutes: 5, public: true, title: 'Ping' });
+  const unmeasuredRow = await publicRoomRow('HPING1');
+  check(unmeasuredRow && unmeasuredRow.hostRttMs === null, 'hostRttMs is null until measured');
+  const pingLink = await openHostLink('HPING1', pingHost.token);
+  const pingEcho = { mode: 'none', lastAnsweredC: null };
+  echoHostPings(pingLink, pingEcho);
+  const firstHostPing = await waitFor(() => findType(pingLink, 'hp'));
+  check(firstHostPing && Number.isFinite(firstHostPing.c), 'the server pings the hostlink right after binding');
+  send(pingLink, { t: 'hpo', c: 1 });
+  await wait(2 * HOST_LINK_PING_MS);
+  const forgedEchoRow = await publicRoomRow('HPING1');
+  check(forgedEchoRow && forgedEchoRow.hostRttMs === null, 'an hpo with an unknown c is ignored');
+  pingEcho.mode = 'delayed';
+  const delayedRow = await waitForRoomRow('HPING1', row => row.hostRttMs !== null);
+  check(delayedRow && delayedRow.hostRttMs >= HOST_PING_ECHO_DELAY_MS && delayedRow.hostRttMs < HOST_PING_ECHO_DELAY_MS + HOST_CHECK_SLACK_MS,
+    `hostRttMs reflects the echo delay (${delayedRow && delayedRow.hostRttMs})`);
+  pingEcho.mode = 'instant';
+  await wait(6 * HOST_LINK_PING_MS);
+  const smoothedRow = await publicRoomRow('HPING1');
+  check(smoothedRow && delayedRow && smoothedRow.hostRttMs < delayedRow.hostRttMs && smoothedRow.hostRttMs > 0,
+    `hostRttMs is smoothed towards faster samples (${smoothedRow && smoothedRow.hostRttMs})`);
+  pingEcho.mode = 'none';
+  await wait(HOST_LINK_PING_MS);
+  const settledRow = await publicRoomRow('HPING1');
+  for (let replayIndex = 0; replayIndex < HOST_PING_REPLAY_COUNT; replayIndex++) send(pingLink, { t: 'hpo', c: pingEcho.lastAnsweredC });
+  await wait(2 * HOST_LINK_PING_MS);
+  const replayedRow = await publicRoomRow('HPING1');
+  check(settledRow && replayedRow && Math.abs(replayedRow.hostRttMs - settledRow.hostRttMs) <= 1,
+    `a replayed hpo adds no sample (${settledRow && settledRow.hostRttMs} -> ${replayedRow && replayedRow.hostRttMs})`);
+  const pingGuest = await joinRoom('HPING1', 'Gil');
+  send(pingHost.ws, { t: 'resign' });
+  const pingElection = await waitFor(() => findType(pingGuest.ws, 'host'));
+  const newHostRow = await publicRoomRow('HPING1');
+  check(pingElection && pingElection.id === pingGuest.id && newHostRow && newHostRow.hostRttMs === null, 'a new host starts unmeasured');
+  closeAll([pingHost.ws, pingLink, pingGuest.ws]);
 
   console.log('server mode keeps the old handshake');
   const serverModePlayer = await enter(SERVER_MODE_PORT, { t: 'create', code: 'SRVM01', name: 'Sam', max: 8, minutes: 0 });
