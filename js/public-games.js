@@ -39,3 +39,35 @@ function visiblePublicRooms(rooms, elapsedSec) {
 function isPublicRoomFull(room) {
   return room.players >= room.max;
 }
+
+const PUBLIC_ROOM_RTT_SAMPLES = 3;
+const PING_MID_MS = 80;
+const PING_BAD_MS = 160;
+
+function recentFetchDurations(durations, sampleMs) {
+  if (!Number.isFinite(sampleMs) || sampleMs < 0) return durations.slice();
+  return [...durations, sampleMs].slice(-PUBLIC_ROOM_RTT_SAMPLES);
+}
+
+function ownRttEstimateMs(durations) {
+  return durations.length ? Math.min(...durations) : null;
+}
+
+function publicRoomHostRttMs(room) {
+  return Number.isFinite(room.hostRttMs) && room.hostRttMs >= 0 ? room.hostRttMs : null;
+}
+
+function estimatedHostPingMs(ownRttMs, hostRttMs) {
+  if (ownRttMs === null || hostRttMs === null) return null;
+  return Math.round(ownRttMs + hostRttMs);
+}
+
+function pingBandClass(ms) {
+  if (ms === null) return 'off';
+  if (ms < PING_MID_MS) return '';
+  return ms < PING_BAD_MS ? 'mid' : 'bad';
+}
+
+function formatPingEstimate(ms) {
+  return ms === null ? '—' : '~' + ms + ' ms';
+}

@@ -8,7 +8,9 @@ const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ', msg); } els
 
 const helpers = vm.runInNewContext(
   readSource('public-games.js') +
-  '\n({ publicGameSizeKey, formatTimeLeft, isTimeLeftLow, visiblePublicRooms, isPublicRoomFull, publicRoomsUrl, serverHttpBase });'
+  '\n({ publicGameSizeKey, formatTimeLeft, isTimeLeftLow, visiblePublicRooms, isPublicRoomFull, publicRoomsUrl, serverHttpBase,' +
+  ' recentFetchDurations, ownRttEstimateMs, publicRoomHostRttMs, estimatedHostPingMs, pingBandClass, formatPingEstimate,' +
+  ' PUBLIC_ROOM_RTT_SAMPLES, PING_MID_MS, PING_BAD_MS });'
 );
 
 console.log('1) size key from the room code');
@@ -68,6 +70,30 @@ ok(/if \(!playerName\) \{[^}]*joinName[^}]*focus\(\);\s*return;/.test(functionSo
 ok(/Number\.isInteger\(room\.leftSec\)/.test(functionSource('isRenderablePublicRoom')), 'only integer leftSec reaches formatTimeLeft');
 ok(/_joinIntent\.auto && ROOM_FROM_URL === _joinIntent\.code && playerName/.test(uiSource), 'auto-join boot branch is guarded by code and player name');
 ok(/store\.set\('joinIntent', \{ code, pass: '', auto: true \}\)/.test(functionSource('joinPublicGame')), 'joining another city stores an auto joinIntent');
+const pingCellSource = functionSource('setPublicGamePing');
+ok(pingCellSource.length > 0 && !/innerHTML|insertAdjacentHTML/.test(pingCellSource), 'ping cell never uses innerHTML');
+ok(rowBuilderSource.includes('setPublicGamePing('), 'row builder fills the ping cell');
+ok(functionSource('renderPublicGames').includes('cells[4]'), 'ping cell refreshes when the row key is unchanged');
+ok(/recentFetchDurations\(/.test(functionSource('fetchPublicGames')) && functionSource('fetchPublicGames').includes('performance.now()'), 'rooms fetch is timed');
+ok(indexHtml.includes('data-i18n="pub.ping"'), 'table head has the ping column');
+
+console.log('7) ping estimate');
+ok(helpers.PUBLIC_ROOM_RTT_SAMPLES === 3 && helpers.PING_MID_MS === 80 && helpers.PING_BAD_MS === 160, 'ping constants');
+const durationsInput = [10, 20, 30];
+ok(JSON.stringify(helpers.recentFetchDurations(durationsInput, 40)) === '[20,30,40]', 'keeps the last 3 fetch durations');
+ok(JSON.stringify(durationsInput) === '[10,20,30]', 'durations input not mutated');
+ok(JSON.stringify(helpers.recentFetchDurations([], NaN)) === '[]', 'NaN sample is not added');
+ok(JSON.stringify(helpers.recentFetchDurations([5], -1)) === '[5]', 'negative sample is not added');
+ok(helpers.ownRttEstimateMs([90, 40, 70]) === 40, 'own RTT is the fastest fetch');
+ok(helpers.ownRttEstimateMs([]) === null, 'no fetch -> no own RTT');
+ok(helpers.publicRoomHostRttMs({ hostRttMs: 25 }) === 25 && helpers.publicRoomHostRttMs({ hostRttMs: 0 }) === 0, 'valid hostRttMs is kept');
+ok([{}, { hostRttMs: '25' }, { hostRttMs: -1 }, { hostRttMs: NaN }].every(room => helpers.publicRoomHostRttMs(room) === null), 'malformed hostRttMs -> null');
+ok(helpers.estimatedHostPingMs(40, 45.6) === 86, 'estimate is the rounded sum');
+ok(helpers.estimatedHostPingMs(null, 10) === null && helpers.estimatedHostPingMs(40, null) === null, 'missing leg -> null');
+ok(helpers.estimatedHostPingMs(40, 0) === 40, 'server-sim room = own RTT');
+ok(helpers.pingBandClass(79) === '' && helpers.pingBandClass(80) === 'mid' && helpers.pingBandClass(159) === 'mid', 'green below 80, yellow below 160');
+ok(helpers.pingBandClass(160) === 'bad' && helpers.pingBandClass(null) === 'off', 'red from 160, off when unknown');
+ok(helpers.formatPingEstimate(85) === '~85 ms' && helpers.formatPingEstimate(null) === '—', 'ping label');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
