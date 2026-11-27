@@ -169,7 +169,7 @@ function tickWorld() {
     }
     // PER-PLAYER wanted-level decay (individual heat).
     if (crimeCd > 0) crimeCd--;
-    else if (wantedHeat > 0) { wantedHeat = Math.max(0, wantedHeat - 0.0016); wanted = Math.floor(wantedHeat); }
+    else if (wantedHeat > 0) { wantedHeat = Math.max(0, wantedHeat - TUNING.heatDecay); wanted = Math.floor(wantedHeat); }
     pl.input.fireEdge = false;
     saveP(pl);
     if (pl.downT === 0) bodyHistoryRecord(pl.hist, frame, (pl.car || pl).x, (pl.car || pl).y);

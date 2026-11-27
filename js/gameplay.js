@@ -47,7 +47,7 @@ function weaponKey(i) {
 function commitCrime(amount, key) {
   if (!policeOn) return;
   const before = wanted;
-  wantedHeat = clamp(wantedHeat + amount, 0, 5.99);
+  wantedHeat = clamp(wantedHeat + amount * TUNING.crimeHeatScale, 0, 5.99);
   crimeCd = 60 * 9;
   wanted = Math.floor(wantedHeat);
   updateStars();
@@ -460,7 +460,6 @@ function updateRobber(p) {
 }
 
 // ---------- Cop on foot ----------
-const COP_RANGE = 330;
 function updateCop(p) {
   const tp = nearestWantedPlayer(p.x, p.y);      // hunts the nearest wanted player
   const tx = tp.x - p.x, ty = tp.y - p.y, d = Math.hypot(tx, ty) || 1;
@@ -481,8 +480,8 @@ function updateCop(p) {
   moveBox(p, p.dir.x * advance, p.dir.y * advance, p.r, p.r);
   p.walk += advance > 0.5 ? 0.25 : 0;
   if (p.shootCd > 0) p.shootCd--;
-  if (d < COP_RANGE && p.shootCd === 0 && lineClear(p.x, p.y, tp.x, tp.y)) {
-    copShoot(p, tp); p.shootCd = rndi(42, 66);
+  if (d < TUNING.copRange && p.shootCd === 0 && lineClear(p.x, p.y, tp.x, tp.y)) {
+    copShoot(p, tp); p.shootCd = rndi(TUNING.copFireCdMin, TUNING.copFireCdMax);
   }
 }
 function copShoot(p, tp) {
@@ -975,6 +974,7 @@ function addDent(c, dmg, impactAngle) {
   c.dents = (c.dents & ~(3 << (2 * zone))) | (level << (2 * zone));
 }
 function damageCar(c, dmg, angle, chain = 0) {
+  dmg *= TUNING.carDamageScale;
   addDent(c, dmg, angle);
   c.health -= dmg;
   if (c.driver === 'player') gameEvents.emit('vehicle:damage', { amount: dmg, vehicleKind: vehicleKindOf(c) });
@@ -1238,9 +1238,9 @@ function managePopulation() {
     if (c.isDelivery) nDeliv++;
   }
   // Civilians.
-  if (nCiv < 26 * nP && frame % 8 === 0) { const centre = spawnCentre(); const p = randomWalkNear(centre.x, centre.y, inMin, inMax); if (p) peds.push(makePed(p.x, p.y, 'civ')); }
+  if (nCiv < TUNING.civilianCap * nP && frame % TUNING.civilianSpawnEvery === 0) { const centre = spawnCentre(); const p = randomWalkNear(centre.x, centre.y, inMin, inMax); if (p) peds.push(makePed(p.x, p.y, 'civ')); }
   // Moving traffic.
-  if (nTraf < 14 * nP && frame % 12 === 0) { const centre = spawnCentre(); const c = spawnTrafficNear(centre.x, centre.y, inMin, inMax); if (c) cars.push(c); }
+  if (nTraf < TUNING.trafficCap * nP && frame % TUNING.trafficSpawnEvery === 0) { const centre = spawnCentre(); const c = spawnTrafficNear(centre.x, centre.y, inMin, inMax); if (c) cars.push(c); }
   // Parked cars.
   if (nPark < 14 * nP && frame % 16 === 0) { const centre = spawnCentre(); const p = randomParkingNear(centre.x, centre.y, inMin, inMax); if (p) cars.push(makeParked(p.x, p.y, p.angle)); }
   // A few taxis around the city, always.
@@ -1281,8 +1281,8 @@ function managePopulation() {
     if (nArmy < 2 * nP && frame % 60 === 0) { const centre = spawnCentre(); const p = randomRoadNear(centre.x, centre.y, inMin, inMax); if (p) cars.push(makeArmyCar(p.x, p.y)); }
   }
   // POLICE according to the wanted level (room-wide heat, shared in multiplayer).
-  const wantCops = wanted * nP;                  // cops on foot
-  const wantCopCars = Math.max(0, wanted - 1) * nP;   // patrol cars
+  const wantCops = Math.ceil(wanted * nP * TUNING.copsPerStar);                  // cops on foot
+  const wantCopCars = Math.ceil(Math.max(0, wanted - 1) * nP * TUNING.copsPerStar);   // patrol cars
   if (wanted > 0 && nCop < wantCops && frame % 30 === 0) { const centre = spawnCentre(policeSpawnFocus()); const p = randomWalkNear(centre.x, centre.y, inMin, inMax); if (p) peds.push(makePed(p.x, p.y, 'cop')); }
   if (wanted >= 2 && nPolice < wantCopCars && frame % 50 === 0) { const centre = spawnCentre(policeSpawnFocus()); const p = randomRoadNear(centre.x, centre.y, inMin, inMax); if (p) { const c = makeCar(p.x, p.y, 'police'); c.wasPolice = true; cars.push(c); } }
 }
@@ -1383,7 +1383,7 @@ function update() {
   managePopulation();
   // Wanted-level decay.
   if (crimeCd > 0) crimeCd--;
-  else if (wantedHeat > 0) { wantedHeat = Math.max(0, wantedHeat - 0.0016); const w = Math.floor(wantedHeat); if (w !== wanted) { const from = wanted; wanted = w; updateStars(); gameEvents.emit('wanted:change', { from, to: w }); } }
+  else if (wantedHeat > 0) { wantedHeat = Math.max(0, wantedHeat - TUNING.heatDecay); const w = Math.floor(wantedHeat); if (w !== wanted) { const from = wanted; wanted = w; updateStars(); gameEvents.emit('wanted:change', { from, to: w }); } }
   // Siren of the police hunting you.
   if (wanted > 0 && frame % 26 === 0) sfx.siren((frame / 26) % 2 < 1);
   // Siren on your own service vehicle (mission running, or switched on with Space).

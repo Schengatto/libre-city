@@ -26,7 +26,7 @@ function startRide() {
   taxi.fare = null; taxi.phase = 'ride'; taxi.dest = { x: d.x, y: d.y };
   const len = dist(player.x, player.y, d.x, d.y);
   taxi.pay = 15 + Math.round(len * 0.022 / 5) * 5;                // payout based on distance
-  taxi.timer = Math.round(len / 2.5) + 60 * 4;                    // arrive in time → tip
+  taxi.timer = Math.round((Math.round(len / 2.5) + 60 * 4) * TUNING.jobTimerScale);                   // arrive in time → tip
   taxi.timer0 = taxi.timer; taxi.legDistance = len;
   gameEvents.emit('job:pickup', { job: 'taxi', x: taxi.dest.x, y: taxi.dest.y });
   gameEvents.emit('job:start', { job: 'taxi', x: taxi.dest.x, y: taxi.dest.y, pay: taxi.pay, timerTotal: taxi.timer0 });
@@ -92,7 +92,7 @@ function spawnOrder() {
 function pickupFood() {
   const len = dist(pizza.shop.door.x, pizza.shop.door.y, pizza.client.x, pizza.client.y);
   pizza.pay = 20 + Math.round(len * 0.025 / 5) * 5;   // payout based on distance
-  pizza.timer = Math.round(len / 2.6) + 60 * 4;       // delivered hot → tip
+  pizza.timer = Math.round((Math.round(len / 2.6) + 60 * 4) * TUNING.jobTimerScale);      // delivered hot → tip
   pizza.timer0 = pizza.timer; pizza.legDistance = len;
   pizza.phase = 'deliver';
   gameEvents.emit('job:pickup', { job: 'pizza', x: pizza.client.x, y: pizza.client.y });
@@ -161,7 +161,7 @@ function loadPatient() {
   const i = peds.indexOf(inj); if (i >= 0) peds.splice(i, 1);     // the casualty is loaded aboard
   rescue.patient = null; rescue.phase = 'deliver'; rescue.hosp = hosp;
   rescue.pay = 30 + Math.round(hd * 0.03 / 5) * 5;    // payout based on the run
-  rescue.timer = Math.round(hd / 2.5) + 60 * 4;       // arrive quickly → bonus
+  rescue.timer = Math.round((Math.round(hd / 2.5) + 60 * 4) * TUNING.jobTimerScale);      // arrive quickly → bonus
   rescue.timer0 = rescue.timer; rescue.legDistance = hd;
   gameEvents.emit('job:pickup', { job: 'ambulance', x: hosp.door.x, y: hosp.door.y });
   gameEvents.emit('job:start', { job: 'ambulance', x: hosp.door.x, y: hosp.door.y, pay: rescue.pay, timerTotal: rescue.timer0 });
@@ -221,7 +221,7 @@ function spawnCrime() {
   patrol.phase = 'chase'; patrol.robber = r;
   patrol.pay = 45;
   patrol.legDistance = dist(player.x, player.y, p.x, p.y);
-  patrol.timer0 = Math.round(patrol.legDistance / 2.2) + 60 * 14;
+  patrol.timer0 = Math.round((Math.round(patrol.legDistance / 2.2) + 60 * 14) * TUNING.jobTimerScale);
   patrol.timer = patrol.timer0;                       // when time runs out the thief vanishes
   gameEvents.emit('job:start', { job: 'patrol', x: p.x, y: p.y, pay: patrol.pay, timerTotal: patrol.timer0 });
   toast(t(lm ? (lm.type === 'bank' ? 'patrol.bank' : 'patrol.market') : 'patrol.street'));
@@ -273,7 +273,7 @@ function spawnFire() {
   const d = dist(player.x, player.y, p.x, p.y);
   firejob.pay = 35 + Math.round(d * 0.02 / 5) * 5;
   firejob.legDistance = d;
-  firejob.timer0 = Math.round(d / 2.2) + 60 * 16;    // after that the fire gets out of hand
+  firejob.timer0 = Math.round((Math.round(d / 2.2) + 60 * 16) * TUNING.jobTimerScale);    // after that the fire gets out of hand
   firejob.timer = firejob.timer0;
   gameEvents.emit('job:start', { job: 'fire', x: p.x, y: p.y, pay: firejob.pay, timerTotal: firejob.timer0 });
   toast(t('fire.new'));
