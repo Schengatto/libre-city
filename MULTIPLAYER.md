@@ -193,6 +193,28 @@ guest ⇄ VPS ⇄ host      (solo signaling e fallback WS)
 - Misurare: aprire il guest con `?netstats` (P2P) e poi con `?netstats&rtc=off` (WS) e
   confrontare RTT, `input RTT`, `snap/s`, jitter e `max gap 5s`.
 
+#### Misura in produzione (LIBRE-55, 2026-11-27)
+
+Stanza privata, 1 host + 1 guest headless sulla stessa macchina, guest in movimento, 10 min
+per trasporto. Il P2P passa dal workaround ICE (candidate host riscritti su 127.0.0.1), quindi
+non misura un vero attraversamento NAT.
+
+| Guest | `max gap 5s` p50 / p95 / max | campioni ≥ 250 ms | `input RTT` p50 / max | ritardo host → guest p50 / p99 |
+|---|---|---|---|---|
+| P2P | 66 / 94 / 407 ms | 1 su 60 | 32 / 60 ms | 7 / 39 ms |
+| WS (`?rtc=off`) | 170 / 534 / 629 ms | 13 su 60 | 108 / 323 ms | 45 / 294 ms |
+
+- P2P: i 3 buchi ≥ 250 ms dello stream sono pause del worker host, insieme a pause della
+  macchina di test (anche del probe separato): non dipendono dalla rete.
+- WS: nei minuti senza disturbi locali, 20 buchi ≥ 250 ms. In tutti l'host inviava regolare
+  e lo snapshot arrivava in ritardo; il ping WS al VPS saliva sempre, la connect TCP al VPS
+  in 15 casi su 20, quella verso un host di controllo solo in 2. GC esclusa (`gcMax` ≤ 18 ms).
+- Causa: il VPS (KVM condiviso Contabo) perde la vCPU. Un ciclo `sleep(5 ms)` sul VPS ha
+  buchi oltre 100 ms 19 volte in 5 min (max 334 ms) con steal 0 in `/proc/stat`; l'86% delle
+  connect TCP lente e il 68% dei ping WS lenti cadono in uno di questi buchi (a caso ~2-6%).
+  Ritarda il kernel, non solo Node: nessuna modifica al codice lo toglie; serve una vCPU
+  dedicata o un altro hosting.
+
 ---
 
 ## Avvio in locale
