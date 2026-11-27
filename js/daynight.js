@@ -12,6 +12,8 @@ const DAY_NIGHT_KEYFRAMES = [
   { frame: 28800, r: 255, g: 255, b: 255, light: 0 },
 ];
 
+const NIGHT_FULL_FRAME = DAY_NIGHT_KEYFRAMES.find(keyframe => keyframe.light === 1).frame;
+
 function dayCycleFrame(elapsedFrames) {
   return ((Math.floor(elapsedFrames) % DAY_CYCLE_FRAMES) + DAY_CYCLE_FRAMES) % DAY_CYCLE_FRAMES;
 }
@@ -221,8 +223,9 @@ function drawNightLightSources(lightContext) {
 }
 
 function drawDayNight() {
-  if (!dayNightOn || vw <= 0 || vh <= 0) return;
-  const ambient = dayNightAmbient(dayCycleFrame(matchElapsedFrames));
+  const forced = TUNING.forceNight && !netActive();
+  if ((!dayNightOn && !forced) || vw <= 0 || vh <= 0) return;
+  const ambient = dayNightAmbient(forced ? NIGHT_FULL_FRAME : dayCycleFrame(matchElapsedFrames));
   if (ambient.r === 255 && ambient.g === 255 && ambient.b === 255) return;
   const lightContext = nightLightPrepareMap();
   lightContext.fillStyle = `rgb(${ambient.r},${ambient.g},${ambient.b})`;

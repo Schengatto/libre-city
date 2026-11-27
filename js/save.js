@@ -33,6 +33,7 @@ function captureSave() {
     cash,
     wanted, wantedHeat, crimeCd,
     lightClock,
+    mutators: activeMutatorIds.slice(),
     player: {
       x: player.x, y: player.y, health: player.health,
       weaponIdx: player.weaponIdx, owned: player.owned.slice(),
@@ -59,6 +60,7 @@ function applySave(s) {
   cash = s.cash | 0;
   wanted = s.wanted | 0; wantedHeat = +s.wantedHeat || 0; crimeCd = s.crimeCd | 0;
   lightClock = s.lightClock | 0;
+  applyMutators(sanitizeMutatorIds(s.mutators));
   const p = s.player || {};
   const onMap = p.x > 0 && p.y > 0 && p.x < WORLD_W && p.y < WORLD_H;
   if (onMap && !boxHits(p.x, p.y, player.r, player.r)) { player.x = p.x; player.y = p.y; }

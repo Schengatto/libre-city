@@ -108,7 +108,15 @@ function showMenu() {
   const nm = $('#menuName'); if (nm) nm.textContent = playerName;
   const lb = $('#loadBtn'); if (lb) lb.classList.toggle('hidden', !hasSave());   // 💾 only when a save exists
   updateHiScore();                                                              // must be rewritten after a language change
+  resetMutators();
+  renderMutatorOfWeek(Date.now());
   showPanel('menuPanel');
+}
+function renderMutatorOfWeek(nowMs) {
+  const id = mutatorOfWeek(nowMs);
+  const icon = $('#mutatorWeekIcon'); if (icon) icon.textContent = MUTATORS[id].icon;
+  const name = $('#mutatorWeekName'); if (name) name.textContent = t('mut.' + id);
+  const desc = $('#mutatorWeekDesc'); if (desc) desc.textContent = t('mut.' + id + 'Desc');
 }
 // ---- Arcade-cabinet HI-SCORE on the title screen (best saved score) ----
 function updateHiScore() {
@@ -259,6 +267,12 @@ function endGame(reason) {
     if (glw) glw.classList.add('hidden');
     if (r) r.textContent = rank > 0 ? t('go.rank', { name: playerName, rank }) : t('go.noRank');
   }
+  const goMutators = $('#goMutators');
+  if (goMutators) {
+    const listed = netActive() ? [] : activeMutatorIds;
+    goMutators.textContent = listed.map(id => MUTATORS[id].icon + ' ' + t('mut.' + id)).join(' · ');
+    goMutators.classList.toggle('hidden', listed.length === 0);
+  }
   const go = $('#gameOver'); if (go) go.classList.remove('hidden');
   sfx.coin();
 }
@@ -274,6 +288,7 @@ function startMatch(resume) {
   stopMenuMusic();
   started = true;
   gameEvents.enabled = !netActive();
+  if (netActive()) resetMutators();
   if (!resume) {
     timeLeft = gameMinutes * 60 * 60;            // minutes → frames (~60 fps)
     if (netActive() && net.clockLeft != null) timeLeft = net.clockLeft;   // the server's authoritative clock
@@ -287,7 +302,7 @@ function startMatch(resume) {
   const peace = peaceMode();
   const wpn = $('#weapon'); if (wpn) wpn.style.display = peace ? 'none' : '';
   const wb = $('#wpnBar'); if (wb) wb.style.display = peace ? 'none' : '';
-  updateStars(); updateHealth(); updateCash(); updateScore(); updateWeapon(); updateTimer();
+  updateStars(); updateHealth(); updateCash(); updateScore(); updateWeapon(); updateTimer(); updateMutatorBadges();
   const hi = t(usingTouch ? 'game.hintTouch' : 'game.hintKb');
   const mp = netActive() ? t(usingTouch ? 'game.mpLadderTouch' : 'game.mpLadderKb') : '';
   toast(resume ? t('game.welcomeBack', { name: playerName })
@@ -295,14 +310,60 @@ function startMatch(resume) {
   _loopLast = 0; _loopAcc = 0;                    // start clean (no catch-up from the previous match)
   loop();
 }
+function updateMutatorBadges() {
+  const badges = $('#mutatorBadges'); if (!badges) return;
+  badges.textContent = '';
+  const visible = activeMutatorIds.length > 0 && !netActive();
+  badges.classList.toggle('hidden', !visible);
+  if (!visible) return;
+  badges.title = t('hud.mutators');
+  for (const id of activeMutatorIds) {
+    const badge = document.createElement('span');
+    badge.textContent = MUTATORS[id].icon;
+    badge.title = t('mut.' + id);
+    badges.appendChild(badge);
+  }
+}
+function readSpMutatorPick() {
+  const ticked = [...document.querySelectorAll('#spMutators input:checked')].map(input => input.value);
+  return sanitizeMutatorIds(ticked);
+}
+function updateSpMutatorDesc() {
+  const desc = $('#spMutatorDesc'); if (!desc) return;
+  desc.textContent = readSpMutatorPick().map(id => t('mut.' + id + 'Desc')).join(' ');
+}
+function fillSpMutatorPick(ids) {
+  const wanted = new Set(sanitizeMutatorIds(ids));
+  for (const input of document.querySelectorAll('#spMutators input')) input.checked = wanted.has(input.value);
+  updateSpMutatorDesc();
+}
+function buildSpMutatorChips() {
+  const box = $('#spMutators'); if (!box) return;
+  box.textContent = '';
+  for (const id of MUTATOR_IDS) {
+    const chip = document.createElement('label');
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.value = id;
+    input.onchange = updateSpMutatorDesc;
+    const name = document.createElement('span');
+    name.textContent = MUTATORS[id].icon + ' ' + t('mut.' + id);
+    chip.append(input, name);
+    box.appendChild(chip);
+  }
+}
 // ---- Single-player: creation panel (violence, duration, map size) ----
 // As for the host, the map size lives in the code's seed → a reload onto the right city is
 // needed; violence and duration travel inside the intent and are applied on the way back.
-onClick('playBtn', () => {
+function openSpPanel(mutatorIds) {
   const d = $('#spDuration'); if (d) d.value = String(gameMinutes);
   const v = $('#spViolence'); if (v) v.value = violenceOn ? 'on' : 'off';
+  buildSpMutatorChips();
+  fillSpMutatorPick(mutatorIds);
   showPanel('spPanel');
-});
+}
+onClick('playBtn', () => openSpPanel(store.get('mutatorsPick', [])));
+onClick('mutatorWeekPlay', () => openSpPanel([mutatorOfWeek(Date.now())]));
 onClick('spBack', showMenu);
 onClick('shiftBtn', () => { renderShiftPanel(); showPanel('shiftPanel'); });
 onClick('shiftBack', showMenu);
@@ -312,7 +373,9 @@ onClick('spGo', () => {
   const dayNight = $('#spDayNight') ? $('#spDayNight').value !== 'off' : true;
   const size = $('#spSize') ? $('#spSize').value : 'P';
   const code = makeSizedRoomCode(size);
-  store.set('spIntent', { code, mins, violence: viol, dayNight, name: playerName });
+  const mutators = readSpMutatorPick();
+  store.set('mutatorsPick', mutators);
+  store.set('spIntent', { code, mins, violence: viol, dayNight, name: playerName, mutators });
   location.hash = 'room=' + code;
   location.reload();
 });
@@ -678,6 +741,7 @@ if (_spIntent && ROOM_FROM_URL === _spIntent.code) {
   if (!runConfig) store.set('minutes', gameMinutes);
   violenceOn = _spIntent.violence !== false;
   dayNightOn = _spIntent.dayNight !== false;
+  applyMutators(runConfig ? (runConfig.mutators || []) : (_spIntent.mutators || []));
   startMatch(false);
 }
 else if (_loadIntent && _save && _save.code && ROOM_FROM_URL === _save.code) {

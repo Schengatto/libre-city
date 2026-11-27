@@ -100,6 +100,15 @@ function isImportedShiftBests(value) {
     && Object.keys(value).every(job => IMPORT_SHIFT_JOBS.includes(job) && isImportedShiftBest(value[job]));
 }
 
+const IMPORT_MUTATORS_PICK_MAX = 6;
+const IMPORT_MUTATOR_ID_MAX_LENGTH = 16;
+
+function isImportedMutatorsPick(value) {
+  return Array.isArray(value)
+    && value.length <= IMPORT_MUTATORS_PICK_MAX
+    && value.every(id => typeof id === 'string' && id.length <= IMPORT_MUTATOR_ID_MAX_LENGTH);
+}
+
 const IMPORT_VALIDATORS = {
   [STORAGE_PREFIX + 'name']: isImportedName,
   [STORAGE_PREFIX + 'minutes']: value => [0, 5, 10, 15, 30, 60].includes(value),
@@ -109,6 +118,7 @@ const IMPORT_VALIDATORS = {
   [STORAGE_PREFIX + 'scores']: value => sanitizeImportedScores(value) !== null,
   [STORAGE_PREFIX + 'save']: value => isPlainObject(value) && typeof value.code === 'string' && (value.name === undefined || typeof value.name === 'string'),
   [STORAGE_PREFIX + 'shiftBests']: isImportedShiftBests,
+  [STORAGE_PREFIX + 'mutatorsPick']: isImportedMutatorsPick,
 };
 
 function validatedImportText(key, text) {

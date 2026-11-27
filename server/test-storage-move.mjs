@@ -99,6 +99,14 @@ ok(decodeShiftBests({ taxi: { ...validShiftBest, rules: 0 } }) === undefined, 's
 ok(decodeShiftBests({ taxi: { ...validShiftBest, score: 12.5 } }) === undefined, 'shiftBests with a fractional score dropped');
 ok(decodeShiftBests({ taxi: { ...validShiftBest, date: 'today' } }) === undefined, 'shiftBests with a non-numeric date dropped');
 ok(decodeShiftBests([validShiftBest]) === undefined && decodeShiftBests(null) === undefined, 'shiftBests that is not a plain object dropped');
+const decodeMutatorsPick = value => decodeEntries({ 'vibeCity.mutatorsPick': JSON.stringify(value) })['vibeCity.mutatorsPick'];
+ok(decodeMutatorsPick(['night']) === '["night"]', 'valid mutatorsPick imported');
+ok(decodeMutatorsPick([]) === '[]', 'empty mutatorsPick imported');
+ok(decodeMutatorsPick('night') === undefined, 'mutatorsPick that is a string dropped');
+ok(decodeMutatorsPick([1]) === undefined, 'mutatorsPick with a non-string entry dropped');
+ok(decodeMutatorsPick(['a', 'b', 'c', 'd', 'e', 'f', 'g']) === undefined, 'mutatorsPick with seven entries dropped');
+ok(decodeMutatorsPick(['x'.repeat(17)]) === undefined, 'mutatorsPick with an overlong id dropped');
+ok(decodeMutatorsPick({ 0: 'night' }) === undefined, 'mutatorsPick that is an object dropped');
 const capPayload =JSON.stringify({ 'vibeCity.minutes': '5' });
 const paddedPayload = byteLength => b64url(capPayload.padEnd(byteLength));
 ok(decodeStorageImport(paddedPayload(149999))['vibeCity.minutes'] === '5', 'valid payload just under the cap accepted');

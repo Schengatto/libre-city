@@ -49,6 +49,11 @@
   #timer { font-size:17px; font-weight:bold; color:#8fd6ff; background:rgba(0,0,0,.45);
     padding:3px 11px; border-radius:8px; text-shadow:0 1px 2px #000; }
   #timer.low { color:#ff5a4a; animation:pulse 1s infinite; }
+  #mutatorBadges { display:flex; gap:4px; font-size:15px; background:rgba(0,0,0,.4); padding:3px 9px; border-radius:8px; }
+  #mutatorBadges.hidden { display:none; }
+  #spMutators { display:flex; flex-wrap:wrap; gap:6px 14px; }
+  #spMutators label { display:flex; align-items:center; gap:6px; cursor:pointer; font-size:14px; }
+  #spMutatorDesc { min-height:1.3em; margin:6px 0 0; font-size:13px; opacity:.85; }
   #shiftHud { position:absolute; top:12px; left:50%; transform:translateX(-50%); z-index:5; white-space:nowrap;
     font-size:18px; font-weight:bold; color:#ffd23a; background:rgba(0,0,0,.45); padding:4px 14px;
     border-radius:8px; text-shadow:0 2px 3px #000; }
@@ -291,6 +296,16 @@
   #menuPanel #playBtn:hover { box-shadow:0 2px 0 #a8324f; }
   #menuPanel #playBtn:active { box-shadow:0 0 0 #a8324f; }
   #playBtn::before { color:#2a0830; text-shadow:none; }
+  #mutatorWeek { display:flex; flex-direction:column; gap:8px; min-width:0; padding:10px 12px;
+    border:2px solid rgba(255,210,58,.45); border-radius:10px; background:rgba(14,8,30,.55); }
+  #mutatorWeek .mw-label { font-size:11px; font-weight:bold; letter-spacing:.12em; text-transform:uppercase;
+    color:#ffd23a; }
+  #mutatorWeek .mw-body { display:flex; align-items:flex-start; gap:10px; min-width:0; }
+  #mutatorWeek .mw-icon { font-size:26px; line-height:1; flex:none; }
+  #mutatorWeek .mw-text { flex:1 1 auto; min-width:0; font-size:13px; line-height:1.35; color:#e6ddf5;
+    overflow-wrap:anywhere; }
+  #mutatorWeek .mw-text b { color:#fff; }
+  #menuPanel #mutatorWeekPlay { width:100%; }
   #menuPanel .mbtn.minor { grid-column:auto; padding:11px 8px; border-width:2px; border-radius:10px;
     font:bold 14px 'Trebuchet MS','Segoe UI',sans-serif; letter-spacing:0; color:#e6ddf5;
     background:rgba(14,8,30,.55); border-color:rgba(255,255,255,.16); box-shadow:none;
@@ -346,6 +361,8 @@
   @keyframes neonFlick { 0%,92%,100% { opacity:1 } 93%,95% { opacity:.4 } 96%,98% { opacity:.85 } }
   #goScore, #runResultScore { font-family:'Courier New',monospace; font-weight:bold; font-size:clamp(36px,8vw,68px);
     letter-spacing:.14em; color:#ffd23a; text-shadow:0 0 18px rgba(255,210,58,.8); }
+  #goMutators { font:14px 'Courier New',monospace; color:#e9e6ff; text-align:center; padding:0 12px; }
+  #goMutators.hidden { display:none; }
   #goRank, #runResultBest, #runResultTarget { font:bold 14px 'Courier New',monospace; letter-spacing:.1em; color:#33e0ff;
     text-shadow:0 0 8px rgba(51,224,255,.6); text-align:center; }
   #runResultMedal { font-size:clamp(36px,7vw,56px); line-height:1; }
@@ -547,6 +564,7 @@
     <div id="score">🏆 0</div>
     <div id="cash">$0</div>
     <div id="timer" class="hidden">⏱ 0:00</div>
+    <div id="mutatorBadges" class="hidden"></div>
     <div id="health"><div id="healthBar"></div></div>
     <div id="weapon" data-i18n="hud.fists">👊 Pugni</div>
     <div id="gear" class="hidden">⚙️ 1ª</div>
@@ -589,6 +607,7 @@
     <div id="goTitle" data-i18n="go.time">⏱ Tempo scaduto!</div>
     <div id="goScore">$0</div>
     <div id="goRank"></div>
+    <div id="goMutators" class="hidden"></div>
     <div id="goLadderWrap" class="hidden">
       <table class="ladtab" id="goLadderTable">
         <thead><tr><th>#</th><th data-i18n="lad.name">Nome</th><th data-i18n="lad.points">🏆 Punti</th>
@@ -694,6 +713,14 @@
     <div id="menuPanel" class="panel hidden">
       <div id="menuHello" data-i18n-html="menu.hello">Ciao, <b id="menuName"></b></div>
       <button id="playBtn" class="mbtn" data-i18n="menu.play">Giocatore singolo</button>
+      <div id="mutatorWeek">
+        <div class="mw-label" data-i18n="menu.mutatorWeek">Mutatore della settimana</div>
+        <div class="mw-body">
+          <span id="mutatorWeekIcon" class="mw-icon" aria-hidden="true"></span>
+          <div class="mw-text"><b id="mutatorWeekName"></b> <span id="mutatorWeekDesc"></span></div>
+        </div>
+        <button id="mutatorWeekPlay" class="mbtn minor" data-i18n="menu.mutatorWeekPlay">Gioca con questo</button>
+      </div>
       <button id="loadBtn" class="mbtn hidden" data-i18n="menu.load">Riprendi partita</button>
       <button id="shiftBtn" class="mbtn" data-i18n="menu.shifts">Turni di lavoro</button>
       <button id="mpBtn" class="mbtn" data-i18n="menu.mp">Multigiocatore</button>
@@ -740,6 +767,11 @@
           <option value="M" data-i18n="common.sizeM">Media (area 2×)</option>
           <option value="G" data-i18n="common.sizeL">Grande (area 4×)</option>
         </select>
+      </div>
+      <div class="field">
+        <label data-i18n="mut.title">Modificatori (facoltativi)</label>
+        <div id="spMutators"></div>
+        <p id="spMutatorDesc"></p>
       </div>
       <p class="mpnote" data-i18n-html="sp.note">Col filtro violenza su <b>No</b> non ci sono armi: nessuno spara né viene
          ucciso (nemmeno gli NPC) e per le missioni in volante 🚔 basta <b>raggiungere il ladro
@@ -1011,10 +1043,11 @@
        server. -->
   <meta name="vc-server" content="">
   <meta name="lc-sim-worker" content="js/sim-worker.js">
-  <!-- The game is split into 22 scripts sharing the global scope: the order matters!
+  <!-- The game is split into 29 scripts sharing the global scope: the order matters!
        i18n.js comes right after core.js, since everything else calls t()/tList(). -->
   <script src="js/storage-move.js"></script>
   <script src="js/core.js"></script>
+  <script src="js/mutators.js"></script>
   <script src="js/i18n.js"></script>
   <script src="js/public-games.js"></script>
   <script src="js/city.js"></script>
