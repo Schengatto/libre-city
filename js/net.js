@@ -99,6 +99,7 @@ function netStartHost(pass, maxPlayers, police, done, options) {
   net.rejoin = { code: ROOM_CODE, name: playerName, pass: net.pass };
   net.hello  = { t: 'create', code: ROOM_CODE, name: playerName, pass: net.pass,
                  max: net.maxPlayers, minutes: gameMinutes, police,
+                 dayNight: !(options && options.dayNight === false),
                  title: (options && options.title) || '', public: !!(options && options.isPublic) };
   netDial(done);
 }
@@ -228,6 +229,7 @@ function netOnJoined(m) {
   player.shirt = NET_SHIRTS[m.shirtIdx % NET_SHIRTS.length];
   if (m.minutes != null) gameMinutes = m.minutes;   // the server sets the match's pace
   policeOn = m.police !== false;
+  dayNightOn = m.dayNight !== false;
   net.clockLeft = m.left;
   if (resumed && started && gameMinutes > 0) {
     timeLeft = net.clockLeft;
@@ -306,6 +308,7 @@ function onServerMessage(m) {
     case 'kill': netScoreKill(m.id); break;
     case 'w': netOnSnapshot(m); break;             // Phase 2: authoritative world snapshot
     case 'pong': netStatsOnPong(net.stats, m.c, performance.now()); break;
+    case 'emo': onRemoteEmote(m.id, m.e); break;
     default: if (m.id && m.id !== net.myId) netApplyRemote(m.id, m);
   }
 }
@@ -327,6 +330,7 @@ function netShutdown() {
   net.stats = createNetStats();
   net.score = 0; net.streak = 0; net.bounty = 0; updateBountyHud(0);
   policeOn = true;
+  closeEmoteBar();
   document.body.classList.remove('mp');
   netRefreshBadge();
 }
@@ -935,7 +939,7 @@ function netOnSnapshot(m) {
     if (!g) { g = makeGhost(pv.id, pv.name, pv.sh); net.players.set(pv.id, g); }
     g.seen = true; g.name = pv.name; g.shirtIdx = pv.sh; g.shirt = NET_SHIRTS[pv.sh % NET_SHIRTS.length];
     g.aim = pv.aim; g.walk = pv.wk; g.moving = pv.mov;
-    g.gun = pv.gun; g.hp = pv.hp; g.down = pv.down; if (pv.punch) g.punchT = 10;
+    g.gun = pv.gun; g.hp = pv.hp; g.down = pv.down; netGhostPunchEdge(g, pv.punch);
     if (pv.car) {
       if (!g.car) g.car = netMakeWorldCar(pv.car);
       else { netApplyCar(g.car, pv.car); interpFeed(g.car, pv.car.x, pv.car.y, pv.car.an); }
@@ -949,6 +953,10 @@ function netOnSnapshot(m) {
   }
 }
 
+function netGhostPunchEdge(ghost, punching) {
+  if (punching && !ghost.punching) ghost.punchT = 10;
+  ghost.punching = !!punching;
+}
 // Recreates a cosmetic effect received from the server (existing particles + audio).
 function netWorldBulletsFrom(bul, myId) {
   const worldBullets = [];
@@ -963,9 +971,10 @@ function netWorldBulletsFrom(bul, myId) {
 function netPredictFire() {
   if (!net.authoritative || downT > 0 || player.car || peaceMode()) return;
   const w = WEAPONS[player.weaponIdx];
-  if (!w || w.melee || w.rocket || w.grenade || player.shootCd > 0) return;
+  if (!w || w.rocket || w.grenade || player.shootCd > 0) return;
   if (!(w.auto ? mDownL : mClicked)) return;
   player.shootCd = w.cd;
+  if (w.melee) { player.punchT = 10; return; }
   const aim = Math.atan2(mouseWY() - player.y, mouseWX() - player.x);
   for (let i = 0; i < (w.pellets || 1); i++) {
     const a = aim + rnd(-w.spread, w.spread);

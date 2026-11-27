@@ -7,6 +7,7 @@ let mouseX = 0, mouseY = 0, mDownL = false, mClicked = false;   // mClicked: cli
 addEventListener('keydown', e => {
   // In menu fields (name, settings) the keyboard types instead of playing.
   if (e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+  if (e.code === 'Escape' && emoteState.barOpen) { closeEmoteBar(); return; }
   if (e.code === 'Escape') { if (mapFullOpen) { closeMapFull(); return; } togglePause(); return; }
   if (e.code === 'KeyM' && e.shiftKey && !e.repeat && started) { openMapFull(); return; }
   if (e.code === 'Tab' && started) {                 // match scoreboard (multiplayer)
@@ -15,6 +16,8 @@ addEventListener('keydown', e => {
     return;
   }
   if (paused) return;
+  if (e.code === 'KeyT' && !e.repeat && net.mode && started) { toggleEmoteBar(); return; }
+  if (emoteState.barOpen && /^Digit[1-8]$/.test(e.code)) { sendEmote(+e.code.slice(5) - 1); return; }
   keys[e.code] = true;
   if (e.code === 'KeyE') { initAudio(); toggleCar(); }
   if (e.code === 'Space' && !e.repeat) { initAudio(); hornOrSiren(); }
@@ -137,6 +140,7 @@ function bindBtn(id, fn) {
 bindBtn('btnCar', toggleCar);
 bindBtn('btnHorn', hornOrSiren);
 bindBtn('btnMissions', toggleMissions);
+bindBtn('btnEmote', toggleEmoteBar);
 bindBtn('btnLadder', () => toggleLadder());   // multiplayer scoreboard (only visible in a 🌐 match)
 // Weapon bar: tap an icon to equip (or to buy at the gun shop).
 const wpnBar = document.getElementById('wpnBar');

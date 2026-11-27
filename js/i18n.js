@@ -123,7 +123,7 @@ const STR = {
     'hint.title': 'Mostra o nascondi la guida completa',
     'hint.short': '<b>WASD / frecce</b> muovi &amp; guida · <b>Mouse</b> mira · <b>Click sx</b> pugni/spari<br>' +
       '<b>E</b> sali/scendi · <b>Spazio</b> clacson/sirena 🚨 · <b>1-5</b> armi · <b>M</b> missioni · <b>Maiusc+M</b> mappa',
-    'hint.full': '<b>Tab</b> classifica della partita (in multigiocatore 🌐)<br>' +
+    'hint.full': '<b>Tab</b> classifica della partita · <b>T</b> emoji rapida (in multigiocatore 🌐)<br>' +
       '👊 Parti a mani nude: 3 pugni stendono un passante<br>' +
       '🛒 Compra le armi all\'<b>ARMERIA</b> (pistola, mitra, fucile a pompa, lanciarazzi)<br>' +
       '🚕 Sali su un <b>taxi</b>: porta i clienti a destinazione e guadagna<br>' +
@@ -233,6 +233,9 @@ const STR = {
     'sp.violenceOn': 'Sì — armi e scontri',
     'sp.violenceOff': 'No — nessuna arma, non si uccide',
     'sp.duration': 'Durata della partita',
+    'sp.dayNight': 'Ciclo giorno/notte',
+    'sp.dayNightOn': 'Sì — giorno e notte',
+    'sp.dayNightOff': 'No — sempre giorno',
     'sp.size': 'Dimensione della mappa',
     'sp.note': 'Col filtro violenza su <b>No</b> non ci sono armi: nessuno spara né viene ucciso ' +
       '(nemmeno gli NPC) e per le missioni in volante 🚔 basta <b>raggiungere il ladro in fuga</b>.',
@@ -334,9 +337,6 @@ const STR = {
     'set.audio': 'Audio',
     'set.audioOn': '🔊 Attivo',
     'set.audioOff': '🔇 Disattivato',
-    'set.dayNight': 'Giorno/notte',
-    'set.dayNightOn': '🌗 Attivo',
-    'set.dayNightOff': '☀️ Sempre giorno',
     'set.save': '💾 Salva',
     'music.toggle': 'Musica del menu: accendi o spegni',
 
@@ -538,6 +538,8 @@ const STR = {
     'game.hintKb': 'Ruba un\'auto con E',
     'game.mpLadderTouch': ' · 🏆 per la classifica',
     'game.mpLadderKb': ' · Tab per la classifica',
+    'emote.hint': '<b>T</b> emoji · poi <b>1-8</b> o click · <b>Esc</b> chiude',
+    'emote.cooldown': 'prossima emoji tra {s} s',
     'game.saved': '💾 Partita salvata',
     'game.noSave': 'Nessuna partita salvata',
 
@@ -614,7 +616,7 @@ const STR = {
     'hint.title': 'Show or hide the full guide',
     'hint.short': '<b>WASD / arrows</b> move &amp; drive · <b>Mouse</b> aim · <b>Left click</b> punch/shoot<br>' +
       '<b>E</b> enter/exit · <b>Space</b> horn/siren 🚨 · <b>1-5</b> weapons · <b>M</b> missions · <b>Shift+M</b> map',
-    'hint.full': '<b>Tab</b> match scoreboard (in multiplayer 🌐)<br>' +
+    'hint.full': '<b>Tab</b> match scoreboard · <b>T</b> quick emoji (in multiplayer 🌐)<br>' +
       '👊 You start bare-handed: 3 punches knock a pedestrian down<br>' +
       '🛒 Buy weapons at the <b>GUN SHOP</b> (pistol, SMG, shotgun, rocket launcher)<br>' +
       '🚕 Hop in a <b>taxi</b>: drive fares to their destination and earn<br>' +
@@ -716,6 +718,9 @@ const STR = {
     'sp.violenceOn': 'Yes — weapons and fights',
     'sp.violenceOff': 'No — no weapons, nobody is killed',
     'sp.duration': 'Match length',
+    'sp.dayNight': 'Day/night cycle',
+    'sp.dayNightOn': 'Yes — day and night',
+    'sp.dayNightOff': 'No — always day',
     'sp.size': 'Map size',
     'sp.note': 'With the violence filter set to <b>No</b> there are no weapons: nobody shoots and nobody is ' +
       'killed (not even the NPCs), and patrol car 🚔 missions only ask you to <b>catch up with the fleeing thief</b>.',
@@ -814,9 +819,6 @@ const STR = {
     'set.audio': 'Audio',
     'set.audioOn': '🔊 On',
     'set.audioOff': '🔇 Off',
-    'set.dayNight': 'Day/night',
-    'set.dayNightOn': '🌗 On',
-    'set.dayNightOff': '☀️ Always day',
     'set.save': '💾 Save',
     'music.toggle': 'Menu music: turn on or off',
 
@@ -1015,6 +1017,8 @@ const STR = {
     'game.hintKb': 'Steal a car with E',
     'game.mpLadderTouch': ' · 🏆 for the scoreboard',
     'game.mpLadderKb': ' · Tab for the scoreboard',
+    'emote.hint': '<b>T</b> emoji · then <b>1-8</b> or click · <b>Esc</b> closes',
+    'emote.cooldown': 'next emoji in {s} s',
     'game.saved': '💾 Game saved',
     'game.noSave': 'No saved game',
 

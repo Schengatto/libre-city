@@ -16,23 +16,25 @@ const SAMPLE_STEP = 60;
 const DAY = { r: 255, g: 255, b: 255, light: 0 };
 const NIGHT = { r: 70, g: 85, b: 140, light: 1 };
 
-ok(DAY_CYCLE_FRAMES === 39600, 'cycle is 11 minutes');
+ok(DAY_CYCLE_FRAMES === 28800, 'cycle is 8 minutes');
 ok(dayCycleFrame(0) === 0, 'cycle frame at start is 0');
 ok(dayCycleFrame(DAY_CYCLE_FRAMES + 5) === 5, 'cycle frame wraps');
-ok(dayCycleFrame(-5) === 39595, 'cycle frame wraps negative elapsed');
+ok(dayCycleFrame(-5) === 28795, 'cycle frame wraps negative elapsed');
 
 ok(same({ ...dayNightAmbient(0) }, DAY), 'start of cycle is full day');
-ok(same({ ...dayNightAmbient(3 * FRAMES_PER_MINUTE) }, DAY), 'midday is full day');
-const sunset = dayNightAmbient(6.5 * FRAMES_PER_MINUTE);
+ok(same({ ...dayNightAmbient(2 * FRAMES_PER_MINUTE) }, DAY), 'midday is full day');
+const sunset = dayNightAmbient(4.5 * FRAMES_PER_MINUTE);
 ok(sunset.r === 255 && sunset.g === 170, 'sunset is orange');
-for (const minute of [7, 9, 10.5]) ok(same({ ...dayNightAmbient(minute * FRAMES_PER_MINUTE) }, NIGHT), `minute ${minute} is full night`);
-ok(same({ ...dayNightAmbient(10.75 * FRAMES_PER_MINUTE) }, { r: 230, g: 190, b: 200, light: 0.4 }), 'dawn keyframe');
+ok(same({ ...dayNightAmbient(4 * FRAMES_PER_MINUTE) }, DAY), 'sunset starts in the last minute of the day');
+for (const minute of [5, 6.5, 7.5]) ok(same({ ...dayNightAmbient(minute * FRAMES_PER_MINUTE) }, NIGHT), `minute ${minute} is full night`);
+ok(same({ ...dayNightAmbient(7.5 * FRAMES_PER_MINUTE) }, NIGHT), 'dawn starts in the last 30 seconds of the night');
+ok(same({ ...dayNightAmbient(7.75 * FRAMES_PER_MINUTE) }, { r: 230, g: 190, b: 200, light: 0.4 }), 'dawn keyframe');
 
 const samples = [];
 for (let frame = 0; frame < DAY_CYCLE_FRAMES; frame += SAMPLE_STEP) samples.push(dayNightAmbient(frame));
 const minutesWhere = predicate => samples.filter(predicate).length * SAMPLE_STEP / FRAMES_PER_MINUTE;
-ok(Math.abs(minutesWhere(s => s.light < 0.5) - 7) <= 0.5, 'about 7 minutes of low light');
-ok(Math.abs(minutesWhere(s => s.light >= 0.5) - 4) <= 0.5, 'about 4 minutes of high light');
+ok(Math.abs(minutesWhere(s => s.light < 0.5) - 5) <= 0.5, 'about 5 minutes of low light');
+ok(Math.abs(minutesWhere(s => s.light >= 0.5) - 3) <= 0.5, 'about 3 minutes of high light');
 
 const MAX_CHANNEL_STEP = 12;
 const steps = samples.map((sample, i) => [sample, samples[(i + 1) % samples.length]]);
@@ -56,7 +58,7 @@ ok(/matchElapsed: matchElapsedFrames/.test(save) && /matchElapsedFrames = s\.mat
 import { createRecordingContext } from './render-test-kit.mjs';
 
 const GRASS = 3, SIDEWALK = 1, ROAD = 0, BUILDING = 2;
-const NIGHT_ELAPSED = 9 * FRAMES_PER_MINUTE;
+const NIGHT_ELAPSED = 6 * FRAMES_PER_MINUTE;
 const DAY_ELAPSED = 3 * FRAMES_PER_MINUTE;
 
 function createNightWorld(rows, buildingList = []) {
@@ -241,21 +243,47 @@ const hasRotatedBlit = recording => {
 
 {
   const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-  const field = html.match(/<select id="setDayNight">[\s\S]*?<\/select>/);
-  ok(field && /<label for="setDayNight" data-i18n="set\.dayNight">/.test(html), 'settings has a labelled setDayNight select');
-  ok(field && /value="on"[^>]*data-i18n="set\.dayNightOn"/.test(field[0]) && /value="off"[^>]*data-i18n="set\.dayNightOff"/.test(field[0]), 'setDayNight has on and off options with i18n keys');
-  ok(/id="setAudio">[\s\S]*?<\/select>\s*<\/div>\s*<div class="field">\s*<label for="setDayNight"/.test(html), 'setDayNight sits right after the audio field');
+  ok(!html.includes('setDayNight'), 'the personal settings toggle is gone');
+  for (const panel of ['sp', 'host']) {
+    const field = html.match(new RegExp(`<select id="${panel}DayNight">[\\s\\S]*?<\\/select>`));
+    ok(field
+      && new RegExp(`<label for="${panel}DayNight" data-i18n="sp\\.dayNight">`).test(html)
+      && /value="on" selected[^>]*data-i18n="sp\.dayNightOn"/.test(field[0])
+      && /value="off"[^>]*data-i18n="sp\.dayNightOff"/.test(field[0]), `${panel} panel has a day/night select defaulting to on`);
+    ok(new RegExp(`id="${panel}Duration">[\\s\\S]*?<\\/select>\\s*<\\/div>\\s*<div class="field">\\s*<label for="${panel}DayNight"`).test(html), `${panel}DayNight sits right after the duration field`);
+  }
 
   const i18n = readSource('i18n.js');
-  const expected = { 'set.dayNight': ['Giorno/notte', 'Day/night'], 'set.dayNightOn': ['🌗 Attivo', '🌗 On'], 'set.dayNightOff': ['☀️ Sempre giorno', '☀️ Always day'] };
+  const expected = {
+    'sp.dayNight': ['Ciclo giorno/notte', 'Day/night cycle'],
+    'sp.dayNightOn': ['Sì — giorno e notte', 'Yes — day and night'],
+    'sp.dayNightOff': ['No — sempre giorno', 'No — always day']
+  };
   const countOf = line => i18n.split(line).length - 1;
-  ok(Object.entries(expected).every(([key, [it, en]]) => countOf(`'${key}': '${it}',`) === 1 && countOf(`'${key}': '${en}',`) === 1), 'IT and EN define the day/night keys');
+  ok(Object.entries(expected).every(([key, [it, en]]) => countOf(`'${key}': '${it}',`) === 1 && countOf(`'${key}': '${en}',`) === 1) && !i18n.includes("'set.dayNight"), 'IT and EN define the map option keys and drop the settings keys');
 
-  const settingsUi = readSource('ui.js');
-  const openBody = settingsUi.slice(settingsUi.indexOf("onClick('settingsBtn'"), settingsUi.indexOf("onClick('settingsSave'"));
-  const saveBody = settingsUi.slice(settingsUi.indexOf("onClick('settingsSave'"), settingsUi.indexOf("onClick('settingsBack'"));
-  ok(/\$\('#setDayNight'\)/.test(openBody) && /d\.value = dayNightOn \? 'on' : 'off'/.test(openBody), 'settings open fills setDayNight from dayNightOn');
-  ok(/dayNightOn = d \? d\.value === 'on' : true; store\.set\('dayNight', dayNightOn\)/.test(saveBody), 'settings save sets dayNightOn and persists it');
+  ok(/^let dayNightOn = true;$/m.test(readSource('entities.js')), 'dayNightOn no longer comes from the store');
+  const sourceDirectory = new URL('../js/', import.meta.url);
+  ok(fs.readdirSync(sourceDirectory).filter(file => file.endsWith('.js')).every(file => !/store\.(get|set)\('dayNight'/.test(fs.readFileSync(new URL(file, sourceDirectory), 'utf8'))), 'no code reads or writes the dayNight store key');
+
+  const ui = readSource('ui.js');
+  const spGoBody = ui.slice(ui.indexOf("onClick('spGo'"), ui.indexOf('// ---- Panel navigation'));
+  ok(spGoBody.includes("$('#spDayNight')") && /store\.set\('spIntent', \{[^}]*\bdayNight\b/.test(spGoBody), 'spGo stores the day/night pick in spIntent');
+  const spIntentBranch = ui.slice(ui.indexOf('if (_spIntent && ROOM_FROM_URL'));
+  const applyIndex = spIntentBranch.indexOf('dayNightOn = _spIntent.dayNight !== false;');
+  ok(applyIndex !== -1 && applyIndex < spIntentBranch.indexOf('startMatch(false);'), 'the SP intent applies the day/night pick before starting');
+  const hostGoBody = ui.slice(ui.indexOf("onClick('hostGo'"));
+  const hostIntentStore = hostGoBody.match(/store\.set\('hostIntent', \{[^}]*\}/);
+  ok(hostGoBody.slice(0, hostGoBody.indexOf('store.set(')).includes("$('#hostDayNight')") && hostIntentStore && /\bdayNight\b/.test(hostIntentStore[0]), 'hostGo stores the day/night pick in hostIntent');
+  ok(ui.includes('dayNight: _hostIntent.dayNight !== false'), 'the host intent passes dayNight to netStartHost');
+  const openBody = ui.slice(ui.indexOf("onClick('settingsBtn'"), ui.indexOf("onClick('settingsSave'"));
+  const saveBody = ui.slice(ui.indexOf("onClick('settingsSave'"), ui.indexOf("onClick('settingsBack'"));
+  ok(!openBody.includes('dayNight') && !saveBody.includes('dayNight'), 'settings no longer touch dayNight');
+
+  const netSource = readSource('net.js');
+  const joinedStart = netSource.indexOf('function netOnJoined(');
+  const joinedBody = netSource.slice(joinedStart, netSource.indexOf('\nfunction ', joinedStart + 1));
+  ok(joinedBody.includes('dayNightOn = m.dayNight !== false;'), 'ok applies the room day/night choice, missing field means on');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

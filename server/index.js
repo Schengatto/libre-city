@@ -49,6 +49,9 @@ const HOST = process.env.HOST || '0.0.0.0';
 // Empty = WebSocket only (site deployed separately).
 const STATIC_DIR = process.env.STATIC_DIR ? path.resolve(process.env.STATIC_DIR) : '';
 const GRACE_MS = Number(process.env.GRACE_MS) || 30_000;          // reconnection window after a network drop
+const EMOTE_COUNT = 8;
+const EMOTE_COOLDOWN_MS = Number(process.env.EMOTE_COOLDOWN_MS) || 5000;
+const EMOTE_SERVER_SLACK_MS = 250;
 const SIM_MODE = process.env.SIM_MODE === 'server' ? 'server' : 'host';
 const HOST_MODE = SIM_MODE === 'host';
 const HOST_STALL_MS = 2000;
@@ -217,6 +220,12 @@ function broadcast(room, msg, exceptId) {
 }
 function sendRaw(ws, msg) {
   if (ws && ws.readyState === 1) { try { ws.send(JSON.stringify(msg)); } catch {} }
+}
+function acceptEmote(player, index, nowMs) {
+  const isValidIndex = Number.isInteger(index) && index >= 0 && index < EMOTE_COUNT;
+  if (!isValidIndex || nowMs - (player.lastEmoteAt ?? -Infinity) < EMOTE_COOLDOWN_MS - EMOTE_SERVER_SLACK_MS) return false;
+  player.lastEmoteAt = nowMs;
+  return true;
 }
 function pongFor(ping) {
   return Number.isFinite(ping.c) ? { t: 'pong', c: ping.c } : { t: 'pong' };
@@ -658,7 +667,7 @@ function addPlayer(ws, room, hello) {
   ensureHost(room);
   bindWs(ws, room, p);
   sendRaw(ws, {
-    t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes, police: room.police,
+    t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes, police: room.police, dayNight: room.dayNight,
     left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, ...handshakeSimFields(room),
     build: serverBuild(),
   });
@@ -732,7 +741,7 @@ function createRoom(ws, m) {
   const isPublic = m.public === true;
   const room = {
     code, pass: isPublic ? '' : String(m.pass || ''), title: sanitizeRoomTitle(m.title, normalizedPlayerName(m)), public: isPublic, max: clamp(+m.max || 4, 2, MAX_PLAYERS_CAP),
-    minutes: Math.max(0, +m.minutes || 0), police: typeof m.police === 'boolean' ? m.police : true, startAt: now(),
+    minutes: Math.max(0, +m.minutes || 0), police: typeof m.police === 'boolean' ? m.police : true, dayNight: typeof m.dayNight === 'boolean' ? m.dayNight : true, startAt: now(),
     idSeq: 0, players: new Map(), endTimer: null, ended: false,
     hostId: null, hostLink: null, hostLinkBound: false, hostBindStartedAt: 0, hostLastFrameAt: 0, hostState: null, resigned: new Set(), hostWatchTimer: null,
   };
@@ -762,7 +771,7 @@ function handleJoin(ws, m) {
       ensureHost(room);
       bindWs(ws, room, p);
       sendRaw(ws, {
-        t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes, police: room.police,
+        t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes, police: room.police, dayNight: room.dayNight,
         left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, resumed: true, ...handshakeSimFields(room),
         build: serverBuild(),
       });
@@ -812,6 +821,9 @@ function onGameMessage(ws, m) {
       if (target && !target.gone) sendRaw(target.ws, { t: 'kill', id: p.id });
       break;
     }
+    case 'emo':
+      if (acceptEmote(p, m.e, now())) broadcast(room, { t: 'emo', e: m.e, id: p.id }, p.id);
+      break;
     case 'ping':
       sendRaw(ws, pongFor(m));
       break;
