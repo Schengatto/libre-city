@@ -51,6 +51,7 @@ const STATIC_DIR = process.env.STATIC_DIR ? path.resolve(process.env.STATIC_DIR)
 const GRACE_MS = Number(process.env.GRACE_MS) || 30_000;          // reconnection window after a network drop
 const EMOTE_COUNT = 8;
 const EMOTE_COOLDOWN_MS = Number(process.env.EMOTE_COOLDOWN_MS) || 5000;
+const EMOTE_SERVER_SLACK_MS = 250;
 const SIM_MODE = process.env.SIM_MODE === 'server' ? 'server' : 'host';
 const HOST_MODE = SIM_MODE === 'host';
 const HOST_STALL_MS = 2000;
@@ -222,7 +223,7 @@ function sendRaw(ws, msg) {
 }
 function acceptEmote(player, index, nowMs) {
   const isValidIndex = Number.isInteger(index) && index >= 0 && index < EMOTE_COUNT;
-  if (!isValidIndex || nowMs - (player.lastEmoteAt ?? -Infinity) < EMOTE_COOLDOWN_MS) return false;
+  if (!isValidIndex || nowMs - (player.lastEmoteAt ?? -Infinity) < EMOTE_COOLDOWN_MS - EMOTE_SERVER_SLACK_MS) return false;
   player.lastEmoteAt = nowMs;
   return true;
 }

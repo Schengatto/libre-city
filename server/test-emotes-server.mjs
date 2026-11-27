@@ -1,7 +1,9 @@
 import { spawn } from 'node:child_process';
 
 const PORT = Number(process.env.TEST_PORT) || 8799;
-const EMOTE_COOLDOWN_MS = 700;
+const EMOTE_COOLDOWN_MS = 800;
+const EMOTE_SERVER_SLACK_MS = 250;
+const SEND_INSIDE_SLACK_MS = 600;
 const EMOTE_COUNT = 8;
 const CONNECT_TIMEOUT_MS = 60_000;
 const MESSAGE_TIMEOUT_MS = 5_000;
@@ -13,6 +15,12 @@ const srv = spawn('node', ['index.js'], {
   stdio: ['ignore', 'ignore', 'pipe'],
 });
 srv.stderr.on('data', d => process.stdout.write('  [srv:err] ' + d));
+
+const stopServer = () => { if (srv.exitCode === null) srv.kill(); };
+process.on('exit', stopServer);
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, () => process.exit(1));
+process.on('uncaughtException', err => { console.log('  FAIL uncaught: ' + (err?.stack || err)); process.exit(1); });
+process.on('unhandledRejection', err => { console.log('  FAIL unhandled rejection: ' + (err?.stack || err)); process.exit(1); });
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
 let failures = 0;
@@ -65,7 +73,7 @@ async function joinRoom(code, name) {
   return ws;
 }
 
-async function expectSilence(receiver) {
+async function receivesNothingMore(receiver) {
   const before = emotesOf(receiver).length;
   await wait(SILENCE_WINDOW_MS);
   return emotesOf(receiver).length === before;
@@ -80,40 +88,53 @@ try {
   clients.push(receiver);
   const senderId = findT(sender, 'ok')?.id;
   ok(senderId !== undefined, `sender id known (${senderId})`);
-  send(sender, { t: 'emo', e: 3 });
+  const firstSentAt = performance.now();
+  send(sender, { t: 'emo', e: 2 });
   const relayed = await waitFor(() => emotesOf(receiver)[0]);
-  ok(relayed?.e === 3, `receiver gets index 3 (${relayed?.e})`);
+  ok(relayed?.e === 2, `receiver gets index 2 (${relayed?.e})`);
   ok(relayed?.id === senderId, `relay carries the sender id (${relayed?.id})`);
   ok(Object.keys(relayed || {}).sort().join() === 'e,id,t', `payload is index only (${Object.keys(relayed || {})})`);
-  ok(await expectSilence(sender) && emotesOf(sender).length === 0, 'sender gets no echo');
+  ok(await receivesNothingMore(sender) && emotesOf(sender).length === 0, 'sender gets no echo');
 
-  console.log('\n2) second emote inside the cooldown is dropped');
+  console.log('\n2) second emote inside the cooldown window is dropped');
+  const insideCooldownAt = performance.now() - firstSentAt;
+  ok(insideCooldownAt < EMOTE_COOLDOWN_MS - EMOTE_SERVER_SLACK_MS, `second send is early enough (${Math.round(insideCooldownAt)} ms)`);
+  send(sender, { t: 'emo', e: 3 });
+  ok(await receivesNothingMore(receiver) && emotesOf(receiver).length === 1, 'receiver still has only the first emote');
+
+  console.log('\n3) server slack keeps an emote sent at 600 ms of an 800 ms cooldown');
+  await wait(Math.max(0, SEND_INSIDE_SLACK_MS - (performance.now() - firstSentAt)));
   send(sender, { t: 'emo', e: 4 });
-  ok(await expectSilence(receiver) && emotesOf(receiver).length === 1, 'receiver still has only the first emote');
+  const insideSlack = await waitFor(() => emotesOf(receiver)[1]);
+  ok(insideSlack?.e === 4, `index 4 relayed inside the slack (${insideSlack?.e})`);
 
-  console.log('\n3) cooldown is per player');
+  console.log('\n4) cooldown is per player');
   send(receiver, { t: 'emo', e: 5 });
   const fromReceiver = await waitFor(() => emotesOf(sender)[0]);
   ok(fromReceiver?.e === 5, `the other player can emote during the first cooldown (${fromReceiver?.e})`);
 
-  console.log('\n4) emote is accepted again once the cooldown elapsed');
-  await wait(EMOTE_COOLDOWN_MS + 100);
-  send(sender, { t: 'emo', e: 7 });
-  const afterCooldown = await waitFor(() => emotesOf(receiver)[1]);
-  ok(afterCooldown?.e === 7, `index 7 relayed after the cooldown (${afterCooldown?.e})`);
-
   console.log('\n5) invalid payloads are dropped and do not consume the cooldown');
-  await wait(EMOTE_COOLDOWN_MS + 100);
+  await wait(EMOTE_COOLDOWN_MS);
   const receivedBefore = emotesOf(receiver).length;
-  const invalidIndexes = [-1, EMOTE_COUNT, 1.5, '2', null, true, [1], {}, undefined, NaN];
-  for (const e of invalidIndexes) send(sender, { t: 'emo', e });
-  ok(await expectSilence(receiver) && emotesOf(receiver).length === receivedBefore, `${invalidIndexes.length} invalid indexes relay nothing`);
+  const invalidMessages = [
+    { t: 'emo', e: '2' },
+    { t: 'emo', e: 1.5 },
+    { t: 'emo', e: -1 },
+    { t: 'emo', e: EMOTE_COUNT },
+    { t: 'emo', e: null },
+    { t: 'emo' },
+    { t: 'emo', e: true },
+    { t: 'emo', e: [1] },
+    { t: 'emo', e: {} },
+  ];
+  for (const message of invalidMessages) send(sender, message);
+  ok(await receivesNothingMore(receiver) && emotesOf(receiver).length === receivedBefore, `${invalidMessages.length} invalid payloads relay nothing`);
   send(sender, { t: 'emo', e: 0 });
   const validAfterInvalid = await waitFor(() => emotesOf(receiver)[receivedBefore]);
   ok(validAfterInvalid?.e === 0, `valid emote right after invalid ones still passes (${validAfterInvalid?.e})`);
 
   console.log('\n6) client cannot spoof the sender id');
-  await wait(EMOTE_COOLDOWN_MS + 100);
+  await wait(EMOTE_COOLDOWN_MS);
   const spoofIndex = emotesOf(sender).length;
   send(receiver, { t: 'emo', e: 2, id: 'someone-else' });
   const spoofed = await waitFor(() => emotesOf(sender)[spoofIndex]);
@@ -123,7 +144,7 @@ try {
   failures++;
 } finally {
   for (const ws of clients) { try { ws.close(); } catch {} }
-  srv.kill();
+  stopServer();
 }
 
 console.log(failures ? `\nFAILED: ${failures}` : '\nAll emote server tests passed');
