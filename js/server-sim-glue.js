@@ -290,6 +290,7 @@ const RESTORABLE_NUMBER_FIELDS = {
 // ===== Control API exposed to the Node harness (top-level var ⇒ property of the global) =====
 const STALE_INPUT_WINDOW = 64;
 var __sim = {
+  cityView() { return { ...raceGraphFromCity(), tileAt }; },
   addPlayer(name, shirtIdx, id) { const pl = makeSimPlayer(name, shirtIdx); if (id) pl.id = id; players.push(pl); return pl.id; },
   removePlayer(id) {
     const pl = playerById(id); if (!pl) return;
