@@ -328,6 +328,7 @@ function netShutdown() {
   net.stats = createNetStats();
   net.score = 0; net.streak = 0; net.bounty = 0; updateBountyHud(0);
   policeOn = true;
+  closeEmoteBar();
   document.body.classList.remove('mp');
   netRefreshBadge();
 }

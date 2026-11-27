@@ -9,10 +9,13 @@ const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ', msg); } els
 const sentMessages = [];
 const toasts = [];
 const fillTextCalls = [];
+const ctxStateStack = [];
+let saveCalls = 0, restoreCalls = 0;
+const ctxStateKeys = ['globalAlpha', 'textAlign', 'textBaseline', 'font', 'fillStyle'];
 let fakeNow = 10_000;
 
 const context = {
-  net: { mode: 'client', myId: 'me-id', players: new Map() },
+  net: { mode: 'client', myId: 'me-id', players: new Map(), sock: { readyState: 1 } },
   netSend: message => sentMessages.push(message),
   toast: message => toasts.push(message),
   t: key => key,
@@ -27,6 +30,8 @@ const context = {
     globalAlpha: 1, textAlign: 'left', textBaseline: 'alphabetic', font: '10px serif',
     beginPath() {}, arc() {}, moveTo() {}, lineTo() {}, fill() {}, stroke() {},
     fillText(text, x, y) { fillTextCalls.push({ text, x, y }); },
+    save() { saveCalls++; ctxStateStack.push(Object.fromEntries(ctxStateKeys.map(key => [key, context.ctx[key]]))); },
+    restore() { restoreCalls++; Object.assign(context.ctx, ctxStateStack.pop()); },
   },
 };
 vm.createContext(context);
@@ -38,6 +43,8 @@ const emotes = vm.runInContext(
 
 const resetScene = () => {
   sentMessages.length = 0; toasts.length = 0; fillTextCalls.length = 0;
+  ctxStateStack.length = 0; saveCalls = 0; restoreCalls = 0;
+  context.net.sock = { readyState: 1 };
   emotes.emoteState.bubbles.clear();
   emotes.emoteState.lastSentAt = -Infinity;
   emotes.emoteState.barOpen = false;
@@ -74,6 +81,33 @@ emotes.toggleEmoteBar();
 ok(emotes.emoteState.barOpen === true, 'toggle opens the bar');
 emotes.sendEmote(0);
 ok(emotes.emoteState.barOpen === false, 'sending closes the bar');
+resetScene();
+context.net.sock = { readyState: 0 };
+ok(emotes.sendEmote(1) === false && sentMessages.length === 0, 'socket not open: refused and nothing sent');
+ok(emotes.emoteState.bubbles.size === 0 && emotes.emoteState.lastSentAt === -Infinity, 'socket not open: no local bubble, cooldown not started');
+context.net.sock = null;
+ok(emotes.sendEmote(1) === false && sentMessages.length === 0, 'no socket: refused and nothing sent');
+context.net.sock = { readyState: 1 };
+ok(emotes.sendEmote(1) === true, 'open socket: send accepted after a refused attempt');
+
+console.log('3b) local bubble anchor');
+resetScene();
+context.camX = 20; context.camY = 30;
+emotes.sendEmote(3);
+fakeNow += 500;
+emotes.drawEmoteBubbles();
+const footBubbleY = fillTextCalls[0].y;
+const footLook = emotes.emoteBubbleLook(500);
+ok(fillTextCalls.length === 1 && fillTextCalls[0].x === context.player.x - 20 && Math.abs(footBubbleY - (context.player.y - 30 - 56 - footLook.rise + 1)) < 1e-9, `on foot: bubble anchored at body y - 56 (${footBubbleY})`);
+resetScene();
+context.camX = 20; context.camY = 30;
+context.player.car = { x: 300, y: 250, h: 40 };
+emotes.sendEmote(3);
+emotes.drawEmoteBubbles();
+const drivingBubbleY = fillTextCalls[0].y;
+const drivingLook = emotes.emoteBubbleLook(0);
+ok(fillTextCalls[0].x === 300 - 20 && Math.abs(drivingBubbleY - (250 - 30 - 40 / 2 - 12 - drivingLook.rise + 1)) < 1e-9, `driving: bubble anchored on player.car (${drivingBubbleY})`);
+context.player.car = null;
 
 console.log('4) onRemoteEmote');
 resetScene();
@@ -107,6 +141,7 @@ emotes.emoteState.bubbles.set('gone', { index: 1, at: fakeNow });
 emotes.drawEmoteBubbles();
 ok(!emotes.emoteState.bubbles.has('gone'), 'bubble of a player who left is dropped');
 ok(context.ctx.globalAlpha === 1 && context.ctx.textAlign === 'left' && context.ctx.textBaseline === 'alphabetic', 'ctx state restored');
+ok(saveCalls > 0 && saveCalls === restoreCalls && ctxStateStack.length === 0, `ctx save/restore balanced (${saveCalls}/${restoreCalls})`);
 
 console.log('6) single player skips the cooldown ui refresh');
 resetScene();
@@ -131,6 +166,8 @@ ok(before(inputSource, "e.code === 'Escape' && emoteState.barOpen", 'togglePause
 ok(before(inputSource, 'if (paused) return;', "e.code === 'KeyT'"), 'T is ignored while paused');
 ok(before(inputSource, 'emoteState.barOpen && /^Digit[1-8]$/', "e.code.startsWith('Digit')"), 'emoji digits take precedence over weapon digits');
 ok(inputSource.includes("bindBtn('btnEmote', toggleEmoteBar);"), 'touch button toggles the bar');
+const netShutdownBody = netSource.slice(netSource.indexOf('function netShutdown()')).split('\n}')[0];
+ok(netShutdownBody.includes('closeEmoteBar();'), 'netShutdown closes the emoji bar');
 ok(netSource.includes("case 'emo': onRemoteEmote(m.id, m.e)"), 'network routes emo to onRemoteEmote');
 ok(before(htmlSource, 'id="emoteBar"', 'js/emotes.js') && before(htmlSource, 'js/emotes.js', 'js/input.js'), 'emotes.js loads after the bar element and before input.js');
 

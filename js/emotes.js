@@ -31,7 +31,7 @@ function emoteBubbleLook(ageMs) {
 
 function sendEmote(index) {
   const nowMs = performance.now();
-  if (!net.mode || !isValidEmoteIndex(index) || emoteCooldownLeft(emoteState.lastSentAt, nowMs) > 0) return false;
+  if (!net.mode || net.sock?.readyState !== 1 || !isValidEmoteIndex(index) || emoteCooldownLeft(emoteState.lastSentAt, nowMs) > 0) return false;
   netSend({ t: 'emo', e: index });
   emoteState.bubbles.set('me', { index, at: nowMs });
   emoteState.lastSentAt = nowMs;
@@ -69,6 +69,7 @@ function buildEmoteBar() {
     const button = document.createElement('button');
     button.className = 'emo';
     button.innerHTML = emoji + '<kbd>' + (index + 1) + '</kbd>';
+    button.addEventListener('mousedown', event => event.preventDefault());
     button.addEventListener('click', () => sendEmote(index));
     bar.appendChild(button);
   });
@@ -97,14 +98,14 @@ function drawEmoteBubbles() {
   refreshEmoteCooldownUi();
   if (!emoteState.bubbles.size) return;
   const nowMs = performance.now();
-  const previousAlign = ctx.textAlign, previousBaseline = ctx.textBaseline, previousFont = ctx.font;
+  ctx.save();
   for (const [id, bubble] of emoteState.bubbles) {
     const look = emoteBubbleLook(nowMs - bubble.at);
     const owner = id === 'me' ? player : net.players.get(id);
     if (!look || !owner) { emoteState.bubbles.delete(id); continue; }
     drawEmoteBubble(EMOTES[bubble.index], emoteAnchor(owner), look);
   }
-  ctx.globalAlpha = 1; ctx.textAlign = previousAlign; ctx.textBaseline = previousBaseline; ctx.font = previousFont;
+  ctx.restore();
 }
 
 function refreshEmoteCooldownUi() {
