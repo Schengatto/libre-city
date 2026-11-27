@@ -269,6 +269,7 @@ function startMatch(resume) {
   $('#start').style.display = 'none';
   stopMenuMusic();
   started = true;
+  gameEvents.enabled = !netActive();
   if (!resume) {
     timeLeft = gameMinutes * 60 * 60;            // minutes → frames (~60 fps)
     if (netActive() && net.clockLeft != null) timeLeft = net.clockLeft;   // the server's authoritative clock

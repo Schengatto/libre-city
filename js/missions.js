@@ -5,7 +5,7 @@
 // Get into a taxi: a fare is waiting on the pavement — pick them up and drive them to
 // their destination following the arrow. The payout grows with the length of the ride,
 // and if you arrive in time the fare leaves a tip too.
-const taxi = { phase: 'idle', fare: null, dest: null, pay: 0, timer: 0, waitCd: 0, rides: 0 };
+const taxi = { phase: 'idle', fare: null, dest: null, pay: 0, timer: 0, timer0: 1, legDistance: 0, waitCd: 0, rides: 0 };
 const taxiActive = () => taxi.phase !== 'idle';
 const taxiTarget = () => taxi.phase === 'pickup' ? taxi.fare : taxi.dest;
 function spawnFare() {
@@ -27,12 +27,17 @@ function startRide() {
   const len = dist(player.x, player.y, d.x, d.y);
   taxi.pay = 15 + Math.round(len * 0.022 / 5) * 5;                // payout based on distance
   taxi.timer = Math.round(len / 2.5) + 60 * 4;                    // arrive in time → tip
+  taxi.timer0 = taxi.timer; taxi.legDistance = len;
+  gameEvents.emit('job:pickup', { job: 'taxi', x: taxi.dest.x, y: taxi.dest.y });
+  gameEvents.emit('job:start', { job: 'taxi', x: taxi.dest.x, y: taxi.dest.y, pay: taxi.pay, timerTotal: taxi.timer0 });
   toast(t('taxi.aboard'));
   sfx.door();
 }
 function completeRide() {
   const tip = taxi.timer > 0 ? Math.ceil(taxi.pay * 0.5 / 5) * 5 : 0;
   cash += taxi.pay + tip; updateCash(); sfx.coin();
+  gameEvents.emit('job:complete', { job: 'taxi', x: taxi.dest.x, y: taxi.dest.y, pay: taxi.pay, tip,
+    timerLeft: taxi.timer, timerTotal: taxi.timer0, distance: taxi.legDistance });
   addScore(SCORE.mission.taxi, player.x, player.y);
   taxi.rides++;
   toast(tip > 0 ? t('taxi.doneTip', { pay: taxi.pay, tip }) : t('taxi.done', { pay: taxi.pay }));
@@ -40,7 +45,8 @@ function completeRide() {
   peds.push(makePed(c.x + Math.cos(c.angle + Math.PI / 2) * 30, c.y + Math.sin(c.angle + Math.PI / 2) * 30, 'civ'));
   taxi.phase = 'idle'; taxi.dest = null; taxi.waitCd = 150;       // another fare along shortly
 }
-function cancelTaxi(msg) {
+function cancelTaxi(msg, reason) {
+  if (reason && taxiActive()) gameEvents.emit('job:fail', { job: 'taxi', reason });
   if (taxi.fare) { taxi.fare.role = 'civ'; taxi.fare.thinkCd = 0; }   // the fare gives up and strolls off
   taxi.phase = 'idle'; taxi.fare = null; taxi.dest = null; taxi.waitCd = 0;
   if (msg) toast(t(msg));
@@ -49,10 +55,10 @@ function updateTaxi() {
   if (taxi.waitCd > 0 && player.car && player.car.isTaxi && --taxi.waitCd === 0) spawnFare();
   if (!taxiActive()) return;
   const c = player.car;
-  if (!c || !c.isTaxi) { cancelTaxi('taxi.cancel'); return; }   // got out, or the taxi was destroyed
+  if (!c || !c.isTaxi) { cancelTaxi('taxi.cancel', 'vehicle'); return; }   // got out, or the taxi was destroyed
   if (taxi.phase === 'pickup') {
     const f = taxi.fare;
-    if (!f || f.ko || f.dead) { cancelTaxi('taxi.lost'); taxi.waitCd = 240; return; }
+    if (!f || f.ko || f.dead) { cancelTaxi('taxi.lost', 'lost'); taxi.waitCd = 240; return; }
     if (dist(c.x, c.y, f.x, f.y) < 62 && Math.abs(c.speed) < 0.8) startRide();
   } else if (taxi.phase === 'ride') {
     if (taxi.timer > 0) taxi.timer--;
@@ -64,7 +70,7 @@ function updateTaxi() {
 // Get on a delivery bike: the pizzeria prepares an order — collect the food at the shop
 // door and take it to the hungry customer waiting for it. Deliver it while it is still
 // hot and the customer leaves a tip too.
-const pizza = { phase: 'idle', shop: null, client: null, pay: 0, timer: 0, waitCd: 0, jobs: 0 };
+const pizza = { phase: 'idle', shop: null, client: null, pay: 0, timer: 0, timer0: 1, legDistance: 0, waitCd: 0, jobs: 0 };
 const pizzaActive = () => pizza.phase !== 'idle';
 const pizzaTarget = () => pizza.phase === 'pickup' ? (pizza.shop && pizza.shop.door) : pizza.client;
 function spawnOrder() {
@@ -87,13 +93,18 @@ function pickupFood() {
   const len = dist(pizza.shop.door.x, pizza.shop.door.y, pizza.client.x, pizza.client.y);
   pizza.pay = 20 + Math.round(len * 0.025 / 5) * 5;   // payout based on distance
   pizza.timer = Math.round(len / 2.6) + 60 * 4;       // delivered hot → tip
+  pizza.timer0 = pizza.timer; pizza.legDistance = len;
   pizza.phase = 'deliver';
+  gameEvents.emit('job:pickup', { job: 'pizza', x: pizza.client.x, y: pizza.client.y });
+  gameEvents.emit('job:start', { job: 'pizza', x: pizza.client.x, y: pizza.client.y, pay: pizza.pay, timerTotal: pizza.timer0 });
   toast(t('pizza.aboard'));
   sfx.door();
 }
 function completeDelivery() {
   const tip = pizza.timer > 0 ? Math.ceil(pizza.pay * 0.5 / 5) * 5 : 0;
   cash += pizza.pay + tip; updateCash(); sfx.coin();
+  gameEvents.emit('job:complete', { job: 'pizza', x: pizza.client.x, y: pizza.client.y, pay: pizza.pay, tip,
+    timerLeft: pizza.timer, timerTotal: pizza.timer0, distance: pizza.legDistance });
   addScore(SCORE.mission.pizza, player.x, player.y);
   pizza.jobs++;
   toast(tip > 0 ? t('pizza.doneTip', { pay: pizza.pay, tip }) : t('pizza.done', { pay: pizza.pay }));
@@ -102,7 +113,8 @@ function completeDelivery() {
   pizza.phase = 'idle'; pizza.shop = null; pizza.client = null;
   pizza.waitCd = 180;                                 // another order along shortly
 }
-function cancelPizza(msg) {
+function cancelPizza(msg, reason) {
+  if (reason && pizzaActive()) gameEvents.emit('job:fail', { job: 'pizza', reason });
   if (pizza.client) { pizza.client.role = 'civ'; pizza.client.thinkCd = 0; }   // the customer orders elsewhere
   pizza.phase = 'idle'; pizza.shop = null; pizza.client = null; pizza.waitCd = 0;
   if (msg) toast(t(msg));
@@ -111,9 +123,9 @@ function updatePizza() {
   if (pizza.waitCd > 0 && player.car && player.car.isDelivery && --pizza.waitCd === 0) spawnOrder();
   if (!pizzaActive()) return;
   const c = player.car;
-  if (!c || !c.isDelivery) { cancelPizza('pizza.cancel'); return; }   // got off, or the bike was destroyed
+  if (!c || !c.isDelivery) { cancelPizza('pizza.cancel', 'vehicle'); return; }   // got off, or the bike was destroyed
   const cl = pizza.client;
-  if (!cl || cl.ko || cl.dead) { cancelPizza('pizza.lost'); pizza.waitCd = 240; return; }
+  if (!cl || cl.ko || cl.dead) { cancelPizza('pizza.lost', 'lost'); pizza.waitCd = 240; return; }
   if (pizza.phase === 'pickup') {
     if (dist(c.x, c.y, pizza.shop.door.x, pizza.shop.door.y) < 70 && Math.abs(c.speed) < 0.9) pickupFood();
   } else if (pizza.phase === 'deliver') {
@@ -126,7 +138,7 @@ function updatePizza() {
 // Get into an ambulance (parked in front of the hospital): someone injured is calling
 // for help in the city — reach them, load them aboard and race to the nearest hospital.
 // Get there quickly and you earn the rescue bonus as well.
-const rescue = { phase: 'idle', patient: null, hosp: null, pay: 0, timer: 0, waitCd: 0, jobs: 0 };
+const rescue = { phase: 'idle', patient: null, hosp: null, pay: 0, timer: 0, timer0: 1, legDistance: 0, waitCd: 0, jobs: 0 };
 const rescueActive = () => rescue.phase !== 'idle';
 const rescueTarget = () => rescue.phase === 'pickup' ? rescue.patient : (rescue.hosp && rescue.hosp.door);
 function spawnEmergency() {
@@ -150,12 +162,17 @@ function loadPatient() {
   rescue.patient = null; rescue.phase = 'deliver'; rescue.hosp = hosp;
   rescue.pay = 30 + Math.round(hd * 0.03 / 5) * 5;    // payout based on the run
   rescue.timer = Math.round(hd / 2.5) + 60 * 4;       // arrive quickly → bonus
+  rescue.timer0 = rescue.timer; rescue.legDistance = hd;
+  gameEvents.emit('job:pickup', { job: 'ambulance', x: hosp.door.x, y: hosp.door.y });
+  gameEvents.emit('job:start', { job: 'ambulance', x: hosp.door.x, y: hosp.door.y, pay: rescue.pay, timerTotal: rescue.timer0 });
   toast(t('rescue.aboard'));
   sfx.door();
 }
 function completeRescue() {
   const tip = rescue.timer > 0 ? Math.ceil(rescue.pay * 0.5 / 5) * 5 : 0;
   cash += rescue.pay + tip; updateCash(); sfx.coin();
+  gameEvents.emit('job:complete', { job: 'ambulance', x: rescue.hosp.door.x, y: rescue.hosp.door.y, pay: rescue.pay, tip,
+    timerLeft: rescue.timer, timerTotal: rescue.timer0, distance: rescue.legDistance });
   addScore(SCORE.mission.ambulance, player.x, player.y);
   rescue.jobs++;
   toast(tip > 0 ? t('rescue.doneTip', { pay: rescue.pay, tip }) : t('rescue.done', { pay: rescue.pay }));
@@ -163,7 +180,8 @@ function completeRescue() {
   peds.push(makePed(d.x + rnd(-10, 10), d.y + rnd(-10, 10), 'civ'));
   rescue.phase = 'idle'; rescue.hosp = null; rescue.waitCd = 180;
 }
-function cancelRescue(msg) {
+function cancelRescue(msg, reason) {
+  if (reason && rescueActive()) gameEvents.emit('job:fail', { job: 'ambulance', reason });
   if (rescue.patient) { rescue.patient.role = 'civ'; rescue.patient.thinkCd = 0; }   // they get up by themselves
   rescue.phase = 'idle'; rescue.patient = null; rescue.hosp = null; rescue.waitCd = 0;
   if (msg) toast(t(msg));
@@ -172,10 +190,10 @@ function updateRescue() {
   if (rescue.waitCd > 0 && player.car && player.car.livery === 'ambulance' && --rescue.waitCd === 0) spawnEmergency();
   if (!rescueActive()) return;
   const c = player.car;
-  if (!c || c.livery !== 'ambulance') { cancelRescue('rescue.cancel'); return; }   // got out, or the vehicle was destroyed
+  if (!c || c.livery !== 'ambulance') { cancelRescue('rescue.cancel', 'vehicle'); return; }   // got out, or the vehicle was destroyed
   if (rescue.phase === 'pickup') {
     const inj = rescue.patient;
-    if (!inj || inj.ko || inj.dead) { cancelRescue('rescue.lost'); rescue.waitCd = 240; return; }
+    if (!inj || inj.ko || inj.dead) { cancelRescue('rescue.lost', 'lost'); rescue.waitCd = 240; return; }
     if (dist(c.x, c.y, inj.x, inj.y) < 70 && Math.abs(c.speed) < 0.9) loadPatient();
   } else if (rescue.phase === 'deliver') {
     if (rescue.timer > 0) rescue.timer--;
@@ -187,7 +205,7 @@ function updateRescue() {
 // Get into a patrol car (parked in front of the station): the alarm goes off — a robber
 // is fleeing a bank or a market. Catch up and stop them by pulling alongside (or the
 // old-fashioned way…) before they disappear for good.
-const patrol = { phase: 'idle', robber: null, pay: 0, timer: 0, timer0: 1, waitCd: 0, arrests: 0 };
+const patrol = { phase: 'idle', robber: null, pay: 0, timer: 0, timer0: 1, legDistance: 0, waitCd: 0, arrests: 0 };
 const patrolActive = () => patrol.phase !== 'idle';
 function spawnCrime() {
   // Crime scene: the nearest bank or market in range, otherwise a pavement.
@@ -202,14 +220,18 @@ function spawnCrime() {
   peds.push(r);
   patrol.phase = 'chase'; patrol.robber = r;
   patrol.pay = 45;
-  patrol.timer0 = Math.round(dist(player.x, player.y, p.x, p.y) / 2.2) + 60 * 14;
+  patrol.legDistance = dist(player.x, player.y, p.x, p.y);
+  patrol.timer0 = Math.round(patrol.legDistance / 2.2) + 60 * 14;
   patrol.timer = patrol.timer0;                       // when time runs out the thief vanishes
+  gameEvents.emit('job:start', { job: 'patrol', x: p.x, y: p.y, pay: patrol.pay, timerTotal: patrol.timer0 });
   toast(t(lm ? (lm.type === 'bank' ? 'patrol.bank' : 'patrol.market') : 'patrol.street'));
   flashSiren();
 }
 function completeArrest(hard) {
   const bonus = patrol.timer > patrol.timer0 * 0.5 ? 20 : 0;   // caught quickly → bonus
   cash += patrol.pay + bonus; updateCash(); sfx.coin();
+  gameEvents.emit('job:complete', { job: 'patrol', x: patrol.robber.x, y: patrol.robber.y, pay: patrol.pay, tip: bonus,
+    timerLeft: patrol.timer, timerTotal: patrol.timer0, distance: patrol.legDistance });
   addScore(SCORE.mission.patrol, player.x, player.y);
   patrol.arrests++;
   toast(hard ? t(bonus ? 'patrol.downBonus' : 'patrol.down', { pay: patrol.pay, bonus })
@@ -218,7 +240,8 @@ function completeArrest(hard) {
   if (r && !r.ko) { const i = peds.indexOf(r); if (i >= 0) peds.splice(i, 1); }
   patrol.phase = 'idle'; patrol.robber = null; patrol.waitCd = 200;
 }
-function cancelPatrol(msg) {
+function cancelPatrol(msg, reason) {
+  if (reason && patrolActive()) gameEvents.emit('job:fail', { job: 'patrol', reason });
   if (patrol.robber) { patrol.robber.role = 'civ'; patrol.robber.thinkCd = 0; }   // melts into the crowd
   patrol.phase = 'idle'; patrol.robber = null; patrol.waitCd = 0;
   if (msg) toast(t(msg));
@@ -227,11 +250,11 @@ function updatePatrol() {
   if (patrol.waitCd > 0 && player.car && player.car.wasPolice && --patrol.waitCd === 0) spawnCrime();
   if (!patrolActive()) return;
   const c = player.car;
-  if (!c || !c.wasPolice) { cancelPatrol('patrol.cancel'); return; }   // got out, or the patrol car was destroyed
+  if (!c || !c.wasPolice) { cancelPatrol('patrol.cancel', 'vehicle'); return; }   // got out, or the patrol car was destroyed
   const r = patrol.robber;
   if (!r) { cancelPatrol(); return; }
   if (r.ko || r.dead) { completeArrest(true); return; }         // floored: stopped all the same
-  if (--patrol.timer <= 0) { cancelPatrol('patrol.escaped'); patrol.waitCd = 240; return; }
+  if (--patrol.timer <= 0) { cancelPatrol('patrol.escaped', 'escaped'); patrol.waitCd = 240; return; }
   if (dist(c.x, c.y, r.x, r.y) < 62 && Math.abs(c.speed) < 0.9) completeArrest(false);
 }
 
@@ -239,7 +262,7 @@ function updatePatrol() {
 // Get into the fire engine (parked in front of the station): a fire has broken out in
 // the city — race to the scene and put it out by spraying water with the hydrant (hold
 // the left mouse button). Put it out quickly for the bonus.
-const firejob = { phase: 'idle', site: null, pay: 0, timer: 0, timer0: 1, waitCd: 0, jobs: 0 };
+const firejob = { phase: 'idle', site: null, pay: 0, timer: 0, timer0: 1, legDistance: 0, waitCd: 0, jobs: 0 };
 const firejobActive = () => firejob.phase !== 'idle';
 function spawnFire() {
   const p = randomPublicSidewalkNear(player.x, player.y, 600, 1800);
@@ -249,14 +272,18 @@ function spawnFire() {
   firejob.phase = 'extinguish'; firejob.site = site;
   const d = dist(player.x, player.y, p.x, p.y);
   firejob.pay = 35 + Math.round(d * 0.02 / 5) * 5;
+  firejob.legDistance = d;
   firejob.timer0 = Math.round(d / 2.2) + 60 * 16;    // after that the fire gets out of hand
   firejob.timer = firejob.timer0;
+  gameEvents.emit('job:start', { job: 'fire', x: p.x, y: p.y, pay: firejob.pay, timerTotal: firejob.timer0 });
   toast(t('fire.new'));
   flashSiren();
 }
 function completeFirejob() {
   const bonus = firejob.timer > firejob.timer0 * 0.5 ? 20 : 0;   // put out quickly → bonus
   cash += firejob.pay + bonus; updateCash(); sfx.coin();
+  gameEvents.emit('job:complete', { job: 'fire', x: firejob.site.x, y: firejob.site.y, pay: firejob.pay, tip: bonus,
+    timerLeft: firejob.timer, timerTotal: firejob.timer0, distance: firejob.legDistance });
   addScore(SCORE.mission.fire, player.x, player.y);
   firejob.jobs++;
   toast(bonus ? t('fire.doneBonus', { pay: firejob.pay, bonus }) : t('fire.done', { pay: firejob.pay }));
@@ -266,7 +293,8 @@ function completeFirejob() {
     vx: rnd(-0.5, 0.5), vy: rnd(-1.6, -0.6), life: rndi(18, 36), color: '#cfd6dd', size: rnd(4, 9), kind: 'smoke' });
   firejob.phase = 'idle'; firejob.site = null; firejob.waitCd = 200;
 }
-function cancelFirejob(msg) {
+function cancelFirejob(msg, reason) {
+  if (reason && firejobActive()) gameEvents.emit('job:fail', { job: 'fire', reason });
   if (firejob.site) { const i = fires.indexOf(firejob.site); if (i >= 0) fires.splice(i, 1); }
   firejob.phase = 'idle'; firejob.site = null; firejob.waitCd = 0;
   if (msg) toast(t(msg));
@@ -275,9 +303,9 @@ function updateFirejob() {
   if (firejob.waitCd > 0 && player.car && player.car.livery === 'fire' && --firejob.waitCd === 0) spawnFire();
   if (!firejobActive()) return;
   const c = player.car;
-  if (!c || c.livery !== 'fire') { cancelFirejob('fire.cancel'); return; }   // got out, or the vehicle was destroyed
+  if (!c || c.livery !== 'fire') { cancelFirejob('fire.cancel', 'vehicle'); return; }   // got out, or the vehicle was destroyed
   if (firejob.site.hp <= 0) { completeFirejob(); return; }
-  if (--firejob.timer <= 0) { cancelFirejob('fire.late'); firejob.waitCd = 240; return; }
+  if (--firejob.timer <= 0) { cancelFirejob('fire.late', 'late'); firejob.waitCd = 240; return; }
 }
 // Fire-engine hydrant: sprays a jet of water towards the mouse.
 function sprayWater(c) {

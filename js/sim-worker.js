@@ -1,6 +1,6 @@
 (function () {
   // dev-only:begin
-  const SIM_SCRIPT_FILES = ['core.js', 'i18n.js', 'city.js', 'train.js', 'entities.js', 'missions.js', 'army.js', 'gameplay.js', 'snapshot-codec.js', 'snapshot-delta.js', 'server-sim-glue.js'];
+  const SIM_SCRIPT_FILES = ['core.js', 'i18n.js', 'city.js', 'train.js', 'entities.js', 'game-events.js', 'missions.js','army.js', 'gameplay.js', 'snapshot-codec.js', 'snapshot-delta.js', 'server-sim-glue.js'];
   // dev-only:end
   const STEP_MS = 1000 / 60;
   const MAX_CATCHUP_MS = 250;

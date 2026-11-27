@@ -51,6 +51,7 @@ function commitCrime(amount, key) {
   crimeCd = 60 * 9;
   wanted = Math.floor(wantedHeat);
   updateStars();
+  if (wanted !== before) gameEvents.emit('wanted:change', { from: before, to: wanted });
   if (wanted > before) { toast(key ? t(key) : t('wanted.level', { n: wanted })); flashSiren(); }
 }
 function flashSiren() { shake(6, 8); }
@@ -161,6 +162,7 @@ function punchPed(p, w) {
   if (p.punches >= PUNCH_KILL) {                      // third punch: floored
     knockPed(p, player.aim, w.knock);
     addScore(pedScore(p), p.x, p.y);
+    gameEvents.emit('kill', { victimKind: victimKindOf(p) });
     if (p.role === 'cop') commitCrime(1.2, 'crime.punchCop');
     else if (p.role === 'soldier') armyAlertT = ARMY_ALERT_T;
     else if (p.role !== 'robber') { cash += 3; commitCrime(0.6, 'crime.punchPed'); }
@@ -258,6 +260,7 @@ function runOver(c, byPlayer) {
         asPlayer(MP ? c.owner : player, () => {
           cash += 5;
           addScore(pedScore(p), p.x, p.y);
+          gameEvents.emit('kill', { victimKind: victimKindOf(p) });
           commitCrime(p.role === 'cop' ? 1.1 : 0.7,
             p.role === 'cop' ? 'crime.runCop' : 'crime.runPed');
         });
@@ -888,6 +891,7 @@ function updateBullets() {
         if (dist(b.x, b.y, p.x, p.y) < p.r + 3) {
           knockPed(p, Math.atan2(b.vy, b.vx), b.knock || 4);
           asPlayer(b.owner || player, () => addScore(pedScore(p), p.x, p.y));
+          gameEvents.emit('kill', { victimKind: victimKindOf(p) });
           // The crime (stars) is attributed to WHOEVER FIRED, not to the current global
           // player (bullets resolve in the shared world phase).
           if (p.role === 'cop') asPlayer(b.owner || player, () => commitCrime(1.2, 'crime.shootCop'));
@@ -973,6 +977,7 @@ function addDent(c, dmg, impactAngle) {
 function damageCar(c, dmg, angle, chain = 0) {
   addDent(c, dmg, angle);
   c.health -= dmg;
+  if (c.driver === 'player') gameEvents.emit('vehicle:damage', { amount: dmg, vehicleKind: vehicleKindOf(c) });
   if (c.health <= 30 && !c.smoking) c.smoking = true;
   if (c.smoking && frame % 4 === 0) parts.push({ x: c.x + rnd(-10, 10), y: c.y + rnd(-8, 8), vx: rnd(-0.4, 0.4), vy: rnd(-1.4, -0.5), life: rndi(20, 40), color: '#555', size: rnd(4, 8), kind: 'smoke' });
   // Badly damaged: it can catch fire — from then on it burns itself out (updateBurningCars).
@@ -1024,7 +1029,7 @@ function explodeCar(c, chain = 0) {
   // separately).
   for (const p of peds) if (!p.ko && dist(p.x, p.y, c.x, c.y) < 90) {
     knockPed(p, Math.atan2(p.y - c.y, p.x - c.x), 7);
-    if (scoring) addScore(pedScore(p), p.x, p.y);
+    if (scoring) { addScore(pedScore(p), p.x, p.y); gameEvents.emit('kill', { victimKind: victimKindOf(p) }); }
   }
   // Inside the tank you are shielded from the blast (unless the tank is what exploded).
   eachActivePlayer(v => {
@@ -1145,7 +1150,9 @@ function startDown(kind) {
   netReportDown(kind);                            // multiplayer: count the death and credit the killer
   sfx.bust();
   if (kind === 'dead') { cash = Math.floor(cash * 0.5); updateCash(); }
+  const wantedBefore = wanted;
   wantedHeat = 0; wanted = 0; crimeCd = 0; updateStars();
+  if (wantedBefore !== 0) gameEvents.emit('wanted:change', { from: wantedBefore, to: 0 });
   // The hunt is over: officers leave, patrol cars go back to being ordinary cars.
   for (let i = peds.length - 1; i >= 0; i--) if (peds[i].role === 'cop') peds.splice(i, 1);
   for (const c of cars) if (c.role === 'police') c.role = 'parked';
@@ -1156,11 +1163,12 @@ function startDown(kind) {
   // The car stays parked where you left it (as when getting out with E): without the
   // 'parked' role, updateCar would treat it as traffic on a rail it does not have.
   if (player.car) { const c = player.car; c.driver = null; c.speed = 0; c.role = 'parked'; c.edge = null; netAbandonCar(c); player.car = null; engineGain(0); }
-  cancelTaxi();
-  cancelPizza();
-  cancelRescue();
-  cancelPatrol();
-  cancelFirejob();
+  cancelTaxi(null, 'down');
+  cancelPizza(null, 'down');
+  cancelRescue(null, 'down');
+  cancelPatrol(null, 'down');
+  cancelFirejob(null, 'down');
+  gameEvents.emit('player:down', { reason: kind });
   const el = $('#bigMsg');
   if (el) {
     el.classList.remove('hidden');
@@ -1373,7 +1381,7 @@ function update() {
   managePopulation();
   // Wanted-level decay.
   if (crimeCd > 0) crimeCd--;
-  else if (wantedHeat > 0) { wantedHeat = Math.max(0, wantedHeat - 0.0016); const w = Math.floor(wantedHeat); if (w !== wanted) { wanted = w; updateStars(); } }
+  else if (wantedHeat > 0) { wantedHeat = Math.max(0, wantedHeat - 0.0016); const w = Math.floor(wantedHeat); if (w !== wanted) { const from = wanted; wanted = w; updateStars(); gameEvents.emit('wanted:change', { from, to: w }); } }
   // Siren of the police hunting you.
   if (wanted > 0 && frame % 26 === 0) sfx.siren((frame / 26) % 2 < 1);
   // Siren on your own service vehicle (mission running, or switched on with Space).
