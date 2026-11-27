@@ -118,5 +118,19 @@ const daynightSource = readSource('daynight.js');
 ok(/const NIGHT_FULL_FRAME = DAY_NIGHT_KEYFRAMES\.find\(keyframe => keyframe\.light === 1\)\.frame;/.test(daynightSource), 'NIGHT_FULL_FRAME is derived from the keyframes');
 ok(daynightSource.includes('TUNING.forceNight'), 'drawDayNight reads TUNING.forceNight');
 
+const ui = readSource('ui.js');
+const i18nSource = readSource('i18n.js');
+const occurrences = (text, needle) => text.split(needle).length - 1;
+ok(/function showMenu\(\) \{[\s\S]*?resetMutators\(\);[\s\S]*?\n\}/.test(ui), 'showMenu resets the mutators');
+ok(/if \(netActive\(\)\) resetMutators\(\);/.test(ui), 'startMatch resets the mutators when multiplayer starts');
+ok(ui.indexOf('applyMutators(runConfig ? (runConfig.mutators || []) : (_spIntent.mutators || []));') > 0
+  && ui.indexOf('applyMutators(runConfig') < ui.indexOf('startMatch(false);\n}\nelse if (_loadIntent'), 'the boot path applies the intent mutators before startMatch(false)');
+ok(ui.includes("store.set('mutatorsPick', mutators);") && ui.includes('name: playerName, mutators }'), 'spGo stores the pick and the intent mutators');
+ok(ui.includes("fillSpMutatorPick(store.get('mutatorsPick', []));"), 'the SP panel restores the last pick');
+ok(/activeMutatorIds\.length > 0 && !netActive\(\)/.test(ui), 'badges are hidden when empty or in multiplayer');
+ok(daynightSource.includes('TUNING.forceNight && !netActive()'), 'forced night is ignored in multiplayer');
+const i18nKeys = ['hud.mutators', 'mut.title', ...mutatorIds.flatMap(id => ['mut.' + id, 'mut.' + id + 'Desc'])];
+ok(i18nKeys.every(key => occurrences(i18nSource, `'${key}':`) === 2), 'every mutator i18n key exists in both catalogs');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

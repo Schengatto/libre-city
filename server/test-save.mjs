@@ -44,5 +44,15 @@ ok(run('dayNightOn = false; captureSave().dayNight') === false, 'captureSave sto
 ok(run('dayNightOn = false; applySave({ v: SAVE_VERSION, code: ROOM_CODE, player: {}, dayNight: false }); dayNightOn') === false, 'applySave restores day/night off');
 ok(run('dayNightOn = false; applySave({ v: SAVE_VERSION, code: ROOM_CODE, player: {} }); dayNightOn') === true, 'an old save without dayNight resumes with the cycle on');
 
+console.log('mutators save round trip');
+const savedMutators = run("applyMutators(['glassCars', 'night']); captureSave().mutators");
+ok(JSON.stringify(savedMutators) === JSON.stringify(['night', 'glassCars']), 'captureSave stores the active mutators');
+const resumedMutators = run("const savedState = captureSave(); resetMutators(); applySave(savedState); ({ ids: activeMutatorIds.slice(), night: TUNING.forceNight, damage: TUNING.carDamageScale })");
+ok(JSON.stringify(resumedMutators.ids) === JSON.stringify(['night', 'glassCars']) && resumedMutators.night === true && resumedMutators.damage === 2, 'applySave resumes the saved mutators');
+ok(run("applyMutators(['night']); applySave({ v: SAVE_VERSION, code: ROOM_CODE, player: {} }); activeMutatorIds.length") === 0 && run('TUNING.forceNight') === false, 'a save without mutators applies none');
+ok(JSON.stringify(run("applySave({ v: SAVE_VERSION, code: ROOM_CODE, player: {}, mutators: ['night', 'bogus', 'night'] }); activeMutatorIds.slice()")) === JSON.stringify(['night']), 'unknown and duplicate saved mutator ids are dropped');
+ok(run("applySave({ v: SAVE_VERSION, code: ROOM_CODE, player: {}, mutators: 'night' }); activeMutatorIds.length") === 0, 'a non-array saved mutators field applies none');
+run('resetMutators()');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

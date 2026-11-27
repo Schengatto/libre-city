@@ -107,6 +107,7 @@ function showMenu() {
   const nm = $('#menuName'); if (nm) nm.textContent = playerName;
   const lb = $('#loadBtn'); if (lb) lb.classList.toggle('hidden', !hasSave());   // 💾 only when a save exists
   updateHiScore();                                                              // must be rewritten after a language change
+  resetMutators();
   showPanel('menuPanel');
 }
 // ---- Arcade-cabinet HI-SCORE on the title screen (best saved score) ----
@@ -273,6 +274,7 @@ function startMatch(resume) {
   stopMenuMusic();
   started = true;
   gameEvents.enabled = !netActive();
+  if (netActive()) resetMutators();
   if (!resume) {
     timeLeft = gameMinutes * 60 * 60;            // minutes → frames (~60 fps)
     if (netActive() && net.clockLeft != null) timeLeft = net.clockLeft;   // the server's authoritative clock
@@ -286,8 +288,8 @@ function startMatch(resume) {
   const peace = peaceMode();
   const wpn = $('#weapon'); if (wpn) wpn.style.display = peace ? 'none' : '';
   const wb = $('#wpnBar'); if (wb) wb.style.display = peace ? 'none' : '';
-  updateStars(); updateHealth(); updateCash(); updateScore(); updateWeapon(); updateTimer();
-  const hi = t(usingTouch ? 'game.hintTouch' : 'game.hintKb');
+  updateStars(); updateHealth(); updateCash(); updateScore(); updateWeapon(); updateTimer(); updateMutatorBadges();
+  const hi =t(usingTouch ? 'game.hintTouch' : 'game.hintKb');
   const mp = netActive() ? t(usingTouch ? 'game.mpLadderTouch' : 'game.mpLadderKb') : '';
   toast(resume ? t('game.welcomeBack', { name: playerName })
                : t('game.welcome', { name: playerName, hint: hi, mp }));
@@ -297,9 +299,52 @@ function startMatch(resume) {
 // ---- Single-player: creation panel (violence, duration, map size) ----
 // As for the host, the map size lives in the code's seed → a reload onto the right city is
 // needed; violence and duration travel inside the intent and are applied on the way back.
+function updateMutatorBadges() {
+  const badges = $('#mutatorBadges'); if (!badges) return;
+  badges.textContent = '';
+  const visible = activeMutatorIds.length > 0 && !netActive();
+  badges.classList.toggle('hidden', !visible);
+  if (!visible) return;
+  for (const id of activeMutatorIds) {
+    const badge = document.createElement('span');
+    badge.textContent = MUTATORS[id].icon;
+    badge.title = t('mut.' + id);
+    badges.appendChild(badge);
+  }
+}
+function readSpMutatorPick() {
+  const ticked = [...document.querySelectorAll('#spMutators input:checked')].map(input => input.value);
+  return sanitizeMutatorIds(ticked);
+}
+function updateSpMutatorDesc() {
+  const desc = $('#spMutatorDesc'); if (!desc) return;
+  desc.textContent = readSpMutatorPick().map(id => t('mut.' + id + 'Desc')).join(' ');
+}
+function fillSpMutatorPick(ids) {
+  const wanted = new Set(sanitizeMutatorIds(ids));
+  for (const input of document.querySelectorAll('#spMutators input')) input.checked = wanted.has(input.value);
+  updateSpMutatorDesc();
+}
+function buildSpMutatorChips() {
+  const box = $('#spMutators'); if (!box) return;
+  box.textContent = '';
+  for (const id of MUTATOR_IDS) {
+    const chip = document.createElement('label');
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.value = id;
+    input.onchange = updateSpMutatorDesc;
+    const name = document.createElement('span');
+    name.textContent = MUTATORS[id].icon + ' ' + t('mut.' + id);
+    chip.append(input, name);
+    box.appendChild(chip);
+  }
+}
 onClick('playBtn', () => {
   const d = $('#spDuration'); if (d) d.value = String(gameMinutes);
   const v = $('#spViolence'); if (v) v.value = violenceOn ? 'on' : 'off';
+  buildSpMutatorChips();
+  fillSpMutatorPick(store.get('mutatorsPick', []));
   showPanel('spPanel');
 });
 onClick('spBack', showMenu);
@@ -311,7 +356,9 @@ onClick('spGo', () => {
   const dayNight = $('#spDayNight') ? $('#spDayNight').value !== 'off' : true;
   const size = $('#spSize') ? $('#spSize').value : 'P';
   const code = makeSizedRoomCode(size);
-  store.set('spIntent', { code, mins, violence: viol, dayNight, name: playerName });
+  const mutators = readSpMutatorPick();
+  store.set('mutatorsPick', mutators);
+  store.set('spIntent', { code, mins, violence: viol, dayNight, name: playerName, mutators });
   location.hash = 'room=' + code;
   location.reload();
 });
@@ -661,6 +708,7 @@ if (_spIntent && ROOM_FROM_URL === _spIntent.code) {
   if (!runConfig) store.set('minutes', gameMinutes);
   violenceOn = _spIntent.violence !== false;
   dayNightOn = _spIntent.dayNight !== false;
+  applyMutators(runConfig ? (runConfig.mutators || []) : (_spIntent.mutators || []));
   startMatch(false);
 }
 else if (_loadIntent && _save && _save.code && ROOM_FROM_URL === _save.code) {

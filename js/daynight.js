@@ -223,7 +223,7 @@ function drawNightLightSources(lightContext) {
 }
 
 function drawDayNight() {
-  const forced = TUNING.forceNight;
+  const forced = TUNING.forceNight && !netActive();
   if ((!dayNightOn && !forced) || vw <= 0 || vh <= 0) return;
   const ambient = dayNightAmbient(forced ? NIGHT_FULL_FRAME : dayCycleFrame(matchElapsedFrames));
   if (ambient.r === 255 && ambient.g === 255 && ambient.b === 255) return;
