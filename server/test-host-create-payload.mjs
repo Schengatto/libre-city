@@ -29,6 +29,13 @@ console.log('3) options omitted');
 net = startHost('', 4, true, () => {});
 ok(net.hello.public === false && net.hello.title === '', 'private, empty title');
 ok(net.rejoin.code === 'PABCDE' && net.rejoin.name === 'Ann', 'rejoin unchanged');
+ok(net.hello.dayNight === true, 'day/night defaults to on');
+
+console.log('4) day/night option');
+net = startHost('', 4, true, () => {}, { title: 'Roma', isPublic: true, dayNight: false });
+ok(net.hello.dayNight === false, 'day/night off sent');
+net = startHost('', 4, true, () => {}, { title: 'Roma', isPublic: true, dayNight: true });
+ok(net.hello.dayNight === true, 'day/night on sent');
 
 console.log(`\n${fail ? '❌' : '✅'}  ${pass} ok, ${fail} fail`);
 process.exit(fail ? 1 : 0);

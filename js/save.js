@@ -27,6 +27,7 @@ function captureSave() {
     name: playerName,
     minutes: gameMinutes,
     violence: violenceOn,
+    dayNight: dayNightOn,
     timeLeft,                              // frames left (0 = untimed game)
     matchElapsed: matchElapsedFrames,
     cash,
@@ -52,6 +53,7 @@ function applySave(s) {
   playerName = s.name || playerName; store.set('name', playerName);
   gameMinutes = s.minutes | 0; store.set('minutes', gameMinutes);
   violenceOn = s.violence !== false;     // old saves (no field) = violence on
+  dayNightOn = s.dayNight !== false;
   timeLeft = s.timeLeft | 0;
   matchElapsedFrames = s.matchElapsed | 0;
   cash = s.cash | 0;

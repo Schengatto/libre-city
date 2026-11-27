@@ -243,21 +243,47 @@ const hasRotatedBlit = recording => {
 
 {
   const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-  const field = html.match(/<select id="setDayNight">[\s\S]*?<\/select>/);
-  ok(field && /<label for="setDayNight" data-i18n="set\.dayNight">/.test(html), 'settings has a labelled setDayNight select');
-  ok(field && /value="on"[^>]*data-i18n="set\.dayNightOn"/.test(field[0]) && /value="off"[^>]*data-i18n="set\.dayNightOff"/.test(field[0]), 'setDayNight has on and off options with i18n keys');
-  ok(/id="setAudio">[\s\S]*?<\/select>\s*<\/div>\s*<div class="field">\s*<label for="setDayNight"/.test(html), 'setDayNight sits right after the audio field');
+  ok(!html.includes('setDayNight'), 'the personal settings toggle is gone');
+  for (const panel of ['sp', 'host']) {
+    const field = html.match(new RegExp(`<select id="${panel}DayNight">[\\s\\S]*?<\\/select>`));
+    ok(field
+      && new RegExp(`<label for="${panel}DayNight" data-i18n="sp\\.dayNight">`).test(html)
+      && /value="on" selected[^>]*data-i18n="sp\.dayNightOn"/.test(field[0])
+      && /value="off"[^>]*data-i18n="sp\.dayNightOff"/.test(field[0]), `${panel} panel has a day/night select defaulting to on`);
+    ok(new RegExp(`id="${panel}Duration">[\\s\\S]*?<\\/select>\\s*<\\/div>\\s*<div class="field">\\s*<label for="${panel}DayNight"`).test(html), `${panel}DayNight sits right after the duration field`);
+  }
 
   const i18n = readSource('i18n.js');
-  const expected = { 'set.dayNight': ['Giorno/notte', 'Day/night'], 'set.dayNightOn': ['🌗 Attivo', '🌗 On'], 'set.dayNightOff': ['☀️ Sempre giorno', '☀️ Always day'] };
+  const expected = {
+    'sp.dayNight': ['Ciclo giorno/notte', 'Day/night cycle'],
+    'sp.dayNightOn': ['Sì — giorno e notte', 'Yes — day and night'],
+    'sp.dayNightOff': ['No — sempre giorno', 'No — always day']
+  };
   const countOf = line => i18n.split(line).length - 1;
-  ok(Object.entries(expected).every(([key, [it, en]]) => countOf(`'${key}': '${it}',`) === 1 && countOf(`'${key}': '${en}',`) === 1), 'IT and EN define the day/night keys');
+  ok(Object.entries(expected).every(([key, [it, en]]) => countOf(`'${key}': '${it}',`) === 1 && countOf(`'${key}': '${en}',`) === 1) && !i18n.includes("'set.dayNight"), 'IT and EN define the map option keys and drop the settings keys');
 
-  const settingsUi = readSource('ui.js');
-  const openBody = settingsUi.slice(settingsUi.indexOf("onClick('settingsBtn'"), settingsUi.indexOf("onClick('settingsSave'"));
-  const saveBody = settingsUi.slice(settingsUi.indexOf("onClick('settingsSave'"), settingsUi.indexOf("onClick('settingsBack'"));
-  ok(/\$\('#setDayNight'\)/.test(openBody) && /d\.value = dayNightOn \? 'on' : 'off'/.test(openBody), 'settings open fills setDayNight from dayNightOn');
-  ok(/dayNightOn = d \? d\.value === 'on' : true; store\.set\('dayNight', dayNightOn\)/.test(saveBody), 'settings save sets dayNightOn and persists it');
+  ok(/^let dayNightOn = true;$/m.test(readSource('entities.js')), 'dayNightOn no longer comes from the store');
+  const sourceDirectory = new URL('../js/', import.meta.url);
+  ok(fs.readdirSync(sourceDirectory).filter(file => file.endsWith('.js')).every(file => !/store\.(get|set)\('dayNight'/.test(fs.readFileSync(new URL(file, sourceDirectory), 'utf8'))), 'no code reads or writes the dayNight store key');
+
+  const ui = readSource('ui.js');
+  const spGoBody = ui.slice(ui.indexOf("onClick('spGo'"), ui.indexOf('// ---- Panel navigation'));
+  ok(spGoBody.includes("$('#spDayNight')") && /store\.set\('spIntent', \{[^}]*\bdayNight\b/.test(spGoBody), 'spGo stores the day/night pick in spIntent');
+  const spIntentBranch = ui.slice(ui.indexOf('if (_spIntent && ROOM_FROM_URL'));
+  const applyIndex = spIntentBranch.indexOf('dayNightOn = _spIntent.dayNight !== false;');
+  ok(applyIndex !== -1 && applyIndex < spIntentBranch.indexOf('startMatch(false);'), 'the SP intent applies the day/night pick before starting');
+  const hostGoBody = ui.slice(ui.indexOf("onClick('hostGo'"));
+  const hostIntentStore = hostGoBody.match(/store\.set\('hostIntent', \{[^}]*\}/);
+  ok(hostGoBody.slice(0, hostGoBody.indexOf('store.set(')).includes("$('#hostDayNight')") && hostIntentStore && /\bdayNight\b/.test(hostIntentStore[0]), 'hostGo stores the day/night pick in hostIntent');
+  ok(ui.includes('dayNight: _hostIntent.dayNight !== false'), 'the host intent passes dayNight to netStartHost');
+  const openBody = ui.slice(ui.indexOf("onClick('settingsBtn'"), ui.indexOf("onClick('settingsSave'"));
+  const saveBody = ui.slice(ui.indexOf("onClick('settingsSave'"), ui.indexOf("onClick('settingsBack'"));
+  ok(!openBody.includes('dayNight') && !saveBody.includes('dayNight'), 'settings no longer touch dayNight');
+
+  const netSource = readSource('net.js');
+  const joinedStart = netSource.indexOf('function netOnJoined(');
+  const joinedBody = netSource.slice(joinedStart, netSource.indexOf('\nfunction ', joinedStart + 1));
+  ok(joinedBody.includes('dayNightOn = m.dayNight !== false;'), 'ok applies the room day/night choice, missing field means on');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

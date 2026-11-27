@@ -112,7 +112,7 @@ const store = {
 let playerName  = store.get('name', '');       // empty = first run: ask for the name
 let gameMinutes = store.get('minutes', 0);     // game length in minutes · 0 = untimed
 let audioOn     = store.get('audio', true);    // audio toggle from settings (js/audio.js)
-let dayNightOn = store.get('dayNight', true);
+let dayNightOn = true;
 let timeLeft = 0;                              // frames left (only when a length is set)
 let matchElapsedFrames = 0;
 // Violence filter (SINGLE-PLAYER only): false = no weapons, nobody shoots or kills

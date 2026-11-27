@@ -99,6 +99,7 @@ function netStartHost(pass, maxPlayers, police, done, options) {
   net.rejoin = { code: ROOM_CODE, name: playerName, pass: net.pass };
   net.hello  = { t: 'create', code: ROOM_CODE, name: playerName, pass: net.pass,
                  max: net.maxPlayers, minutes: gameMinutes, police,
+                 dayNight: !(options && options.dayNight === false),
                  title: (options && options.title) || '', public: !!(options && options.isPublic) };
   netDial(done);
 }
@@ -228,6 +229,7 @@ function netOnJoined(m) {
   player.shirt = NET_SHIRTS[m.shirtIdx % NET_SHIRTS.length];
   if (m.minutes != null) gameMinutes = m.minutes;   // the server sets the match's pace
   policeOn = m.police !== false;
+  dayNightOn = m.dayNight !== false;
   net.clockLeft = m.left;
   if (resumed && started && gameMinutes > 0) {
     timeLeft = net.clockLeft;

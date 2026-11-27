@@ -301,9 +301,10 @@ onClick('spBack', showMenu);
 onClick('spGo', () => {
   const mins = $('#spDuration') ? +$('#spDuration').value : 0;
   const viol = $('#spViolence') ? $('#spViolence').value === 'on' : true;
+  const dayNight = $('#spDayNight') ? $('#spDayNight').value !== 'off' : true;
   const size = $('#spSize') ? $('#spSize').value : 'P';
   const code = makeSizedRoomCode(size);
-  store.set('spIntent', { code, mins, violence: viol, name: playerName });
+  store.set('spIntent', { code, mins, violence: viol, dayNight, name: playerName });
   location.hash = 'room=' + code;
   location.reload();
 });
@@ -311,20 +312,18 @@ onClick('spGo', () => {
 // ---- Panel navigation ----
 function onClick(id, fn) { const el = $('#' + id); if (el) el.onclick = fn; }
 onClick('settingsBtn', () => {
-  const n = $('#setName'), a = $('#setAudio'), d = $('#setDayNight'), l = $('#setLang');
+  const n = $('#setName'), a = $('#setAudio'), l = $('#setLang');
   if (n) n.value = playerName;
   if (a) a.value = audioOn ? 'on' : 'off';
-  if (d) d.value = dayNightOn ? 'on' : 'off';
   if (l) l.value = LANG;
   showPanel('settingsPanel');
 });
 onClick('settingsSave', () => {
-  const n = $('#setName'), a = $('#setAudio'), d = $('#setDayNight'), l = $('#setLang');
+  const n = $('#setName'), a = $('#setAudio'), l = $('#setLang');
   const name = n ? n.value.trim() : '';
   if (!name) { if (n) { n.focus(); n.placeholder = t('name.required'); } return; }
   playerName = name; store.set('name', playerName);
   audioOn = a ? a.value === 'on' : true; store.set('audio', audioOn);
-  dayNightOn = d ? d.value === 'on' : true; store.set('dayNight', dayNightOn);
   applyAudioSetting();                           // takes effect immediately, even mid-match
   if (l && l.value !== LANG) setLang(l.value);   // re-applies all the wording straight away
   showMenu();
@@ -536,11 +535,12 @@ onClick('hostGo', () => {
   const mins = $('#hostDuration') ? +$('#hostDuration').value : 10;
   const size = $('#hostSize') ? $('#hostSize').value : 'P';
   const police = $('#hostPolice') ? $('#hostPolice').value !== 'off' : true;
+  const dayNight = $('#hostDayNight') ? $('#hostDayNight').value !== 'off' : true;
   const code = makeSizedRoomCode(size);
   // The city of the chosen size is generated at LOAD time from the seed = code: as when
   // joining with a code, we reload onto the right room; on the way back, once the hostIntent
   // is recognised, we actually create the room and show the invite.
-  store.set('hostIntent', { code, pass, maxP, mins, police, title, isPublic, name: playerName });
+  store.set('hostIntent', { code, pass, maxP, mins, police, dayNight, title, isPublic, name: playerName });
   if (st) st.textContent = t('host.creating');
   location.hash = 'room=' + code;
   location.reload();
@@ -651,6 +651,7 @@ if (_spIntent && ROOM_FROM_URL === _spIntent.code) {
   if (_spIntent.name) { playerName = _spIntent.name; store.set('name', playerName); }
   gameMinutes = _spIntent.mins | 0; store.set('minutes', gameMinutes);
   violenceOn = _spIntent.violence !== false;
+  dayNightOn = _spIntent.dayNight !== false;
   startMatch(false);
 }
 else if (_loadIntent && _save && _save.code && ROOM_FROM_URL === _save.code) {
@@ -679,7 +680,7 @@ else if (_hostIntent && ROOM_FROM_URL === _hostIntent.code) {
     }
     showPanel('invitePanel');       // if we were in the waiting room: the room is ours now
     netRefreshBadge();
-  }, { title: _hostIntent.title, isPublic: _hostIntent.isPublic === true });
+  }, { title: _hostIntent.title, isPublic: _hostIntent.isPublic === true, dayNight: _hostIntent.dayNight !== false });
 }
 // Very first run: language first of all (then name, then menu).
 else if (!langChosen()) showPanel('langPanel');
