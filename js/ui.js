@@ -85,9 +85,22 @@ function loop(nowT) {
 //  MAIN MENU · SETTINGS · HIGH SCORES · PAUSE
 // =========================================================
 const PANELS = ['langPanel', 'namePanel', 'menuPanel', 'spPanel', 'settingsPanel', 'scoresPanel', 'lbPanel',
-                'howtoPanel', 'mpPanel', 'hostPanel', 'queuePanel', 'invitePanel', 'joinPanel'];
+                'howtoPanel', 'mpPanel', 'publicPanel', 'hostPanel', 'queuePanel', 'invitePanel', 'joinPanel'];
+const PUBLIC_GAMES_POLL_MS = 5000;
+const PUBLIC_GAMES_TICK_MS = 1000;
+const PUBLIC_ROOM_CODE_PATTERN = /^[A-Z0-9]{4,12}$/;
+let publicGamesFetchTimer = null;
+let publicGamesTickTimer = null;
+let publicGamesEpoch = 0;
+let publicGamesFetching = false;
+let publicGamesJoining = false;
+let publicGamesList = [];
+let publicGamesFetchedAtMs = 0;
+let publicGamesFailed = false;
+let publicGamesRenderedKey = null;
 function showPanel(id) {
   for (const p of PANELS) { const el = $('#' + p); if (el) el.classList.toggle('hidden', p !== id); }
+  if (id === 'publicPanel') startPublicGamesPolling(); else stopPublicGamesPolling();
 }
 function showMenu() {
   const nm = $('#menuName'); if (nm) nm.textContent = playerName;
@@ -148,7 +161,7 @@ function renderScores() {
 function leaderboardUrl() {
   const ws = netServerUrl();
   if (!ws) return null;
-  return ws.replace(/^ws/, 'http').replace(/\/+$/, '') + '/leaderboard?limit=20';
+  return serverHttpBase(ws) + '/leaderboard?limit=20';
 }
 // "2h 05m" / "48m": the total played, which for a regular player quickly goes past the hour.
 function fmtPlayed(ms) {
@@ -251,6 +264,7 @@ function endGame(reason) {
 // applySave() and must not be reset.
 function startMatch(resume) {
   if (started) return;
+  stopPublicGamesPolling();
   initAudio();
   $('#start').style.display = 'none';
   stopMenuMusic();
@@ -359,7 +373,141 @@ onClick('mpBtn', () => {
   showPanel('mpPanel');
 });
 onClick('mpBack', showMenu);
-onClick('mpHostBtn', () => { const s = $('#hostStatus'); if (s) s.textContent = ''; showPanel('hostPanel'); });
+onClick('mpPublicBtn', () => {
+  if (!netServerUrl()) { toast(t('mp.noServer')); return; }
+  showPanel('publicPanel');
+});
+function stopPublicGamesPolling() {
+  publicGamesEpoch++;
+  clearInterval(publicGamesFetchTimer);
+  clearInterval(publicGamesTickTimer);
+  publicGamesFetchTimer = null;
+  publicGamesTickTimer = null;
+  publicGamesFetching = false;
+}
+function startPublicGamesPolling() {
+  stopPublicGamesPolling();
+  publicGamesJoining = false;
+  publicGamesList = [];
+  publicGamesFetchedAtMs = 0;
+  publicGamesFailed = false;
+  publicGamesRenderedKey = null;
+  renderPublicGames();
+  fetchPublicGames();
+  publicGamesFetchTimer = setInterval(fetchPublicGames, PUBLIC_GAMES_POLL_MS);
+  publicGamesTickTimer = setInterval(renderPublicGames, PUBLIC_GAMES_TICK_MS);
+}
+function isRenderablePublicRoom(room) {
+  return !!room && PUBLIC_ROOM_CODE_PATTERN.test(room.code) && Number.isFinite(room.players) &&
+    Number.isFinite(room.max) && (room.leftSec === null || Number.isInteger(room.leftSec));
+}
+async function fetchPublicGames() {
+  if (publicGamesFetching) return;
+  const epoch = publicGamesEpoch;
+  publicGamesFetching = true;
+  try {
+    const res = await fetch(publicRoomsUrl(netServerUrl()), { cache: 'no-store', signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(PUBLIC_GAMES_POLL_MS) : undefined });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (epoch !== publicGamesEpoch) return;
+    publicGamesList = (Array.isArray(data.rooms) ? data.rooms : []).filter(isRenderablePublicRoom);
+    publicGamesFetchedAtMs = Date.now();
+    publicGamesFailed = false;
+  } catch (e) {
+    if (epoch !== publicGamesEpoch) return;
+    publicGamesFailed = true;
+  } finally {
+    if (epoch === publicGamesEpoch) { publicGamesFetching = false; renderPublicGames(); }
+  }
+}
+function setPublicGameTime(cell, leftSec) {
+  cell.textContent = formatTimeLeft(leftSec);
+  cell.className = 'tm' + (isTimeLeftLow(leftSec) ? ' low' : '');
+}
+function buildPublicGameRow(room) {
+  const row = document.createElement('tr');
+  const isFull = isPublicRoomFull(room);
+  if (isFull) row.className = 'full';
+  const nameCell = document.createElement('td');
+  nameCell.className = 'nm';
+  nameCell.textContent = room.title;
+  const playersCell = document.createElement('td');
+  playersCell.textContent = room.players + '/' + room.max;
+  const sizeCell = document.createElement('td');
+  sizeCell.textContent = t(publicGameSizeKey(room.code));
+  const timeCell = document.createElement('td');
+  setPublicGameTime(timeCell, room.leftSec);
+  const joinCell = document.createElement('td');
+  const joinButton = document.createElement('button');
+  joinButton.className = 'pubjoin';
+  joinButton.textContent = t(isFull ? 'pub.full' : 'pub.join');
+  joinButton.disabled = isFull;
+  joinButton.onclick = () => joinPublicGame(room.code);
+  joinCell.appendChild(joinButton);
+  row.append(nameCell, playersCell, sizeCell, timeCell, joinCell);
+  return row;
+}
+function renderPublicGames() {
+  const table = $('#pubTable'), body = $('#pubTable tbody'), msg = $('#pubMsg'), count = $('#pubCount');
+  const empty = $('#pubEmpty'), create = $('#pubCreate');
+  if (!table || !body || !msg || !count || !empty || !create) return;
+  const loaded = publicGamesFetchedAtMs > 0 && !publicGamesFailed;
+  const elapsedSec = Math.max(0, Math.floor((Date.now() - publicGamesFetchedAtMs) / 1000));
+  const rooms = loaded ? visiblePublicRooms(publicGamesList, elapsedSec) : [];
+  msg.textContent = publicGamesFailed ? t('pub.error') : '';
+  msg.classList.toggle('hidden', !publicGamesFailed);
+  count.textContent = loaded ? t(rooms.length === 1 ? 'pub.countOne' : 'pub.count', { n: rooms.length }) : '';
+  table.classList.toggle('hidden', rooms.length === 0);
+  empty.classList.toggle('hidden', !loaded || rooms.length > 0);
+  create.classList.toggle('hidden', !loaded || rooms.length > 0);
+  const renderedKey = rooms.map(room => room.code + ':' + room.players + '/' + room.max).join('|');
+  if (renderedKey !== publicGamesRenderedKey) {
+    body.replaceChildren(...rooms.map(buildPublicGameRow));
+    publicGamesRenderedKey = renderedKey;
+  } else {
+    rooms.forEach((room, index) => setPublicGameTime(body.rows[index].cells[3], room.leftSec));
+  }
+}
+function joinPublicGame(code) {
+  if (publicGamesJoining || !PUBLIC_ROOM_CODE_PATTERN.test(code)) return;
+  publicGamesJoining = true;
+  if (code !== ROOM_CODE) {
+    store.set('joinIntent', { code, pass: '', auto: true });
+    location.hash = 'room=' + code;
+    location.reload();
+    return;
+  }
+  stopPublicGamesPolling();
+  showJoinPanel();
+  const joinCodeInput = $('#joinCode'); if (joinCodeInput) joinCodeInput.value = code;
+  if (!playerName) {
+    publicGamesJoining = false;
+    const joinNameInput = $('#joinName'); if (joinNameInput) joinNameInput.focus();
+    return;
+  }
+  const joinStatus = $('#joinStatus'); if (joinStatus) joinStatus.textContent = t('join.connecting');
+  netJoin(code, '', err => {
+    publicGamesJoining = false;
+    if (err) { if (joinStatus) joinStatus.textContent = netErrText(err); return; }
+    startMatch();
+  });
+}
+onClick('pubRefresh', fetchPublicGames);
+onClick('pubCreate', () => { const hostButton = $('#mpHostBtn'); if (hostButton) hostButton.onclick(); });
+onClick('publicBack', () => showPanel('mpPanel'));
+function syncHostPassField() {
+  const visibility = $('#hostVisibility');
+  const passField = $('#hostPassField');
+  if (passField) passField.classList.toggle('hidden', !!visibility && visibility.value === 'public');
+}
+if ($('#hostVisibility')) $('#hostVisibility').onchange = syncHostPassField;
+onClick('mpHostBtn', () => {
+  const s = $('#hostStatus'); if (s) s.textContent = '';
+  const titleInput = $('#hostTitle');
+  if (titleInput && !titleInput.value.trim() && playerName) titleInput.value = t('host.titleDefault', { name: playerName });
+  syncHostPassField();
+  showPanel('hostPanel');
+});
 onClick('mpJoinBtn', () => showJoinPanel());
 onClick('hostBack', () => showPanel('mpPanel'));
 onClick('joinBack', () => showPanel('mpPanel'));
@@ -380,7 +528,10 @@ function makeSizedRoomCode(sizeChar) {
 }
 onClick('hostGo', () => {
   const st = $('#hostStatus');
-  const pass = $('#hostPass') ? $('#hostPass').value : '';
+  const isPublic = !!$('#hostVisibility') && $('#hostVisibility').value === 'public';
+  const pass = !isPublic && $('#hostPass') ? $('#hostPass').value : '';
+  const typedTitle = $('#hostTitle') ? $('#hostTitle').value.trim() : '';
+  const title = typedTitle || t('host.titleDefault', { name: playerName });
   const maxP = $('#hostMax') ? +$('#hostMax').value : 4;
   const mins = $('#hostDuration') ? +$('#hostDuration').value : 10;
   const size = $('#hostSize') ? $('#hostSize').value : 'P';
@@ -389,7 +540,7 @@ onClick('hostGo', () => {
   // The city of the chosen size is generated at LOAD time from the seed = code: as when
   // joining with a code, we reload onto the right room; on the way back, once the hostIntent
   // is recognised, we actually create the room and show the invite.
-  store.set('hostIntent', { code, pass, maxP, mins, police, name: playerName });
+  store.set('hostIntent', { code, pass, maxP, mins, police, title, isPublic, name: playerName });
   if (st) st.textContent = t('host.creating');
   location.hash = 'room=' + code;
   location.reload();
@@ -490,6 +641,7 @@ const _loadIntent = store.get('loadIntent', null);
 const _save = store.get('save', null);
 const _hostIntent = store.get('hostIntent', null);
 const _spIntent = store.get('spIntent', null);
+const _joinIntent = store.get('joinIntent', null);
 if (_spIntent && ROOM_FROM_URL === _spIntent.code) {
   // Back from the SINGLE-PLAYER creation reload: the map of the chosen size has now been
   // generated from the code's seed → apply violence/duration and start. Clears the hash so a
@@ -527,12 +679,21 @@ else if (_hostIntent && ROOM_FROM_URL === _hostIntent.code) {
     }
     showPanel('invitePanel');       // if we were in the waiting room: the room is ours now
     netRefreshBadge();
-  });
+  }, { title: _hostIntent.title, isPublic: _hostIntent.isPublic === true });
 }
 // Very first run: language first of all (then name, then menu).
 else if (!langChosen()) showPanel('langPanel');
 // Arrived from an invite link (#room=…): straight to the "join match" panel (which also asks
 // for the name, so it works on a first run too).
+else if (_joinIntent && _joinIntent.auto && ROOM_FROM_URL === _joinIntent.code && playerName) {
+  store.set('joinIntent', null);
+  showJoinPanel();
+  const autoJoinStatus = $('#joinStatus'); if (autoJoinStatus) autoJoinStatus.textContent = t('join.connecting');
+  netJoin(_joinIntent.code, '', err => {
+    if (err) { if (autoJoinStatus) autoJoinStatus.textContent = netErrText(err); return; }
+    startMatch();
+  });
+}
 else if (ROOM_FROM_URL) showJoinPanel();
 else if (playerName) showMenu();
 else { showPanel('namePanel'); if (nameInput) nameInput.focus(); }
