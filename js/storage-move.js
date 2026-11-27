@@ -79,6 +79,27 @@ function sanitizeImportedScores(value) {
   return kept.length || !value.length ? kept : null;
 }
 
+const IMPORT_SHIFT_JOBS = ['taxi', 'pizza', 'ambulance', 'patrol', 'fire'];
+const IMPORT_SHIFT_MEDALS = [null, 'bronze', 'silver', 'gold'];
+const IMPORT_SHIFT_SCORE_MAX = 1000000;
+const IMPORT_SHIFT_JOBS_MAX = 1000;
+
+const isIntegerInRange = (value, min, max) => Number.isInteger(value) && value >= min && value <= max;
+
+function isImportedShiftBest(value) {
+  return isPlainObject(value)
+    && isIntegerInRange(value.score, 0, IMPORT_SHIFT_SCORE_MAX)
+    && IMPORT_SHIFT_MEDALS.includes(value.medal)
+    && isIntegerInRange(value.jobs, 0, IMPORT_SHIFT_JOBS_MAX)
+    && Number.isInteger(value.rules) && value.rules >= 1
+    && Number.isFinite(value.date);
+}
+
+function isImportedShiftBests(value) {
+  return isPlainObject(value)
+    && Object.keys(value).every(job => IMPORT_SHIFT_JOBS.includes(job) && isImportedShiftBest(value[job]));
+}
+
 const IMPORT_VALIDATORS = {
   [STORAGE_PREFIX + 'name']: isImportedName,
   [STORAGE_PREFIX + 'minutes']: value => [0, 5, 10, 15, 30, 60].includes(value),
@@ -87,6 +108,7 @@ const IMPORT_VALIDATORS = {
   [STORAGE_PREFIX + 'lang']: value => IMPORT_LANGUAGES.includes(value),
   [STORAGE_PREFIX + 'scores']: value => sanitizeImportedScores(value) !== null,
   [STORAGE_PREFIX + 'save']: value => isPlainObject(value) && typeof value.code === 'string' && (value.name === undefined || typeof value.name === 'string'),
+  [STORAGE_PREFIX + 'shiftBests']: isImportedShiftBests,
 };
 
 function validatedImportText(key, text) {

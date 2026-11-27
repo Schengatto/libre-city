@@ -178,11 +178,11 @@ function toggleCar() {
     netAbandonCar(c);                              // multiplayer: stays visible to everyone else too
     player.car = null;
     engineGain(0);
-    if (taxiActive()) cancelTaxi('taxi.abandon');
-    else if (pizzaActive()) cancelPizza('pizza.abandon');
-    else if (rescueActive()) cancelRescue('rescue.abandon');
-    else if (patrolActive()) cancelPatrol('patrol.abandon');
-    else if (firejobActive()) cancelFirejob('fire.abandon');
+    if (taxiActive()) cancelTaxi('taxi.abandon', 'abandon');
+    else if (pizzaActive()) cancelPizza('pizza.abandon', 'abandon');
+    else if (rescueActive()) cancelRescue('rescue.abandon', 'abandon');
+    else if (patrolActive()) cancelPatrol('patrol.abandon', 'abandon');
+    else if (firejobActive()) cancelFirejob('fire.abandon', 'abandon');
     else { taxi.waitCd = 0; pizza.waitCd = 0; rescue.waitCd = 0; patrol.waitCd = 0; firejob.waitCd = 0; toast(t('veh.out')); }
     return;
   }
@@ -196,6 +196,7 @@ function toggleCar() {
     // The vehicle had a driver: they get thrown out and do not take it well.
     if (best.role === 'traffic' || best.role === 'police' || best.role === 'armycar') tossDriver(best);
     player.car = best; best.driver = 'player';
+    gameEvents.emit('vehicle:enter', { vehicleKind: vehicleKindOf(best) });
     if (best.role === 'traffic' || best.role === 'parked') best.role = 'player';
     netAssignCarId(best);                          // multiplayer: stable network id for the vehicle
     // In multiplayer the mission vehicles (taxi/pizza/ambulance/patrol) hand out no jobs:
@@ -258,10 +259,12 @@ function armMissionForCar() {
 }
 function toggleMissions() {
   if (!started) return;
+  if (isShiftRun()) { toast(t('shift.missionsLocked')); return; }
   if (netActive()) { toast(t('mp.noMissions')); return; }
   missionsOn = !missionsOn;
   if (!missionsOn) {
-    cancelTaxi(); cancelPizza(); cancelRescue(); cancelPatrol(); cancelFirejob();
+    cancelTaxi(null, 'toggle'); cancelPizza(null, 'toggle'); cancelRescue(null, 'toggle');
+    cancelPatrol(null, 'toggle'); cancelFirejob(null, 'toggle');
     taxi.waitCd = pizza.waitCd = rescue.waitCd = patrol.waitCd = firejob.waitCd = 0;
     toast(t(usingTouch ? 'miss.offTouch' : 'miss.offKb'));
   } else {

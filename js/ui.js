@@ -18,6 +18,7 @@ function updateCash() { const c = $('#cash'); if (c) c.textContent = '$' + cash;
 // single-player the local player's.
 function updateScore() {
   const el = $('#score'); if (!el) return;
+  el.classList.toggle('hidden', isShiftRun());
   el.textContent = '🏆 ' + (netActive() ? (net.score | 0) : (player.score | 0));
 }
 // Clock for a timed match (hidden in untimed mode).
@@ -84,7 +85,7 @@ function loop(nowT) {
 // =========================================================
 //  MAIN MENU · SETTINGS · HIGH SCORES · PAUSE
 // =========================================================
-const PANELS = ['langPanel', 'namePanel', 'menuPanel', 'spPanel', 'settingsPanel', 'scoresPanel', 'lbPanel',
+const PANELS = ['langPanel', 'namePanel', 'menuPanel', 'spPanel', 'shiftPanel', 'settingsPanel', 'scoresPanel', 'lbPanel',
                 'howtoPanel', 'mpPanel', 'publicPanel', 'hostPanel', 'queuePanel', 'invitePanel', 'joinPanel'];
 const PUBLIC_GAMES_POLL_MS = 5000;
 const PUBLIC_GAMES_TICK_MS = 1000;
@@ -225,7 +226,8 @@ function togglePause() {
   const el = $('#pause'); if (el) el.classList.toggle('hidden', !paused);
   const pc = $('#pauseShare'); if (pc) pc.classList.toggle('hidden', !netActive());   // invite, in multiplayer
   const ps = $('#pauseSave');                                                         // 💾 save: single-player only
-  if (ps) { ps.classList.toggle('hidden', netActive()); ps.textContent = t('pause.save'); ps.disabled = false; }
+  if (ps) { ps.classList.toggle('hidden', netActive() || !!runConfig); ps.textContent = t('pause.save'); ps.disabled = false; }
+  const qb = $('#quitBtn'); if (qb) qb.textContent = t(runConfig ? 'shift.quit' : 'pause.quit');
   if (paused) { engineGain(0); for (const k in keys) keys[k] = false; mDownL = false; }
 }
 
@@ -237,6 +239,7 @@ function endGame(reason) {
   const p = $('#pause'); if (p) p.classList.add('hidden');
   const bm = $('#bigMsg'); if (bm) bm.classList.add('hidden');
   const lad = $('#ladder'); if (lad) lad.classList.add('hidden');
+  if (runConfig) { finishRun(reason); return; }
   const rank = saveScore();
   const gt = $('#goTitle'); if (gt) gt.textContent = t(reason === 'time' ? 'go.time' : 'go.quit');
   const sc = netActive() ? (net.score | 0) : (player.score | 0);
@@ -269,6 +272,7 @@ function startMatch(resume) {
   $('#start').style.display = 'none';
   stopMenuMusic();
   started = true;
+  gameEvents.enabled = !netActive();
   if (!resume) {
     timeLeft = gameMinutes * 60 * 60;            // minutes → frames (~60 fps)
     if (netActive() && net.clockLeft != null) timeLeft = net.clockLeft;   // the server's authoritative clock
@@ -276,6 +280,7 @@ function startMatch(resume) {
     if (netActive() && net.clockLeft != null && gameMinutes > 0) matchElapsedFrames = gameMinutes * 60 * 60 - net.clockLeft;
     player.score = 0;                            // new match: score reset (in MP net.score is what counts)
   }
+  if (runConfig) startRun();
   // Violence filter (single-player): no weapons in hand → hide the weapon readout and the
   // weapon bar.
   const peace = peaceMode();
@@ -298,6 +303,8 @@ onClick('playBtn', () => {
   showPanel('spPanel');
 });
 onClick('spBack', showMenu);
+onClick('shiftBtn', () => { renderShiftPanel(); showPanel('shiftPanel'); });
+onClick('shiftBack', showMenu);
 onClick('spGo', () => {
   const mins = $('#spDuration') ? +$('#spDuration').value : 0;
   const viol = $('#spViolence') ? $('#spViolence').value === 'on' : true;
@@ -649,7 +656,9 @@ if (_spIntent && ROOM_FROM_URL === _spIntent.code) {
   store.set('spIntent', null);
   history.replaceState(null, '', location.pathname + location.search);
   if (_spIntent.name) { playerName = _spIntent.name; store.set('name', playerName); }
-  gameMinutes = _spIntent.mins | 0; store.set('minutes', gameMinutes);
+  runConfig = _spIntent.runConfig || null;
+  gameMinutes = _spIntent.mins | 0;
+  if (!runConfig) store.set('minutes', gameMinutes);
   violenceOn = _spIntent.violence !== false;
   dayNightOn = _spIntent.dayNight !== false;
   startMatch(false);

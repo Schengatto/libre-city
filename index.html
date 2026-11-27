@@ -49,6 +49,18 @@
   #timer { font-size:17px; font-weight:bold; color:#8fd6ff; background:rgba(0,0,0,.45);
     padding:3px 11px; border-radius:8px; text-shadow:0 1px 2px #000; }
   #timer.low { color:#ff5a4a; animation:pulse 1s infinite; }
+  #shiftHud { position:absolute; top:12px; left:50%; transform:translateX(-50%); z-index:5; white-space:nowrap;
+    font-size:18px; font-weight:bold; color:#ffd23a; background:rgba(0,0,0,.45); padding:4px 14px;
+    border-radius:8px; text-shadow:0 2px 3px #000; }
+  body.touch #shiftHud { top:8px; font-size:11px; padding:2px 8px; white-space:normal; text-align:center; max-width:44vw; }
+  #shiftPanel .shiftRow { display:flex; align-items:center; gap:10px; width:min(460px,92vw); padding:7px 0;
+    border-bottom:1px solid rgba(255,255,255,.08); }
+  #shiftPanel .shiftJob { flex:1; text-align:left; font-weight:bold; }
+  #shiftPanel .shiftBest { min-width:130px; text-align:right; color:#ffd23a; }
+  #shiftPanel .shiftBest.old { color:#8a8fa8; }
+  #shiftPanel .shiftStart { width:auto; padding:8px 16px; font-size:14px; }
+  #shiftPanel .shiftStart::before { display:none; }
+  #shiftNext { margin:10px 0 4px; opacity:.85; }
 
   /* ---- Minimap (bottom right) ---- */
   #mini { position:absolute; bottom:14px; right:14px; z-index:5; width:160px; height:160px;
@@ -257,7 +269,7 @@
   #start #credits a:hover { color:#ffd23a; border-color:#ffd23a; }
   @media (prefers-reduced-motion:reduce) {
     #start h1, #start .tag, .panel, .mbtn::before, #ticker span, #scene .palm, #scene .sea::before,
-    #pause h2, #goTitle, .roomcode { animation:none !important; } }
+    #pause h2, #goTitle, #runResultTitle, .roomcode { animation:none !important; } }
   .mbtn { position:relative; font-family:'Bungee','Trebuchet MS',sans-serif; font-weight:normal;
     font-size:15px; letter-spacing:.05em; padding:12px 0; width:min(320px,84vw); color:#fff;
     background:linear-gradient(#31195e,#1b0e38); border:3px solid #ff3ea5; border-radius:13px;
@@ -323,18 +335,23 @@
     line-height:1.5; opacity:.65; }
 
   /* ---- Pause and end-of-match overlays: neon over scanlines ---- */
-  #pause, #gameOver { position:absolute; inset:0; z-index:45; display:flex; flex-direction:column;
+  #pause, #gameOver, #runResultPanel { position:absolute; inset:0; z-index:45; display:flex; flex-direction:column;
     align-items:center; justify-content:center; gap:14px;
     background:repeating-linear-gradient(0deg, rgba(0,0,0,.15) 0 2px, transparent 2px 5px), rgba(8,6,16,.86); }
-  #pause h2, #goTitle { font-family:'Bungee','Trebuchet MS',sans-serif; font-weight:normal;
+  #pause h2, #goTitle, #runResultTitle { font-family:'Bungee','Trebuchet MS',sans-serif; font-weight:normal;
     font-size:clamp(30px,6vw,52px); letter-spacing:.02em; animation:neonFlick 3.2s infinite; }
   #pause h2 { color:#33e0ff; text-shadow:0 0 8px #33e0ff, 0 0 30px #33e0ff, 3px 3px 0 #0d3f52; }
-  #goTitle { color:#ff3ea5; text-shadow:0 0 8px #ff3ea5, 0 0 30px #ff3ea5, 3px 3px 0 #7c1150; }
+  #goTitle, #runResultTitle { color:#ff3ea5; text-shadow:0 0 8px #ff3ea5, 0 0 30px #ff3ea5, 3px 3px 0 #7c1150; }
+  #runResultTitle { text-align:center; padding:0 12px; }
   @keyframes neonFlick { 0%,92%,100% { opacity:1 } 93%,95% { opacity:.4 } 96%,98% { opacity:.85 } }
-  #goScore { font-family:'Courier New',monospace; font-weight:bold; font-size:clamp(36px,8vw,68px);
+  #goScore, #runResultScore { font-family:'Courier New',monospace; font-weight:bold; font-size:clamp(36px,8vw,68px);
     letter-spacing:.14em; color:#ffd23a; text-shadow:0 0 18px rgba(255,210,58,.8); }
-  #goRank { font:bold 14px 'Courier New',monospace; letter-spacing:.1em; color:#33e0ff;
-    text-shadow:0 0 8px rgba(51,224,255,.6); }
+  #goRank, #runResultBest, #runResultTarget { font:bold 14px 'Courier New',monospace; letter-spacing:.1em; color:#33e0ff;
+    text-shadow:0 0 8px rgba(51,224,255,.6); text-align:center; }
+  #runResultMedal { font-size:clamp(36px,7vw,56px); line-height:1; }
+  #runResultStats { display:flex; flex-wrap:wrap; justify-content:center; gap:6px 24px; font:14px 'Courier New',monospace; color:#e9e6ff; }
+  #runResultStats b { margin-left:6px; color:#ffd23a; }
+  #runResultButtons { display:flex; flex-wrap:wrap; justify-content:center; gap:10px; }
 
   /* ---- Touch controls (only visible on touch devices) ---- */
   #touchUI { display:none; }
@@ -514,6 +531,8 @@
     <div id="stars"></div>
   </div>
 
+  <div id="shiftHud" class="hidden"></div>
+
   <div id="mpBadge" class="hidden"></div>
   <div id="bountyBadge" class="hidden"></div>
 
@@ -572,6 +591,20 @@
       </table>
     </div>
     <button id="backToMenu" class="mbtn" data-i18n="go.back">↩ Torna al menu</button>
+  </div>
+
+  <div id="runResultPanel" class="hidden">
+    <div id="runResultTitle"></div>
+    <div id="runResultScore"></div>
+    <div id="runResultMedal"></div>
+    <div id="runResultBest" class="hidden"></div>
+    <div id="runResultTarget" class="hidden"></div>
+    <div id="runResultStats"></div>
+    <div id="runResultButtons">
+      <button id="runRetry" class="mbtn" data-i18n="shift.retry">🔁 Riprova</button>
+      <button id="runShare" class="mbtn hidden" data-i18n="shift.share">📤 Condividi</button>
+      <button id="runMenu" class="mbtn" data-i18n="shift.menu">↩ Menu</button>
+    </div>
   </div>
 
   <!-- Multiplayer match scoreboard: Tab (or 🏆) to open/close -->
@@ -655,6 +688,7 @@
       <div id="menuHello" data-i18n-html="menu.hello">Ciao, <b id="menuName"></b></div>
       <button id="playBtn" class="mbtn" data-i18n="menu.play">Giocatore singolo</button>
       <button id="loadBtn" class="mbtn hidden" data-i18n="menu.load">Riprendi partita</button>
+      <button id="shiftBtn" class="mbtn" data-i18n="menu.shifts">Turni di lavoro</button>
       <button id="mpBtn" class="mbtn" data-i18n="menu.mp">Multigiocatore</button>
       <button id="settingsBtn" class="mbtn minor" data-i18n="menu.settings">Impostazioni</button>
       <button id="scoresBtn" class="mbtn minor" data-i18n="menu.scores">Record locali</button>
@@ -705,6 +739,14 @@
          in fuga</b>.</p>
       <button id="spGo" class="mbtn" data-i18n="sp.go">🏙️ Inizia a giocare</button>
       <button id="spBack" class="mbtn back" data-i18n="common.back">↩ Indietro</button>
+    </div>
+
+    <div id="shiftPanel" class="panel hidden">
+      <h2 data-i18n="shift.title">⏱ Turni di lavoro</h2>
+      <p data-i18n="shift.subtitle">5 minuti, un lavoro. Batti il tuo record.</p>
+      <div id="shiftList"></div>
+      <div id="shiftNext"></div>
+      <button id="shiftBack" class="mbtn back" data-i18n="common.back">↩ Indietro</button>
     </div>
 
     <!-- Multiplayer: choose host or join -->
@@ -973,6 +1015,7 @@
   <script src="js/entities.js"></script>
   <script src="js/emotes.js"></script>
   <script src="js/input.js"></script>
+  <script src="js/game-events.js"></script>
   <script src="js/missions.js"></script>
   <script src="js/army.js"></script>
   <script src="js/gameplay.js"></script>
@@ -986,6 +1029,9 @@
   <script src="js/rtc.js"></script>
   <script src="js/sim-host.js"></script>
   <script src="js/save.js"></script>
+  <script src="js/job-score.js"></script>
+  <script src="js/run.js"></script>
+  <script src="js/shift.js"></script>
   <script src="js/ui.js"></script>
 
   <!-- PWA: service worker (offline + installation) and the "Install the app" button -->

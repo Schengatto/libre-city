@@ -58,6 +58,7 @@ function explodeRocket(r) {
     knockPed(p, Math.atan2(p.y - r.y, p.x - r.x), 8 * pw);
     if (r.fromNet) continue;
     addScore(pedScore(p), p.x, p.y);
+    gameEvents.emit('kill', { victimKind: victimKindOf(p) });
     // The crime is attributed to whoever fired (the explosion runs in the shared world phase).
     if (p.role === 'cop') asPlayer(r.owner || player, () => commitCrime(1.2, 'crime.bombCop'));
     else if (p.role === 'soldier') armyAlertT = ARMY_ALERT_T;   // the army does not take it well
