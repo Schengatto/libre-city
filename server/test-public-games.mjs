@@ -76,6 +76,9 @@ ok(rowBuilderSource.includes('setPublicGamePing('), 'row builder fills the ping 
 ok(functionSource('renderPublicGames').includes('cells[4]'), 'ping cell refreshes when the row key is unchanged');
 ok(/recentFetchDurations\(/.test(functionSource('fetchPublicGames')) && functionSource('fetchPublicGames').includes('performance.now()'), 'rooms fetch is timed');
 ok(indexHtml.includes('data-i18n="pub.ping"'), 'table head has the ping column');
+const hostVisibilitySelect = indexHtml.slice(indexHtml.indexOf('<select id="hostVisibility">'), indexHtml.indexOf('</select>', indexHtml.indexOf('<select id="hostVisibility">')));
+ok(/<option value="public" selected/.test(hostVisibilitySelect) && !/<option value="private"[^>]*selected/.test(hostVisibilitySelect), 'host form defaults to Public visibility');
+ok(/syncHostPassField\(\);\s*showPanel\('hostPanel'\)/.test(uiSource), 'opening the host form syncs the password field before showing it');
 
 console.log('7) ping estimate');
 ok(helpers.PUBLIC_ROOM_RTT_SAMPLES === 3 && helpers.PING_MID_MS === 80 && helpers.PING_BAD_MS === 160, 'ping constants');
