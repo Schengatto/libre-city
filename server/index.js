@@ -667,7 +667,7 @@ function addPlayer(ws, room, hello) {
   ensureHost(room);
   bindWs(ws, room, p);
   sendRaw(ws, {
-    t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes, police: room.police,
+    t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes, police: room.police, dayNight: room.dayNight,
     left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, ...handshakeSimFields(room),
     build: serverBuild(),
   });
@@ -741,7 +741,7 @@ function createRoom(ws, m) {
   const isPublic = m.public === true;
   const room = {
     code, pass: isPublic ? '' : String(m.pass || ''), title: sanitizeRoomTitle(m.title, normalizedPlayerName(m)), public: isPublic, max: clamp(+m.max || 4, 2, MAX_PLAYERS_CAP),
-    minutes: Math.max(0, +m.minutes || 0), police: typeof m.police === 'boolean' ? m.police : true, startAt: now(),
+    minutes: Math.max(0, +m.minutes || 0), police: typeof m.police === 'boolean' ? m.police : true, dayNight: typeof m.dayNight === 'boolean' ? m.dayNight : true, startAt: now(),
     idSeq: 0, players: new Map(), endTimer: null, ended: false,
     hostId: null, hostLink: null, hostLinkBound: false, hostBindStartedAt: 0, hostLastFrameAt: 0, hostState: null, resigned: new Set(), hostWatchTimer: null,
   };
@@ -771,7 +771,7 @@ function handleJoin(ws, m) {
       ensureHost(room);
       bindWs(ws, room, p);
       sendRaw(ws, {
-        t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes, police: room.police,
+        t: 'ok', id: p.id, shirtIdx: p.shirtIdx, minutes: room.minutes, police: room.police, dayNight: room.dayNight,
         left: roomLeftFrames(room), players: roster(room, p.id), token: p.token, resumed: true, ...handshakeSimFields(room),
         build: serverBuild(),
       });

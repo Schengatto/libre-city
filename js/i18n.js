@@ -201,6 +201,9 @@ const STR = {
     'sp.violenceOn': 'Sì — armi e scontri',
     'sp.violenceOff': 'No — nessuna arma, non si uccide',
     'sp.duration': 'Durata della partita',
+    'sp.dayNight': 'Ciclo giorno/notte',
+    'sp.dayNightOn': 'Sì — giorno e notte',
+    'sp.dayNightOff': 'No — sempre giorno',
     'sp.size': 'Dimensione della mappa',
     'sp.note': 'Col filtro violenza su <b>No</b> non ci sono armi: nessuno spara né viene ucciso ' +
       '(nemmeno gli NPC) e per le missioni in volante 🚔 basta <b>raggiungere il ladro in fuga</b>.',
@@ -302,9 +305,6 @@ const STR = {
     'set.audio': 'Audio',
     'set.audioOn': '🔊 Attivo',
     'set.audioOff': '🔇 Disattivato',
-    'set.dayNight': 'Giorno/notte',
-    'set.dayNightOn': '🌗 Attivo',
-    'set.dayNightOff': '☀️ Sempre giorno',
     'set.save': '💾 Salva',
     'music.toggle': 'Musica del menu: accendi o spegni',
 
@@ -654,6 +654,9 @@ const STR = {
     'sp.violenceOn': 'Yes — weapons and fights',
     'sp.violenceOff': 'No — no weapons, nobody is killed',
     'sp.duration': 'Match length',
+    'sp.dayNight': 'Day/night cycle',
+    'sp.dayNightOn': 'Yes — day and night',
+    'sp.dayNightOff': 'No — always day',
     'sp.size': 'Map size',
     'sp.note': 'With the violence filter set to <b>No</b> there are no weapons: nobody shoots and nobody is ' +
       'killed (not even the NPCs), and patrol car 🚔 missions only ask you to <b>catch up with the fleeing thief</b>.',
@@ -752,9 +755,6 @@ const STR = {
     'set.audio': 'Audio',
     'set.audioOn': '🔊 On',
     'set.audioOff': '🔇 Off',
-    'set.dayNight': 'Day/night',
-    'set.dayNightOn': '🌗 On',
-    'set.dayNightOff': '☀️ Always day',
     'set.save': '💾 Save',
     'music.toggle': 'Menu music: turn on or off',
 

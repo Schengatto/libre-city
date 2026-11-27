@@ -39,5 +39,10 @@ ok(result.x === road.x && result.y === road.y, 'valid saved point on a road is r
 run('player.x = ' + spawn.x + '; player.y = ' + spawn.y + ';');
 ok(run('applySave({ v: SAVE_VERSION, code: ROOM_CODE, player: {} })') && run('player.x') === spawn.x, 'save without a position keeps the spawn point');
 
+console.log('day/night save round trip');
+ok(run('dayNightOn = false; captureSave().dayNight') === false, 'captureSave stores dayNight');
+ok(run('dayNightOn = false; applySave({ v: SAVE_VERSION, code: ROOM_CODE, player: {}, dayNight: false }); dayNightOn') === false, 'applySave restores day/night off');
+ok(run('dayNightOn = false; applySave({ v: SAVE_VERSION, code: ROOM_CODE, player: {} }); dayNightOn') === true, 'an old save without dayNight resumes with the cycle on');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
