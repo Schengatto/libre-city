@@ -714,6 +714,20 @@ try {
     'server sim with the police off: knockouts bring no stars and no cops');
   closeAll([serverPoliceOn.ws, serverPoliceOff.ws]);
 
+  console.log('day/night room option');
+  const dayNightDefaultHost = await createRoom('DNDF01', 'Dina');
+  check(dayNightDefaultHost.ok && dayNightDefaultHost.ok.dayNight === true, 'an old client create without dayNight gives ok.dayNight true');
+  const dayNightJunkHost = await enter(PORT, { t: 'create', code: 'DNJK01', name: 'Jack', max: 8, minutes: 0, dayNight: 'off' });
+  check(dayNightJunkHost.ok && dayNightJunkHost.ok.dayNight === true, 'a non-boolean dayNight falls back to true');
+  const dayNightOffHost = await enter(PORT, { t: 'create', code: 'DNOF01', name: 'Nora', max: 8, minutes: 5, dayNight: false });
+  check(dayNightOffHost.ok && dayNightOffHost.ok.dayNight === false, 'ok.dayNight is false for a day/night-off room');
+  const dayNightOffGuest = await joinRoom('DNOF01', 'Gus');
+  check(dayNightOffGuest.ok && dayNightOffGuest.ok.dayNight === false, 'a late joiner gets the host choice in ok.dayNight');
+  dayNightOffGuest.ws.close();
+  const dayNightResumed = await enter(PORT, { t: 'join', code: 'DNOF01', token: dayNightOffGuest.token });
+  check(dayNightResumed.ok && dayNightResumed.ok.resumed === true && dayNightResumed.ok.dayNight === false, 'a reconnect ok carries dayNight false');
+  closeAll([dayNightDefaultHost.ws, dayNightJunkHost.ws, dayNightOffHost.ws, dayNightResumed.ws]);
+
   console.log('webrtc signaling relay');
   const rtcHost = await createRoom('RTC001', 'Rita');
   const rtcGuestB = await joinRoom('RTC001', 'Bob');
