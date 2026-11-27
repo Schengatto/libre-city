@@ -378,6 +378,50 @@ function testPredictFire() {
   }
 }
 
+function testPredictPunch() {
+  const punch = createPredictionContext();
+  punch.sandbox.player.weaponIdx = 0;
+  punch.sandbox.player.punchT = 0;
+  punch.sandbox.mClicked = true;
+  punch.api.netPredictFire();
+  ok(punch.sandbox.player.punchT === 10, 'melee click starts the own arm swing');
+  ok(punch.sandbox.player.shootCd === 22, 'melee click starts the fists cooldown');
+  ok(punch.net.predBullets.length === 0 && punch.net.predictedShots.length === 0 && punch.calls.muzzle.length === 0, 'melee click predicts no bullet');
+
+  const cooling = createPredictionContext();
+  cooling.sandbox.player.weaponIdx = 0;
+  cooling.sandbox.player.punchT = 0;
+  cooling.sandbox.player.shootCd = 5;
+  cooling.sandbox.mClicked = true;
+  cooling.api.netPredictFire();
+  ok(cooling.sandbox.player.punchT === 0, 'no swing while the fists cooldown runs');
+
+  const held = createPredictionContext();
+  held.sandbox.player.weaponIdx = 0;
+  held.sandbox.player.punchT = 0;
+  held.sandbox.mDownL = true;
+  held.api.netPredictFire();
+  ok(held.sandbox.player.punchT === 0, 'holding the button without a click does not swing');
+}
+
+function testGhostPunchEdge() {
+  const context = vm.createContext({});
+  vm.runInContext(extractTopLevel(readSource('net.js'), 'netGhostPunchEdge') + '\n;globalThis.edge = netGhostPunchEdge;', context);
+  const ghost = { punchT: 0 };
+  const swingStarts = [];
+  for (const punching of [false, true, true, true, true, true, false, false, true, true, false]) {
+    if (ghost.punchT > 0) ghost.punchT -= 2;
+    const before = ghost.punchT;
+    context.edge(ghost, punching);
+    swingStarts.push(ghost.punchT === 10 && before !== 10);
+  }
+  ok(swingStarts.filter(Boolean).length === 2, 'the ghost swing starts once per punch, not on every snapshot carrying the flag');
+  ok(swingStarts[1] && swingStarts[8], 'the ghost swing starts on the first snapshot of each punch');
+  const late = { punchT: 0 };
+  context.edge(late, true);
+  ok(late.punchT === 10 && late.punching === true, 'a ghost first seen mid-punch swings');
+}
+
 function testNetShutdownResetsPrediction() {
   const shutdown = extractTopLevel(readSource('net.js'), 'netShutdown');
   ok(/predBullets\.length = 0/.test(shutdown) && /predictedShots\.length = 0/.test(shutdown), 'netShutdown clears predicted bullets and shots');
@@ -395,6 +439,8 @@ testOwnMuzzleSuppression();
 testWorldBulletsFilter();
 testPredictedBulletStep();
 testPredictFire();
+testPredictPunch();
+testGhostPunchEdge();
 testNetShutdownResetsPrediction();
 
 console.log(`\nfire prediction: ${pass} ok, ${fail} failed`);
