@@ -93,6 +93,7 @@ function createNightWorld(rows, buildingList = []) {
     const netActive = () => netIsActive;
     let vw = 800, vh = 600, camX = 0, camY = 0, frame = 0;
     let matchElapsedFrames = 0, dayNightOn = true;
+    const TUNING = { forceNight: false };
   `, world);
   vm.runInContext(readSource('daynight.js'), world);
   return {
@@ -132,6 +133,14 @@ const hasRotatedBlit = recording => {
   const off = createNightWorld(emptyGrid());
   off.run(`matchElapsedFrames = ${NIGHT_ELAPSED}; dayNightOn = false; drawDayNight();`);
   ok(off.main.calls.length === 0 && off.canvases.length === 0, 'toggle off at night makes no draw call');
+
+  const forcedNight = createNightWorld(emptyGrid());
+  forcedNight.run('TUNING.forceNight = true; dayNightOn = false; matchElapsedFrames = 0; drawDayNight();');
+  ok(forcedNight.lightmap().calls.some(([call, args]) => call === 'set:fillStyle' && args[0] === 'rgb(70,85,140)'), 'forceNight draws the full-night ambient even with the toggle off at frame 0');
+
+  const forcedNightMidday = createNightWorld(emptyGrid());
+  forcedNightMidday.run(`TUNING.forceNight = true; matchElapsedFrames = ${DAY_ELAPSED}; drawDayNight();`);
+  ok(countCalls(forcedNightMidday.main, 'drawImage') === 1, 'forceNight overrides the daytime part of the cycle');
 
   const night = createNightWorld(emptyGrid());
   night.run(`matchElapsedFrames = ${NIGHT_ELAPSED}; drawDayNight();`);

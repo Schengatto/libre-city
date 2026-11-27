@@ -54,5 +54,69 @@ ok(scriptOrder('mutators.js') > scriptOrder('core.js') && scriptOrder('mutators.
 ok(runtime.SIM_FILES.indexOf('mutators.js') === runtime.SIM_FILES.indexOf('core.js') + 1, 'SIM_FILES lists mutators.js right after core.js');
 ok(/SIM_SCRIPT_FILES = \['core\.js', 'mutators\.js'/.test(readSource('sim-worker.js')), 'sim-worker.js imports mutators.js right after core.js');
 
+const mutatorIds = evaluate('MUTATOR_IDS');
+ok(JSON.stringify(mutatorIds) === JSON.stringify(['night', 'traffic2x', 'copsAggro', 'glassCars', 'tightClock', 'crowds']), 'MUTATOR_IDS lists the six mutators');
+ok(JSON.stringify(Object.keys(evaluate('MUTATORS'))) === JSON.stringify(mutatorIds), 'MUTATORS has one entry per id');
+ok(evaluate('MUTATOR_CONFLICTS').length === 0, 'MUTATOR_CONFLICTS is empty');
+
+const tuningOf = id => evaluate(`MUTATORS.${id}.tuning`);
+const expectedTuning = {
+  night: { forceNight: true },
+  traffic2x: { trafficCap: 28, trafficSpawnEvery: 6 },
+  copsAggro: { copRange: 450, copFireCdMin: 28, copFireCdMax: 44, copsPerStar: 1.5, crimeHeatScale: 1.5, heatDecay: 0.0008 },
+  glassCars: { carDamageScale: 2 },
+  tightClock: { jobTimerScale: 0.7 },
+  crowds: { civilianCap: 52, civilianSpawnEvery: 4 },
+};
+for (const id of mutatorIds) {
+  ok(JSON.stringify(tuningOf(id)) === JSON.stringify(expectedTuning[id]), `${id} sets only its own fields`);
+  ok(Object.keys(tuningOf(id)).every(field => field in EXPECTED_DEFAULTS), `${id} only touches known TUNING fields`);
+}
+const allFields = mutatorIds.flatMap(id => Object.keys(tuningOf(id)));
+ok(new Set(allFields).size === allFields.length, 'mutator field sets are disjoint');
+ok(evaluate('MUTATORS.glassCars.icon') === '💥', 'mutators carry their icon');
+
+ok(JSON.stringify(evaluate("sanitizeMutatorIds(['crowds', 'x', 'night', 'crowds'])")) === JSON.stringify(['night', 'crowds']), 'sanitize drops unknown ids and duplicates and keeps registry order');
+ok(['sanitizeMutatorIds(null)', 'sanitizeMutatorIds(undefined)', "sanitizeMutatorIds('night')", 'sanitizeMutatorIds({})'].every(call => evaluate(call).length === 0), 'sanitize turns non-arrays into []');
+ok(evaluate("sanitizeMutatorIds([1, null, {}, 'night'])").length === 1, 'sanitize drops non-string entries');
+ok(evaluate("isMutatorId('night')") === true && evaluate("isMutatorId('x')") === false && evaluate('isMutatorId(7)') === false, 'isMutatorId accepts only known string ids');
+
+const applied = evaluate("applyMutators(['copsAggro', 'night', 'bogus'])");
+ok(JSON.stringify(applied) === JSON.stringify(['night', 'copsAggro']), 'applyMutators returns the sanitized applied ids');
+ok(evaluate('TUNING.forceNight') === true && evaluate('TUNING.copRange') === 450 && evaluate('TUNING.trafficCap') === 14, 'applyMutators assigns the chosen tunings and leaves the rest');
+ok(JSON.stringify(evaluate('activeMutatorIds')) === JSON.stringify(['night', 'copsAggro']), 'applyMutators records activeMutatorIds');
+evaluate("applyMutators(['glassCars'])");
+ok(evaluate('TUNING.forceNight') === false && evaluate('TUNING.carDamageScale') === 2, 'applyMutators resets the previous selection first');
+const execute = source => { vm.runInContext(source, context); };
+execute('resetMutators()');
+ok(JSON.stringify(evaluate('TUNING')) === JSON.stringify(EXPECTED_DEFAULTS), 'resetMutators restores every field');
+ok(evaluate('activeMutatorIds').length === 0, 'resetMutators empties activeMutatorIds');
+
+execute("var multiplayerOn = false; function netActive() { return multiplayerOn; } applyMutators(['glassCars']); multiplayerOn = true;");
+ok(evaluate("applyMutators(['night', 'crowds'])").length === 0, 'applyMutators returns [] during multiplayer');
+ok(evaluate('TUNING.carDamageScale') === 2 && evaluate('TUNING.forceNight') === false && JSON.stringify(evaluate('activeMutatorIds')) === JSON.stringify(['glassCars']), 'applyMutators changes nothing during multiplayer, not even a reset');
+execute('multiplayerOn = false');
+ok(evaluate("applyMutators(['night'])").length === 1, 'applyMutators applies again once multiplayer ends');
+execute('resetMutators()');
+
+execute("MUTATOR_CONFLICTS.push(['night', 'crowds'], ['traffic2x', 'glassCars'])");
+ok(JSON.stringify(evaluate("sanitizeMutatorIds(['crowds', 'night', 'glassCars', 'traffic2x', 'tightClock'])")) === JSON.stringify(['night', 'traffic2x', 'tightClock']), 'sanitize drops the later id of each conflicting pair');
+ok(JSON.stringify(evaluate("sanitizeMutatorIds(['crowds'])")) === JSON.stringify(['crowds']), 'a conflicting id alone is kept');
+execute('MUTATOR_CONFLICTS.length = 0');
+ok(evaluate('MUTATOR_CONFLICTS').length === 0, 'the temporary conflict pairs are removed');
+
+const MONDAY = Date.UTC(2026, 10, 30);
+const SUNDAY_END = Date.UTC(2026, 10, 29, 23, 59, 59);
+const WEEK_MS = 7 * 86400000;
+ok(evaluate(`utcWeekIndex(${MONDAY})`) === evaluate(`utcWeekIndex(${SUNDAY_END})`) + 1, 'the week index advances at Monday 00:00 UTC');
+ok(evaluate(`mutatorOfWeek(${MONDAY})`) !== evaluate(`mutatorOfWeek(${SUNDAY_END})`), 'the weekly mutator changes at the Monday boundary');
+ok(evaluate(`mutatorOfWeek(${MONDAY})`) === evaluate(`mutatorOfWeek(${MONDAY + WEEK_MS - 1})`), 'the weekly mutator is stable through the week');
+const sixMondays = [0, 1, 2, 3, 4, 5].map(week => evaluate(`mutatorOfWeek(${MONDAY + week * WEEK_MS})`));
+ok(new Set(sixMondays).size === mutatorIds.length, 'six consecutive Mondays cover every mutator');
+
+const daynightSource = readSource('daynight.js');
+ok(/const NIGHT_FULL_FRAME = DAY_NIGHT_KEYFRAMES\.find\(keyframe => keyframe\.light === 1\)\.frame;/.test(daynightSource), 'NIGHT_FULL_FRAME is derived from the keyframes');
+ok(daynightSource.includes('TUNING.forceNight'), 'drawDayNight reads TUNING.forceNight');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
