@@ -51,6 +51,15 @@
     if (socket && socket.readyState === OPEN_SOCKET_STATE) socket.send(typeof payload === 'string' ? payload : JSON.stringify(payload));
   }
 
+  function hostPingReply(message) {
+    switch (message.t) {
+      case 'hp':
+        return Number.isFinite(message.c) ? { t: 'hpo', c: message.c } : null;
+      default:
+        return null;
+    }
+  }
+
   function addMember(id, name, shirtIdx) {
     if (memberIds.has(id)) return;
     sim.addPlayer(name, shirtIdx, id);
@@ -180,6 +189,11 @@
         guestBaselines.delete(message.id);
         if (sim && memberIds.delete(message.id)) sim.removePlayer(message.id);
         break;
+      case 'hp': {
+        const reply = hostPingReply(message);
+        if (reply) sendToServer(reply);
+        break;
+      }
     }
   }
 

@@ -111,6 +111,21 @@ const restoredScore = firstHostState.scores.find(s => s.id === 'p2');
 ok(restoredScore && restoredScore.s === 250, 'restored score survives into hst');
 ok(firstHostState.players.length === 2 && firstHostState.players.every(row => typeof row.x === 'number'), 'hst carries exported player rows');
 
+console.log('hostlink ping echo');
+deliver(socket, { t: 'hp', c: 1234.5 });
+ok(JSON.stringify(JSON.parse(socket.sent[socket.sent.length - 1])) === JSON.stringify({ t: 'hpo', c: 1234.5 }), 'hp is echoed as hpo with the same c');
+const sentBeforeBadPing = socket.sent.length;
+deliver(socket, { t: 'hp', c: 'x' });
+deliver(socket, { t: 'hp' });
+ok(socket.sent.length === sentBeforeBadPing, 'hp without a numeric c is ignored');
+const earlyPing = createWorkerHarness();
+earlyPing.run('sim-worker.js');
+earlyPing.send({ type: 'start', url: 'ws://fake/host', code: 'test', token: 'tok-p', hostId: 'p1' });
+const earlyPingSocket = FakeSocket.instances[FakeSocket.instances.length - 1];
+earlyPingSocket.onopen();
+deliver(earlyPingSocket, { t: 'hp', c: 7 });
+ok(earlyPingSocket.sent.some(frame => frame === JSON.stringify({ t: 'hpo', c: 7 })) && !earlyPing.posted.some(m => m.type === 'error'), 'echo works before hoststart');
+
 console.log('input and membership');
 const startX = firstHostState.players.find(row => row.id === 'p2').x;
 deliver(socket, { t: 'i', id: 'p2', ax: 1, px: startX + 40, py: firstHostState.players.find(row => row.id === 'p2').y, b: 0 });

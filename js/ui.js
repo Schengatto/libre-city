@@ -99,6 +99,7 @@ let publicGamesList = [];
 let publicGamesFetchedAtMs = 0;
 let publicGamesFailed = false;
 let publicGamesRenderedKey = null;
+let publicGamesFetchDurations = [];
 function showPanel(id) {
   for (const p of PANELS) { const el = $('#' + p); if (el) el.classList.toggle('hidden', p !== id); }
   if (id === 'publicPanel') startPublicGamesPolling(); else stopPublicGamesPolling();
@@ -412,8 +413,10 @@ async function fetchPublicGames() {
   const epoch = publicGamesEpoch;
   publicGamesFetching = true;
   try {
+    const fetchStartedAt = performance.now();
     const res = await fetch(publicRoomsUrl(netServerUrl()), { cache: 'no-store', signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(PUBLIC_GAMES_POLL_MS) : undefined });
     if (!res.ok) throw new Error('HTTP ' + res.status);
+    publicGamesFetchDurations = recentFetchDurations(publicGamesFetchDurations, performance.now() - fetchStartedAt);
     const data = await res.json();
     if (epoch !== publicGamesEpoch) return;
     publicGamesList = (Array.isArray(data.rooms) ? data.rooms : []).filter(isRenderablePublicRoom);
@@ -430,6 +433,15 @@ function setPublicGameTime(cell, leftSec) {
   cell.textContent = formatTimeLeft(leftSec);
   cell.className = 'tm' + (isTimeLeftLow(leftSec) ? ' low' : '');
 }
+function setPublicGamePing(cell, room) {
+  const ms = estimatedHostPingMs(ownRttEstimateMs(publicGamesFetchDurations), publicRoomHostRttMs(room));
+  const badge = document.createElement('span');
+  badge.className = ('ping ' + pingBandClass(ms)).trim();
+  badge.append(document.createElement('i'), document.createTextNode(formatPingEstimate(ms)));
+  cell.className = 'pg';
+  cell.title = t('pub.pingTitle');
+  cell.replaceChildren(badge);
+}
 function buildPublicGameRow(room) {
   const row = document.createElement('tr');
   const isFull = isPublicRoomFull(room);
@@ -443,6 +455,8 @@ function buildPublicGameRow(room) {
   sizeCell.textContent = t(publicGameSizeKey(room.code));
   const timeCell = document.createElement('td');
   setPublicGameTime(timeCell, room.leftSec);
+  const pingCell = document.createElement('td');
+  setPublicGamePing(pingCell, room);
   const joinCell = document.createElement('td');
   const joinButton = document.createElement('button');
   joinButton.className = 'pubjoin';
@@ -450,7 +464,7 @@ function buildPublicGameRow(room) {
   joinButton.disabled = isFull;
   joinButton.onclick = () => joinPublicGame(room.code);
   joinCell.appendChild(joinButton);
-  row.append(nameCell, playersCell, sizeCell, timeCell, joinCell);
+  row.append(nameCell, playersCell, sizeCell, timeCell, pingCell, joinCell);
   return row;
 }
 function renderPublicGames() {
@@ -471,7 +485,10 @@ function renderPublicGames() {
     body.replaceChildren(...rooms.map(buildPublicGameRow));
     publicGamesRenderedKey = renderedKey;
   } else {
-    rooms.forEach((room, index) => setPublicGameTime(body.rows[index].cells[3], room.leftSec));
+    rooms.forEach((room, index) => {
+      setPublicGameTime(body.rows[index].cells[3], room.leftSec);
+      setPublicGamePing(body.rows[index].cells[4], room);
+    });
   }
 }
 function joinPublicGame(code) {
