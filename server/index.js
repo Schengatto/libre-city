@@ -33,6 +33,7 @@ const { performance, monitorEventLoopDelay, PerformanceObserver } = require('nod
 const { WebSocketServer } = require('ws');
 // Shared leaderboard across every room, persisted to disk: see server/leaderboard.js.
 const leaderboard = require('./leaderboard');
+const boards = require('./boards');
 // Phase 2: authoritative world simulation (one city per room). If the module is missing
 // (or fails), the server falls back to Phase 1 relaying alone.
 let createRoomSim = null, accumulateSimTime = null;
@@ -1072,4 +1073,4 @@ for (const sig of ['SIGTERM', 'SIGINT']) {
   process.on(sig, () => shutdown(sig));
 }
 process.on('message', message => { if (message === 'shutdown') shutdown('ipc'); });
-function shutdown(reason) { log('shutdown', reason); leaderboard.flush(); server.close(); process.exit(0); }
+function shutdown(reason) { log('shutdown', reason); leaderboard.flush(); boards.flush(); server.close(); process.exit(0); }
