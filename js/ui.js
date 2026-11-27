@@ -108,7 +108,14 @@ function showMenu() {
   const lb = $('#loadBtn'); if (lb) lb.classList.toggle('hidden', !hasSave());   // 💾 only when a save exists
   updateHiScore();                                                              // must be rewritten after a language change
   resetMutators();
+  renderMutatorOfWeek(Date.now());
   showPanel('menuPanel');
+}
+function renderMutatorOfWeek(nowMs) {
+  const id = mutatorOfWeek(nowMs);
+  const icon = $('#mutatorWeekIcon'); if (icon) icon.textContent = MUTATORS[id].icon;
+  const name = $('#mutatorWeekName'); if (name) name.textContent = t('mut.' + id);
+  const desc = $('#mutatorWeekDesc'); if (desc) desc.textContent = t('mut.' + id + 'Desc');
 }
 // ---- Arcade-cabinet HI-SCORE on the title screen (best saved score) ----
 function updateHiScore() {
@@ -346,13 +353,15 @@ function buildSpMutatorChips() {
 // ---- Single-player: creation panel (violence, duration, map size) ----
 // As for the host, the map size lives in the code's seed → a reload onto the right city is
 // needed; violence and duration travel inside the intent and are applied on the way back.
-onClick('playBtn', () => {
+function openSpPanel(mutatorIds) {
   const d = $('#spDuration'); if (d) d.value = String(gameMinutes);
   const v = $('#spViolence'); if (v) v.value = violenceOn ? 'on' : 'off';
   buildSpMutatorChips();
-  fillSpMutatorPick(store.get('mutatorsPick', []));
+  fillSpMutatorPick(mutatorIds);
   showPanel('spPanel');
-});
+}
+onClick('playBtn', () => openSpPanel(store.get('mutatorsPick', [])));
+onClick('mutatorWeekPlay', () => openSpPanel([mutatorOfWeek(Date.now())]));
 onClick('spBack', showMenu);
 onClick('shiftBtn', () => { renderShiftPanel(); showPanel('shiftPanel'); });
 onClick('shiftBack', showMenu);

@@ -126,7 +126,7 @@ ok(/if \(netActive\(\)\) resetMutators\(\);/.test(ui), 'startMatch resets the mu
 ok(ui.indexOf('applyMutators(runConfig ? (runConfig.mutators || []) : (_spIntent.mutators || []));') > 0
   && ui.indexOf('applyMutators(runConfig') < ui.indexOf('startMatch(false);\n}\nelse if (_loadIntent'), 'the boot path applies the intent mutators before startMatch(false)');
 ok(ui.includes("store.set('mutatorsPick', mutators);") && ui.includes('name: playerName, mutators }'), 'spGo stores the pick and the intent mutators');
-ok(ui.includes("fillSpMutatorPick(store.get('mutatorsPick', []));"), 'the SP panel restores the last pick');
+ok(ui.includes("onClick('playBtn', () => openSpPanel(store.get('mutatorsPick', [])));") && ui.includes('fillSpMutatorPick(mutatorIds);'), 'the SP panel restores the last pick');
 ok(/activeMutatorIds\.length > 0 && !netActive\(\)/.test(ui), 'badges are hidden when empty or in multiplayer');
 ok(daynightSource.includes('TUNING.forceNight && !netActive()'), 'forced night is ignored in multiplayer');
 const endGameBody = ui.slice(ui.indexOf('function endGame('), ui.indexOf('// ---- Starting a match'));
@@ -135,8 +135,13 @@ ok(endGameBody.indexOf('finishRun(reason); return;') < endGameBody.indexOf("$('#
 const gameOverBlock = indexHtml.slice(indexHtml.indexOf('<div id="gameOver"'));
 ok(gameOverBlock.indexOf('id="goMutators"') > 0 && gameOverBlock.indexOf('id="goMutators"') < gameOverBlock.indexOf('id="goLadderWrap"'), 'index.html has #goMutators inside #gameOver');
 ok(ui.indexOf('function updateMutatorBadges()') > ui.indexOf('function startMatch(') && ui.indexOf('function updateMutatorBadges()') < ui.indexOf('// ---- Single-player: creation panel'), 'mutator UI helpers sit next to startMatch, above the single-player banner');
-const i18nKeys =['hud.mutators', 'mut.title', ...mutatorIds.flatMap(id => ['mut.' + id, 'mut.' + id + 'Desc'])];
+const i18nKeys = ['hud.mutators', 'mut.title', 'menu.mutatorWeek', 'menu.mutatorWeekPlay', ...mutatorIds.flatMap(id => ['mut.' + id, 'mut.' + id + 'Desc'])];
 ok(i18nKeys.every(key => occurrences(i18nSource, `'${key}':`) === 2), 'every mutator i18n key exists in both catalogs');
+ok(/function showMenu\(\) \{[\s\S]*?renderMutatorOfWeek\(Date\.now\(\)\);[\s\S]*?\n\}/.test(ui), 'showMenu recomputes the mutator of the week');
+ok(indexHtml.indexOf('id="playBtn"') < indexHtml.indexOf('id="mutatorWeek"') && indexHtml.indexOf('id="mutatorWeek"') < indexHtml.indexOf('id="shiftBtn"'), 'the mutator of the week strip sits between #playBtn and #shiftBtn');
+const weekPlayHandler = ui.slice(ui.indexOf("onClick('mutatorWeekPlay'"), ui.indexOf("onClick('spBack'"));
+ok(weekPlayHandler.includes('mutatorOfWeek(Date.now())') && !weekPlayHandler.includes("store.set('mutatorsPick'"), 'Play with it ticks the weekly mutator without storing the pick');
+ok(!/function openSpPanel\([\s\S]*?\n\}/.exec(ui)[0].includes('store.set'), 'openSpPanel never stores the pick');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -231,6 +231,8 @@ const STR = {
     // ---- Main menu ----
     'menu.hello': 'Ciao, <b id="menuName"></b>',
     'menu.play': 'Giocatore singolo',
+    'menu.mutatorWeek': 'Mutatore della settimana',
+    'menu.mutatorWeekPlay': 'Gioca con questo',
     'menu.load': 'Riprendi partita',
     'menu.shifts': '⏱ Turni di lavoro',
     'menu.mp': 'Multigiocatore',
@@ -731,6 +733,8 @@ const STR = {
 
     'menu.hello': 'Hi, <b id="menuName"></b>',
     'menu.play': 'Single player',
+    'menu.mutatorWeek': 'Mutator of the week',
+    'menu.mutatorWeekPlay': 'Play with it',
     'menu.load': 'Resume game',
     'menu.shifts': '⏱ Job shifts',
     'menu.mp': 'Multiplayer',

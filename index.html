@@ -296,6 +296,16 @@
   #menuPanel #playBtn:hover { box-shadow:0 2px 0 #a8324f; }
   #menuPanel #playBtn:active { box-shadow:0 0 0 #a8324f; }
   #playBtn::before { color:#2a0830; text-shadow:none; }
+  #mutatorWeek { display:flex; flex-direction:column; gap:8px; min-width:0; padding:10px 12px;
+    border:2px solid rgba(255,210,58,.45); border-radius:10px; background:rgba(14,8,30,.55); }
+  #mutatorWeek .mw-label { font-size:11px; font-weight:bold; letter-spacing:.12em; text-transform:uppercase;
+    color:#ffd23a; }
+  #mutatorWeek .mw-body { display:flex; align-items:flex-start; gap:10px; min-width:0; }
+  #mutatorWeek .mw-icon { font-size:26px; line-height:1; flex:none; }
+  #mutatorWeek .mw-text { flex:1 1 auto; min-width:0; font-size:13px; line-height:1.35; color:#e6ddf5;
+    overflow-wrap:anywhere; }
+  #mutatorWeek .mw-text b { color:#fff; }
+  #menuPanel #mutatorWeekPlay { width:100%; }
   #menuPanel .mbtn.minor { grid-column:auto; padding:11px 8px; border-width:2px; border-radius:10px;
     font:bold 14px 'Trebuchet MS','Segoe UI',sans-serif; letter-spacing:0; color:#e6ddf5;
     background:rgba(14,8,30,.55); border-color:rgba(255,255,255,.16); box-shadow:none;
@@ -696,6 +706,14 @@
     <div id="menuPanel" class="panel hidden">
       <div id="menuHello" data-i18n-html="menu.hello">Ciao, <b id="menuName"></b></div>
       <button id="playBtn" class="mbtn" data-i18n="menu.play">Giocatore singolo</button>
+      <div id="mutatorWeek">
+        <div class="mw-label" data-i18n="menu.mutatorWeek">Mutatore della settimana</div>
+        <div class="mw-body">
+          <span id="mutatorWeekIcon" class="mw-icon" aria-hidden="true"></span>
+          <div class="mw-text"><b id="mutatorWeekName"></b> <span id="mutatorWeekDesc"></span></div>
+        </div>
+        <button id="mutatorWeekPlay" class="mbtn minor" data-i18n="menu.mutatorWeekPlay">Gioca con questo</button>
+      </div>
       <button id="loadBtn" class="mbtn hidden" data-i18n="menu.load">Riprendi partita</button>
       <button id="shiftBtn" class="mbtn" data-i18n="menu.shifts">Turni di lavoro</button>
       <button id="mpBtn" class="mbtn" data-i18n="menu.mp">Multigiocatore</button>
