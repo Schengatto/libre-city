@@ -1,0 +1,110 @@
+import vm from 'node:vm';
+import { readSource } from './render-test-kit.mjs';
+
+let pass = 0, fail = 0;
+const ok = (cond, msg) => { if (cond) { pass++; console.log('  OK ', msg); } else { fail++; console.log('  XX FAIL:', msg); } };
+
+const sentMessages = [];
+const toasts = [];
+const fillTextCalls = [];
+let fakeNow = 10_000;
+
+const context = {
+  net: { mode: 'client', myId: 'me-id', players: new Map() },
+  netSend: message => sentMessages.push(message),
+  toast: message => toasts.push(message),
+  t: key => key,
+  player: { x: 400, y: 300, car: null },
+  playerName: 'Me',
+  camX: 0, camY: 0, vw: 800, vh: 600,
+  performance: { now: () => fakeNow },
+  document: { getElementById: () => null, querySelector: () => null },
+  setTimeout: () => 1,
+  clearTimeout: () => {},
+  ctx: {
+    globalAlpha: 1, textAlign: 'left', textBaseline: 'alphabetic', font: '10px serif',
+    beginPath() {}, arc() {}, moveTo() {}, lineTo() {}, fill() {}, stroke() {},
+    fillText(text, x, y) { fillTextCalls.push({ text, x, y }); },
+  },
+};
+vm.createContext(context);
+const emotes = vm.runInContext(
+  readSource('emotes.js') +
+  '\n({ EMOTES, emoteState, emoteCooldownLeft, emoteBubbleLook, sendEmote, onRemoteEmote, drawEmoteBubbles, toggleEmoteBar, closeEmoteBar });',
+  context
+);
+
+const resetScene = () => {
+  sentMessages.length = 0; toasts.length = 0; fillTextCalls.length = 0;
+  emotes.emoteState.bubbles.clear();
+  emotes.emoteState.lastSentAt = -Infinity;
+  emotes.emoteState.barOpen = false;
+  context.net.players.clear();
+  context.net.mode = 'client';
+  context.camX = 0; context.camY = 0;
+  context.player.car = null;
+};
+
+console.log('1) cooldown left');
+ok(emotes.emoteCooldownLeft(1000, 3000) === 3000, 'cooldown running: 3000 ms left');
+ok(emotes.emoteCooldownLeft(1000, 7000) === 0, 'cooldown elapsed: 0');
+ok(emotes.emoteCooldownLeft(-Infinity, 0) === 0, 'never sent: 0');
+
+console.log('2) bubble look');
+ok(Math.abs(emotes.emoteBubbleLook(0).scale - 0.6) < 0.01, 'starts at scale about 0.6');
+ok(emotes.emoteBubbleLook(1500).alpha === 1, 'fully opaque mid-life');
+ok(emotes.emoteBubbleLook(3001) === null, 'null after 3000 ms');
+ok(emotes.emoteBubbleLook(2900).alpha < 1, 'fades out near the end');
+
+console.log('3) sendEmote');
+resetScene();
+ok(emotes.sendEmote(2) === true, 'valid send in multiplayer');
+ok(sentMessages.length === 1 && sentMessages[0].t === 'emo' && sentMessages[0].e === 2, 'netSend got {t:emo, e:2}');
+ok(emotes.emoteState.bubbles.get('me')?.index === 2, 'local bubble stored under me');
+ok(emotes.sendEmote(1) === false && sentMessages.length === 1, 'second send inside the cooldown is refused');
+resetScene();
+ok(emotes.sendEmote(8) === false && emotes.sendEmote(-1) === false && emotes.sendEmote(1.5) === false, 'out of range indexes refused');
+ok(sentMessages.length === 0, 'nothing sent for invalid indexes');
+context.net.mode = null;
+ok(emotes.sendEmote(1) === false && sentMessages.length === 0, 'single player: refused and nothing sent');
+resetScene();
+emotes.toggleEmoteBar();
+ok(emotes.emoteState.barOpen === true, 'toggle opens the bar');
+emotes.sendEmote(0);
+ok(emotes.emoteState.barOpen === false, 'sending closes the bar');
+
+console.log('4) onRemoteEmote');
+resetScene();
+emotes.onRemoteEmote('ghost-unknown', 1);
+ok(emotes.emoteState.bubbles.size === 0 && toasts.length === 0, 'unknown id ignored without throwing');
+context.net.players.set('g1', { name: 'Zed', x: 100, y: 100, car: null });
+emotes.onRemoteEmote('g1', 1);
+ok(emotes.emoteState.bubbles.get('g1')?.index === 1 && toasts.length === 0, 'on-screen ghost: stored, no toast');
+context.net.players.set('g2', { name: 'Zed', x: 5000, y: 100, car: null });
+emotes.onRemoteEmote('g2', 1);
+ok(toasts.length === 1 && toasts[0] === 'Zed: 👍', `off-screen ghost: toast (${toasts[0]})`);
+emotes.emoteState.bubbles.clear();
+emotes.onRemoteEmote('g1', 9);
+ok(emotes.emoteState.bubbles.size === 0, 'invalid index stores nothing');
+
+console.log('5) drawEmoteBubbles');
+resetScene();
+context.net.players.set('g1', { name: 'Zed', x: 100, y: 100, car: null });
+emotes.emoteState.bubbles.set('g1', { index: 1, at: fakeNow - 4000 });
+emotes.drawEmoteBubbles();
+ok(emotes.emoteState.bubbles.size === 0, 'expired bubble removed');
+const car = { x: 300, y: 250, h: 40 };
+context.net.players.set('g3', { name: 'Drv', x: 300, y: 250, car });
+context.camX = 20; context.camY = 30;
+emotes.emoteState.bubbles.set('g3', { index: 5, at: fakeNow - 500 });
+emotes.drawEmoteBubbles();
+const carTop = car.y - context.camY - car.h / 2;
+ok(fillTextCalls.length === 1 && fillTextCalls[0].text === '😱' && fillTextCalls[0].y < carTop, `driving ghost: bubble above the car top (${fillTextCalls[0]?.y} < ${carTop})`);
+fillTextCalls.length = 0;
+emotes.emoteState.bubbles.set('gone', { index: 1, at: fakeNow });
+emotes.drawEmoteBubbles();
+ok(!emotes.emoteState.bubbles.has('gone'), 'bubble of a player who left is dropped');
+ok(context.ctx.globalAlpha === 1 && context.ctx.textAlign === 'left' && context.ctx.textBaseline === 'alphabetic', 'ctx state restored');
+
+console.log(`\n${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);
