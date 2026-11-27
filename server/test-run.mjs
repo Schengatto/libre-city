@@ -141,25 +141,83 @@ const targets = evaluate(makeContext(), `(() => {
 })()`);
 ok(targets[0].beaten === true && targets[1] === null, 'beaten when the score is higher; target is null without a target');
 
-console.log('5) fallback result screen and unregistered modes');
+console.log('5) results screen and unregistered modes');
+const resultScreenSetup = `
+  const makeElement = () => {
+    const classes = new Set();
+    const element = { textContent: '', onclick: null, children: [], className: '', append(...nodes) { this.children.push(...nodes); }, appendChild(node) { this.children.push(node); } };
+    element.classList = { add: name => classes.add(name), remove: name => classes.delete(name), toggle: (name, force) => (force ? classes.add(name) : classes.delete(name)), contains: name => classes.has(name) };
+    return element;
+  };
+  document = { createElement: makeElement };
+  for (const id of ['#runResultPanel', '#runResultTitle', '#runResultScore', '#runResultMedal', '#runResultBest', '#runResultTarget', '#runResultStats', '#runRetry', '#runShare', '#runMenu', '#shiftHud']) elements[id] = makeElement();
+  elements['#runResultPanel'].classList.add('hidden');
+  const panelState = () => ({
+    title: elements['#runResultTitle'].textContent, score: elements['#runResultScore'].textContent, medal: elements['#runResultMedal'].textContent,
+    best: elements['#runResultBest'].textContent, bestHidden: elements['#runResultBest'].classList.contains('hidden'),
+    target: elements['#runResultTarget'].textContent, targetHidden: elements['#runResultTarget'].classList.contains('hidden'),
+    stats: elements['#runResultStats'].children.map(row => row.children.map(cell => cell.textContent)),
+    shareHidden: elements['#runShare'].classList.contains('hidden'), panelHidden: elements['#runResultPanel'].classList.contains('hidden'),
+    hudHidden: elements['#shiftHud'].classList.contains('hidden'),
+  });
+`;
+const shownResult = evaluate(makeContext(), `(() => {
+  ${resultScreenSetup}
+  const calls = [];
+  launchRun = config => calls.push(['launch', config.job]);
+  gameEvents.enabled = true;
+  runConfig = { mode: 'shift', job: 'taxi', roomCode: 'PSHIFT' };
+  const complete = { mode: 'shift', job: 'taxi', titleKey: 'shift.done', score: 4210, medal: 'silver', bestBefore: 3590, newBest: true, complete: true, stats: [{ key: 'shift.jobsDone', value: 14 }, { key: 'shift.jobsFailed', value: 2 }], target: null };
+  showRunResult(complete);
+  const newBest = panelState();
+  elements['#runRetry'].onclick(); elements['#runMenu'].onclick();
+  showRunResult({ ...complete, score: 3000, medal: 'bronze', newBest: false, target: { score: 2500, from: 'Marco', beaten: true } });
+  const behind = panelState();
+  showRunResult({ ...complete, bestBefore: null });
+  const first = panelState();
+  showRunResult({ ...complete, titleKey: 'shift.abandoned', medal: null, complete: false, newBest: false });
+  const quit = panelState();
+  runShareHandler = result => calls.push(['share', result.score]);
+  showRunResult(complete);
+  elements['#runShare'].onclick();
+  return { newBest, behind, first, quit, withShare: panelState(), calls, reloads: location.reloads };
+})()`);
+ok(shownResult.newBest.title === 'shift.done' && shownResult.newBest.score === '🏆 4,210' && shownResult.newBest.medal === '🥈', 'result shows title, formatted score and medal glyph');
+ok(shownResult.newBest.best === 'shift.newBest (+620)' && !shownResult.newBest.bestHidden, 'new best line carries the positive delta');
+ok(JSON.stringify(shownResult.newBest.stats) === '[["shift.jobsDone","14"],["shift.jobsFailed","2"]]' || JSON.stringify(shownResult.newBest.stats) === '[["shift.jobsDone",14],["shift.jobsFailed",2]]', 'stats rows render in order');
+ok(shownResult.newBest.targetHidden && shownResult.newBest.shareHidden && !shownResult.newBest.panelHidden && shownResult.newBest.hudHidden, 'no target slot or Share without data, panel shown, shift HUD hidden');
+ok(shownResult.behind.best === 'shift.bestDelta' && !shownResult.behind.bestHidden, 'a worse run shows the delta line');
+ok(shownResult.behind.targetHidden === true, 'target slot stays hidden while the challenge keys are not in the catalogue');
+ok(shownResult.first.best === 'shift.firstRun', 'first run line when there is no previous best');
+ok(shownResult.quit.medal === '—' && shownResult.quit.bestHidden === true && shownResult.quit.title === 'shift.abandoned', 'abandoned run: no medal glyph, no best line');
+ok(shownResult.calls[0][0] === 'launch' && shownResult.calls[0][1] === 'taxi' && shownResult.reloads === 1, 'Retry relaunches the run config and Menu reloads');
+ok(shownResult.withShare.shareHidden === false && shownResult.calls[1][0] === 'share' && shownResult.calls[1][1] === 4210, 'Share appears only with a handler and receives the result');
+
+const targetShown = evaluate(makeContext(), `(() => {
+  ${resultScreenSetup}
+  t = (key, params) => key.startsWith('ch.') ? key + '|' + params.score + '|' + params.from : key;
+  runConfig = { mode: 'shift', job: 'taxi', roomCode: 'PSHIFT' };
+  const base = { mode: 'shift', job: 'taxi', titleKey: 'shift.done', score: 4820, medal: 'silver', bestBefore: 1, newBest: true, complete: true, stats: [] };
+  showRunResult({ ...base, target: { score: 4500, from: 'Marco', beaten: true } });
+  const beaten = panelState();
+  showRunResult({ ...base, target: { score: 5000, from: 'Marco', beaten: false } });
+  return { beaten, missed: panelState() };
+})()`);
+ok(targetShown.beaten.target === 'ch.targetBeaten|4,500|Marco' && !targetShown.beaten.targetHidden, 'target slot renders t(key, {score, from})');
+ok(targetShown.missed.target === 'ch.targetMissed|5,000|Marco', 'target slot picks the missed key when not beaten');
+
 context = makeContext();
-const fallback = evaluate(context, `(() => {
-  const classes = { add: [], remove: [] };
-  const fakeClass = { add: name => classes.add.push(name), remove: name => classes.remove.push(name) };
-  elements['#goTitle'] = { textContent: '' };
-  elements['#goScore'] = { textContent: '' };
-  elements['#goRank'] = { textContent: 'x' };
-  elements['#goLadderWrap'] = { classList: fakeClass };
-  elements['#gameOver'] = { classList: fakeClass };
+const unregistered = evaluate(context, `(() => {
+  ${resultScreenSetup}
   gameEvents.enabled = true;
   runConfig = { mode: 'unknown', roomCode: 'PSHIFT' };
   startRun();
   runState.score = 42;
   finishRun('quit');
-  return { title: elements['#goTitle'].textContent, score: elements['#goScore'].textContent, rank: elements['#goRank'].textContent, classes };
+  return panelState();
 })()`);
-ok(fallback.title === 'go.quit' && fallback.score.includes('42') && fallback.rank === '', 'without showRunResult the existing game over panel is filled');
-ok(fallback.classes.remove.includes('hidden') && fallback.classes.add.includes('hidden'), 'game over panel shown, ladder hidden');
+ok(unregistered.title === 'go.quit' && unregistered.score === '🏆 42' && unregistered.bestHidden === true && !unregistered.panelHidden, 'unregistered mode still gets the results screen');
+ok(!read('run.js').includes('showRunFallbackResult') && !read('run.js').includes('#gameOver'), 'the game over fallback is gone');
 
 console.log('6) wiring guards');
 const ui = read('ui.js');

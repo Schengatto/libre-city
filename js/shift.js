@@ -4,7 +4,7 @@ const SHIFT_RECOVERY_FRAMES = 180;
 const SHIFT_RECOVERY_RADIUS = 400;
 const SHIFT_SPAWN_MAX_DISTANCE = SHIFT_RECOVERY_RADIUS - HALF_ROAD;
 const SHIFT_GO_MESSAGE_MS = 2000;
-const SHIFT_MEDAL_ICONS = { gold: '🥇', silver: '🥈', bronze: '🥉' };
+const SHIFT_MEDAL_ICONS = RUN_MEDAL_GLYPHS;
 const SHIFT_MEDAL_ORDER = ['bronze', 'silver', 'gold'];
 const SHIFT_VEHICLE_KINDS = { taxi: 'taxi', pizza: 'delivery', ambulance: 'ambulance', patrol: 'police', fire: 'fire' };
 const SHIFT_SERVICE_TYPES = { pizza: 'pizzeria', ambulance: 'hospital', patrol: 'police', fire: 'fire' };
@@ -13,12 +13,32 @@ let shiftOnFootFrames = 0;
 
 const isShiftRun = () => !!runConfig && runConfig.mode === 'shift';
 
-const formatShiftScore = value => Number(value).toLocaleString('en-US');
+const formatShiftScore = formatRunScore;
+
+const hasRunMutators = () => !!runConfig.mutators && runConfig.mutators.length > 0;
+
+function readShiftBests() {
+  const bests = store.get('shiftBests', {});
+  return bests !== null && typeof bests === 'object' && !Array.isArray(bests) ? bests : {};
+}
 
 function shiftBestEntry(job) {
-  const entry = store.get('shiftBests', {})[job];
+  const entry = readShiftBests()[job];
   if (!entry || !Number.isFinite(entry.score)) return null;
   return { score: entry.score, medal: entry.medal || null, current: entry.rules === SHIFT_RULES_VERSION };
+}
+
+function betterShiftMedal(first, second) {
+  return SHIFT_MEDAL_ORDER.indexOf(second) > SHIFT_MEDAL_ORDER.indexOf(first) ? second : first;
+}
+
+function recordShiftBest(job, score, medal, jobs) {
+  const previous = shiftBestEntry(job);
+  const keepsPrevious = !!previous && previous.current;
+  if (keepsPrevious && score <= previous.score) return;
+  const bests = readShiftBests();
+  bests[job] = { score, medal: keepsPrevious ? betterShiftMedal(previous.medal, medal) : medal, jobs, rules: SHIFT_RULES_VERSION, date: Date.now() };
+  store.set('shiftBests', bests);
 }
 
 function nextShiftMedal(job, score) {
@@ -125,7 +145,7 @@ runModes.shift = {
     return {
       mode: 'shift', job: state.job, titleKey: complete ? 'shift.done' : 'shift.abandoned', score: state.score,
       medal: complete ? shiftMedal(state.job, state.score) : null, bestBefore,
-      newBest: complete && state.score > (bestBefore === null ? 0 : bestBefore), complete,
+      newBest: complete && !hasRunMutators() && state.score > (bestBefore === null ? 0 : bestBefore), complete,
       stats: [{ key: 'shift.jobsDone', value: state.jobsDone }, { key: 'shift.jobsFailed', value: state.jobsFailed }],
     };
   },
@@ -145,6 +165,11 @@ gameEvents.on('job:complete', payload => {
   runState.jobsDone++;
   scorePop(points, player.x, player.y);
   updateShiftHud();
+});
+
+gameEvents.on('run:end', payload => {
+  if (!isShiftRun() || !payload.complete || hasRunMutators()) return;
+  recordShiftBest(payload.job, payload.score, payload.medal, payload.jobsDone);
 });
 
 gameEvents.on('job:fail', payload => {

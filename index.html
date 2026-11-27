@@ -269,7 +269,7 @@
   #start #credits a:hover { color:#ffd23a; border-color:#ffd23a; }
   @media (prefers-reduced-motion:reduce) {
     #start h1, #start .tag, .panel, .mbtn::before, #ticker span, #scene .palm, #scene .sea::before,
-    #pause h2, #goTitle, .roomcode { animation:none !important; } }
+    #pause h2, #goTitle, #runResultTitle, .roomcode { animation:none !important; } }
   .mbtn { position:relative; font-family:'Bungee','Trebuchet MS',sans-serif; font-weight:normal;
     font-size:15px; letter-spacing:.05em; padding:12px 0; width:min(320px,84vw); color:#fff;
     background:linear-gradient(#31195e,#1b0e38); border:3px solid #ff3ea5; border-radius:13px;
@@ -335,18 +335,23 @@
     line-height:1.5; opacity:.65; }
 
   /* ---- Pause and end-of-match overlays: neon over scanlines ---- */
-  #pause, #gameOver { position:absolute; inset:0; z-index:45; display:flex; flex-direction:column;
+  #pause, #gameOver, #runResultPanel { position:absolute; inset:0; z-index:45; display:flex; flex-direction:column;
     align-items:center; justify-content:center; gap:14px;
     background:repeating-linear-gradient(0deg, rgba(0,0,0,.15) 0 2px, transparent 2px 5px), rgba(8,6,16,.86); }
-  #pause h2, #goTitle { font-family:'Bungee','Trebuchet MS',sans-serif; font-weight:normal;
+  #pause h2, #goTitle, #runResultTitle { font-family:'Bungee','Trebuchet MS',sans-serif; font-weight:normal;
     font-size:clamp(30px,6vw,52px); letter-spacing:.02em; animation:neonFlick 3.2s infinite; }
   #pause h2 { color:#33e0ff; text-shadow:0 0 8px #33e0ff, 0 0 30px #33e0ff, 3px 3px 0 #0d3f52; }
-  #goTitle { color:#ff3ea5; text-shadow:0 0 8px #ff3ea5, 0 0 30px #ff3ea5, 3px 3px 0 #7c1150; }
+  #goTitle, #runResultTitle { color:#ff3ea5; text-shadow:0 0 8px #ff3ea5, 0 0 30px #ff3ea5, 3px 3px 0 #7c1150; }
+  #runResultTitle { text-align:center; padding:0 12px; }
   @keyframes neonFlick { 0%,92%,100% { opacity:1 } 93%,95% { opacity:.4 } 96%,98% { opacity:.85 } }
-  #goScore { font-family:'Courier New',monospace; font-weight:bold; font-size:clamp(36px,8vw,68px);
+  #goScore, #runResultScore { font-family:'Courier New',monospace; font-weight:bold; font-size:clamp(36px,8vw,68px);
     letter-spacing:.14em; color:#ffd23a; text-shadow:0 0 18px rgba(255,210,58,.8); }
-  #goRank { font:bold 14px 'Courier New',monospace; letter-spacing:.1em; color:#33e0ff;
-    text-shadow:0 0 8px rgba(51,224,255,.6); }
+  #goRank, #runResultBest, #runResultTarget { font:bold 14px 'Courier New',monospace; letter-spacing:.1em; color:#33e0ff;
+    text-shadow:0 0 8px rgba(51,224,255,.6); text-align:center; }
+  #runResultMedal { font-size:clamp(36px,7vw,56px); line-height:1; }
+  #runResultStats { display:flex; flex-wrap:wrap; justify-content:center; gap:6px 24px; font:14px 'Courier New',monospace; color:#e9e6ff; }
+  #runResultStats b { margin-left:6px; color:#ffd23a; }
+  #runResultButtons { display:flex; flex-wrap:wrap; justify-content:center; gap:10px; }
 
   /* ---- Touch controls (only visible on touch devices) ---- */
   #touchUI { display:none; }
@@ -561,6 +566,20 @@
       </table>
     </div>
     <button id="backToMenu" class="mbtn" data-i18n="go.back">↩ Torna al menu</button>
+  </div>
+
+  <div id="runResultPanel" class="hidden">
+    <div id="runResultTitle"></div>
+    <div id="runResultScore"></div>
+    <div id="runResultMedal"></div>
+    <div id="runResultBest" class="hidden"></div>
+    <div id="runResultTarget" class="hidden"></div>
+    <div id="runResultStats"></div>
+    <div id="runResultButtons">
+      <button id="runRetry" class="mbtn" data-i18n="shift.retry">🔁 Riprova</button>
+      <button id="runShare" class="mbtn hidden" data-i18n="shift.share">📤 Condividi</button>
+      <button id="runMenu" class="mbtn" data-i18n="shift.menu">↩ Menu</button>
+    </div>
   </div>
 
   <!-- Multiplayer match scoreboard: Tab (or 🏆) to open/close -->

@@ -5,6 +5,9 @@ const runModes = {};
 const RUN_LOG_TYPES = ['run:start', 'job:pickup', 'job:start', 'job:complete', 'job:fail', 'wanted:change', 'player:down', 'vehicle:enter', 'vehicle:damage', 'run:end'];
 const RUN_LOG_MAX = 600;
 const RUN_LOG_DAMAGE_MIN = 4;
+const RUN_MEDAL_GLYPHS = { gold: '🥇', silver: '🥈', bronze: '🥉' };
+const RUN_NO_MEDAL_GLYPH = '—';
+const RUN_TARGET_KEYS = { beaten: 'ch.targetBeaten', missed: 'ch.targetMissed' };
 
 let runScoreMultiplier = () => 1;
 let runShareHandler = null;
@@ -44,12 +47,53 @@ function buildRunResult(state, outcome) {
   return { mode: state.mode, job: state.job, titleKey: null, score: state.score, medal: null, bestBefore: null, newBest: false, complete: outcome === 'time', stats: [] };
 }
 
-function showRunFallbackResult(result) {
-  const title = $('#goTitle'); if (title) title.textContent = t(result.complete ? 'go.time' : 'go.quit');
-  const score = $('#goScore'); if (score) score.textContent = '🏆 ' + result.score;
-  const rank = $('#goRank'); if (rank) rank.textContent = '';
-  const ladder = $('#goLadderWrap'); if (ladder) ladder.classList.add('hidden');
-  const panel = $('#gameOver'); if (panel) panel.classList.remove('hidden');
+const formatRunScore = value => Number(value).toLocaleString('en-US');
+
+const formatRunDelta = delta => (delta < 0 ? '−' : '+') + formatRunScore(Math.abs(delta));
+
+function runBestLine(result) {
+  if (!result.complete) return '';
+  if (result.bestBefore === null) return t('shift.firstRun');
+  const delta = formatRunDelta(result.score - result.bestBefore);
+  return result.newBest ? t('shift.newBest') + ' (' + delta + ')' : t('shift.bestDelta', { delta });
+}
+
+function runTargetLine(target) {
+  if (!target) return '';
+  const key = target.beaten ? RUN_TARGET_KEYS.beaten : RUN_TARGET_KEYS.missed;
+  const text = t(key, { score: formatRunScore(target.score), from: target.from });
+  return text === key ? '' : text;
+}
+
+function renderRunStats(container, stats) {
+  container.textContent = '';
+  for (const stat of stats) {
+    const row = document.createElement('div'); row.className = 'runStat';
+    const label = document.createElement('span'); label.textContent = t(stat.key);
+    const value = document.createElement('b'); value.textContent = stat.value;
+    row.append(label, value);
+    container.appendChild(row);
+  }
+}
+
+function showRunResult(result) {
+  const panel = $('#runResultPanel'); if (!panel) return;
+  const hud = $('#shiftHud'); if (hud) hud.classList.add('hidden');
+  $('#runResultTitle').textContent = t(result.titleKey || (result.complete ? 'go.time' : 'go.quit'));
+  $('#runResultScore').textContent = '🏆 ' + formatRunScore(result.score);
+  $('#runResultMedal').textContent = RUN_MEDAL_GLYPHS[result.medal] || RUN_NO_MEDAL_GLYPH;
+  const bestLine = runBestLine(result);
+  $('#runResultBest').textContent = bestLine;
+  $('#runResultBest').classList.toggle('hidden', !bestLine);
+  const targetLine = runTargetLine(result.target);
+  $('#runResultTarget').textContent = targetLine;
+  $('#runResultTarget').classList.toggle('hidden', !targetLine);
+  renderRunStats($('#runResultStats'), result.stats);
+  $('#runRetry').onclick = () => launchRun(runConfig);
+  $('#runShare').classList.toggle('hidden', typeof runShareHandler !== 'function');
+  $('#runShare').onclick = () => runShareHandler(result);
+  $('#runMenu').onclick = () => location.reload();
+  panel.classList.remove('hidden');
 }
 
 function finishRun(outcome) {
@@ -63,6 +107,5 @@ function finishRun(outcome) {
   });
   runState.ended = true;
   gameEvents.enabled = false;
-  if (typeof showRunResult === 'function') showRunResult(result);
-  else showRunFallbackResult(result);
+  showRunResult(result);
 }

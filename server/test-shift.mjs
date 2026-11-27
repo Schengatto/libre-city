@@ -187,5 +187,42 @@ run("globalRegistry['#shiftList'].children[2].children[2].onclick()");
 const launched = run('launched');
 ok(launched.length === 1 && launched[0].mode === 'shift' && launched[0].job === 'ambulance' && launched[0].minutes === 5 && launched[0].roomCode === 'PSHIFT' && launched[0].mutators.length === 0, 'Start launches the shift run with no mutators');
 
+console.log('6) personal bests');
+exec(`
+  var savedBests = {};
+  store.get = (key, fallback) => key === 'shiftBests' ? savedBests : fallback;
+  store.set = (key, value) => { if (key === 'shiftBests') savedBests = value; };
+`);
+const finishShift = (config, score, outcome = 'time') => run(`(() => {
+  gameEvents.enabled = true;
+  runConfig = Object.assign({ mode: 'shift', job: 'taxi', minutes: 5, roomCode: 'PSHIFT', mutators: [] }, ${JSON.stringify(config)});
+  runState = { mode: 'shift', job: 'taxi', score: ${score}, jobsDone: 6, jobsFailed: 1, startFrame: 0, log: [], logTruncated: false, ended: false };
+  shownResults = [];
+  showRunResult = result => shownResults.push(result);
+  finishRun('${outcome}');
+  return { result: shownResults[0], bests: savedBests };
+})()`);
+exec('var shownResults = []');
+let finished = finishShift({}, 3100);
+ok(finished.bests.taxi && finished.bests.taxi.score === 3100 && finished.bests.taxi.medal === 'silver' && finished.bests.taxi.jobs === 6 && finished.bests.taxi.rules === run('SHIFT_RULES_VERSION') && Number.isFinite(finished.bests.taxi.date), 'first complete shift writes the best with score, medal, jobs, rules and date');
+ok(finished.result.bestBefore === null && finished.result.newBest === true, 'first shift has no previous best');
+finished = finishShift({}, 1200);
+ok(finished.bests.taxi.score === 3100 && finished.bests.taxi.medal === 'silver' && finished.result.newBest === false && finished.result.bestBefore === 3100, 'a lower score keeps the stored best and medal');
+finished = finishShift({}, 4600);
+ok(finished.bests.taxi.score === 4600 && finished.bests.taxi.medal === 'gold' && finished.result.newBest === true, 'a higher score overwrites the best and raises the medal');
+exec("savedBests.taxi.medal = 'gold'; savedBests.taxi.score = 3000");
+finished = finishShift({}, 3200);
+ok(finished.bests.taxi.score === 3200 && finished.bests.taxi.medal === 'gold', 'the best medal never downgrades when a higher score earns a lower medal');
+finished = finishShift({}, 9000, 'quit');
+ok(finished.bests.taxi.score === 3200 && finished.result.medal === null && finished.result.newBest === false, 'an abandoned shift records nothing');
+finished = finishShift({ mutators: ['fog'] }, 9000);
+ok(finished.bests.taxi.score === 3200 && finished.result.newBest === false, 'a run with mutators writes no best');
+exec(`savedBests = { taxi: { score: 9000, medal: 'gold', jobs: 20, rules: ${run('SHIFT_RULES_VERSION')} - 1, date: 1 } }`);
+finished = finishShift({}, 500);
+ok(finished.result.bestBefore === null && finished.result.newBest === true, 'an old-rules best is ignored for the delta and the new best');
+ok(finished.bests.taxi.score === 500 && finished.bests.taxi.medal === null && finished.bests.taxi.rules === run('SHIFT_RULES_VERSION'), 'the first complete run under the current rules overwrites an old-rules best');
+exec("savedBests = null");
+ok(run("readShiftBests()") !== null && Object.keys(run('readShiftBests()')).length === 0, 'a corrupt stored value reads as no bests');
+
 console.log(fail === 0 ? `\n✅  ${pass} ok, 0 fail` : `\n❌  ${pass} ok, ${fail} FAIL`);
 process.exit(fail === 0 ? 0 : 1);
