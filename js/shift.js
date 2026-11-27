@@ -2,7 +2,7 @@ const SHIFT_ROOM_CODE = 'PSHIFT';
 const SHIFT_JOBS = ['taxi', 'pizza', 'ambulance', 'patrol', 'fire'];
 const SHIFT_RECOVERY_FRAMES = 180;
 const SHIFT_RECOVERY_RADIUS = 400;
-const SHIFT_SPAWN_RADII = [320, 600, 1200];
+const SHIFT_SPAWN_MAX_DISTANCE = SHIFT_RECOVERY_RADIUS - HALF_ROAD;
 const SHIFT_GO_MESSAGE_MS = 2000;
 const SHIFT_MEDAL_ICONS = { gold: '🥇', silver: '🥈', bronze: '🥉' };
 const SHIFT_MEDAL_ORDER = ['bronze', 'silver', 'gold'];
@@ -33,11 +33,7 @@ function shiftVehicleFor(job, point) {
 }
 
 function shiftSpawnSpot() {
-  for (const radius of SHIFT_SPAWN_RADII) {
-    const spot = randomParkingNear(player.x, player.y, 40, radius);
-    if (spot) return spot;
-  }
-  return null;
+  return randomParkingNear(player.x, player.y, 40, SHIFT_SPAWN_MAX_DISTANCE);
 }
 
 function seatPlayerIn(car) {
@@ -75,9 +71,9 @@ function updateShiftRecovery() {
     return;
   }
   if (++shiftOnFootFrames < SHIFT_RECOVERY_FRAMES) return;
+  shiftOnFootFrames = 0;
   const spot = shiftSpawnSpot();
   if (!spot) return;
-  shiftOnFootFrames = 0;
   cars.push(shiftVehicleFor(job, spot));
   toast(t('shift.newVehicle'));
 }

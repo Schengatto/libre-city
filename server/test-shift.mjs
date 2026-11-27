@@ -51,8 +51,8 @@ exec(`gameEvents.emit('job:complete', ${JSON.stringify({ ...taxiComplete, job: '
 exec(`gameEvents.emit('job:complete', ${JSON.stringify({ ...taxiComplete, job: 'fire' })})`);
 state = run('runState');
 ok(state.score === expectedPoints && state.jobsDone === 1, 'completions of other jobs are ignored');
-exec("gameEvents.emit('job:fail', { job: 'taxi', reason: 'timeout' })");
-exec("gameEvents.emit('job:fail', { job: 'pizza', reason: 'timeout' })");
+exec("gameEvents.emit('job:fail', { job: 'taxi', reason: 'late' })");
+exec("gameEvents.emit('job:fail', { job: 'pizza', reason: 'late' })");
 ok(run('runState.jobsFailed') === 1, 'only the failure of the shift job counts');
 exec('runScoreMultiplier = () => 2');
 exec(`gameEvents.emit('job:complete', ${JSON.stringify(taxiComplete)})`);
@@ -100,6 +100,31 @@ const recovery = run(`(() => {
   return { before, after: snapshot(), toasted: toasts.length, free: !!spawned && !spawned.driver };
 })()`);
 ok(recovery.before === 0 && recovery.after === 1 && recovery.toasted === 1 && recovery.free, 'a taxi spawns on frame 180, not before, with a toast');
+const spawnRuns = run(`(() => {
+  const results = [];
+  player.car = null;
+  for (let trial = 0; trial < 30; trial++) {
+    cars.length = 0; shiftOnFootFrames = 0;
+    for (let i = 0; i < SHIFT_RECOVERY_FRAMES; i++) updateShiftRecovery();
+    const spawned = cars.filter(c => c.isTaxi);
+    const distance = spawned.length ? dist(spawned[0].x, spawned[0].y, player.x, player.y) : null;
+    for (let i = 0; i < SHIFT_RECOVERY_FRAMES * 3; i++) updateShiftRecovery();
+    results.push({ distance, total: cars.length });
+  }
+  return results;
+})()`);
+ok(spawnRuns.every(r => r.distance !== null && r.distance <= 400), `recovered vehicle always lies within 400 px (max ${Math.max(...spawnRuns.map(r => r.distance))})`);
+ok(spawnRuns.every(r => r.total === 1), 'no second recovery while the recovered vehicle stays there');
+const noSpotRetry = run(`(() => {
+  const original = randomParkingNear;
+  let searches = 0;
+  randomParkingNear = () => { searches++; return null; };
+  cars.length = 0; shiftOnFootFrames = 0; player.car = null;
+  for (let i = 0; i < SHIFT_RECOVERY_FRAMES * 2; i++) updateShiftRecovery();
+  randomParkingNear = original;
+  return searches;
+})()`);
+ok(noSpotRetry === 2, `without a free spot the search repeats only every 180 frames (${noSpotRetry} searches in 360 frames)`);
 const nearbyKeepsCounter = run(`(() => {
   cars.length = 0; toasts.length = 0; player.car = null; shiftOnFootFrames = 0;
   cars.push(shiftVehicleFor('taxi', { x: player.x + 200, y: player.y, angle: 0 }));
